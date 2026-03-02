@@ -139,7 +139,7 @@ export const UI = {
     pages: {
         home: () => `
             <section class="hero">
-                <h1>Explore, learn, and enjoy our students’ work.</h1>
+                <h1>EdTechra Creative Lab</h1>
                 <p>A premium space for student creators to share their talent.</p>
                 <div class="hero-actions">
                     <a href="#explore" class="btn btn-primary btn-lg" data-link="explore">Explore Work</a>
