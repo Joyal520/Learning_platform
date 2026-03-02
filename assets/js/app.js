@@ -74,9 +74,11 @@ const App = {
     },
 
     async route() {
-        const hash = window.location.hash.substring(1) || 'home';
-        const [page, id] = hash.split('/');
-        this.currentPage = page;
+        const rawHash = window.location.hash.substring(1) || 'home';
+        // Handle cases like #/home or #explore
+        const cleanHash = rawHash.startsWith('/') ? rawHash.substring(1) : rawHash;
+        const [page, id] = cleanHash.split('/');
+        this.currentPage = page || 'home';
 
         // Force onboarding for first-time unauth visitors
         const hasRole = localStorage.getItem('edtechra_role');
