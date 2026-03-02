@@ -17,10 +17,12 @@ export const Auth = {
     },
 
     async signInWithGoogle() {
+        // Use full base path (not just origin) so GitHub Pages subdirectory is included
+        const basePath = window.location.href.split('#')[0].split('?')[0];
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.origin
+                redirectTo: basePath
             }
         });
         return { data, error };
