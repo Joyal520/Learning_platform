@@ -247,6 +247,9 @@ export const UI = {
     pages: {
         home: (currentUser) => `
             <section class="hero homepage-hero">
+                <!-- Claymorphism Background Image -->
+                <div class="hero-bg-image"></div>
+
                 <!-- Animated Dots Background (behind hero content) -->
                 <canvas id="hero-dots-canvas" class="hero-dots-canvas"></canvas>
 
