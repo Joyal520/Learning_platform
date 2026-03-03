@@ -76,6 +76,9 @@ const App = {
         // Initialize UI
         UI.init();
         UI.hideLoader();
+
+        // Listen for hash changes to route correctly
+        window.addEventListener('hashchange', () => this.route());
     },
 
     navigate(page) {
