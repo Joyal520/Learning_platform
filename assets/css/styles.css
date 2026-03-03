@@ -1515,6 +1515,34 @@ h3,
 }
 
 /* Forms */
+.form-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+@media (max-width: 768px) {
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.p-40 {
+    padding: 40px;
+}
+
+@media (max-width: 768px) {
+    .p-40 {
+        padding: 24px;
+    }
+}
+
 .form-group {
     margin-bottom: 24px;
 }
