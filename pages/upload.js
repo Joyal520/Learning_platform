@@ -228,6 +228,8 @@ export const UploadPage = {
         if (!form) return;
 
         UI.showLoader();
+        this.setupThemeSelector(); // Re-attach listeners for edit mode 
+
 
         try {
             // Fetch the submission
@@ -286,6 +288,26 @@ export const UploadPage = {
             if (titleInput) titleInput.value = sub.title || '';
             if (categorySelect) categorySelect.value = sub.category || '';
             if (descriptionTextarea) descriptionTextarea.value = sub.description || '';
+
+            // Pre-fill new fields
+            const audienceSelect = form.querySelector('select[name="audience_level"]');
+            if (audienceSelect) audienceSelect.value = sub.audience_level || 'General';
+
+            if (sub.themes && Array.isArray(sub.themes)) {
+                sub.themes.forEach(theme => {
+                    const cb = form.querySelector(`input[name="themes"][value="${theme}"]`);
+                    if (cb) cb.checked = true;
+                });
+                // Update dots/tags
+                this.renderThemeTags(document.getElementById('theme-tags'), document.querySelectorAll('input[name="themes"]'));
+
+                // Enforce disabled state if 3 selected
+                const checkboxesArr = document.querySelectorAll('input[name="themes"]');
+                const selectedCount = document.querySelectorAll('input[name="themes"]:checked').length;
+                checkboxesArr.forEach(c => {
+                    if (!c.checked) c.disabled = selectedCount >= 3;
+                });
+            }
 
             // Determine content mode and switch to it
             const fileGroup = document.querySelector('#file-input-group');
@@ -394,6 +416,8 @@ export const UploadPage = {
                         title: formData.get('title'),
                         category: formData.get('category'),
                         description: formData.get('description') || '',
+                        themes: this.getSelectedThemes(),
+                        audience_level: formData.get('audience_level') || 'General'
                     };
 
                     // Only update content fields if they changed
