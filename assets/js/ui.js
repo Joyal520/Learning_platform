@@ -57,7 +57,7 @@ export const UI = {
         const thumbnail = thumbnailUrl
             ? `<div class="card-thumbnail" style="background-image:url('${thumbnailUrl}')"></div>`
             : `<div class="card-thumbnail card-thumb-gradient" style="background:linear-gradient(135deg, ${color}22, ${color}44)">
-                <span class="thumb-emoji">${this.categoryEmoji(sub.category)}</span>
+                <span class="thumb-emoji">${UI.categoryEmoji(sub.category)}</span>
                </div>`;
         return `
             <div class="content-card glass-card" data-id="${sub.id}">
@@ -176,7 +176,7 @@ export const UI = {
 
                     <div class="detail-card glass-card">
                         <div class="detail-content">
-                            ${this.renderContentPreview(sub)}
+                            ${UI.renderContentPreview(sub)}
                         </div>
                         
                         <div class="detail-description">
@@ -194,7 +194,7 @@ export const UI = {
 
                                 <div class="rating-group">
                                     <div class="rating-stars" id="rating-stars">
-                                        ${this.renderStars(stats.avg_rating)}
+                                        ${UI.renderStars(stats.avg_rating)}
                                     </div>
                                     <span class="text-xs text-muted">(${Number(stats.avg_rating).toFixed(1)})</span>
                                 </div>
@@ -431,6 +431,92 @@ export const UI = {
                     </div>
                 </div>
                 <p class="text-center mt-20">Already have a role? <a href="#login">Sign In</a></p>
+            </div>
+        `,
+
+        dashboard: (role) => `
+            <div class="dashboard-container">
+                <div class="page-header">
+                    <h1>${role === 'admin' ? 'Admin Control Center' : 'Teacher Dashboard'}</h1>
+                    <p class="text-muted">Manage the creative works and users on EdTechra.</p>
+                </div>
+
+                ${role === 'admin' ? `
+                <div class="grid-4 mb-40">
+                    <div class="glass-card stat-card">
+                        <p class="text-muted text-sm">Total Creators</p>
+                        <div class="stat-val" id="stat-users">0</div>
+                    </div>
+                    <div class="glass-card stat-card">
+                        <p class="text-muted text-sm">Pending Approval</p>
+                        <div class="stat-val" id="stat-pending">0</div>
+                    </div>
+                    <div class="glass-card stat-card">
+                        <p class="text-muted text-sm">Total Live Works</p>
+                        <div class="stat-val" id="stat-approved">0</div>
+                    </div>
+                    <div class="glass-card stat-card storage-card">
+                        <p class="text-muted text-sm">Storage Usage</p>
+                        <div class="storage-stats">
+                            <span class="stat-val" id="stat-storage">0 MB</span>
+                            <span class="text-muted text-xs">/ 1 GB</span>
+                        </div>
+                        <div class="storage-bar-container">
+                            <div class="storage-bar" id="storage-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="pending">Pending Review</button>
+                    <button class="tab-btn" data-tab="approved">Live Works</button>
+                    ${role === 'admin' ? '<button class="tab-btn" data-tab="users">Users & Roles</button>' : ''}
+                </div>
+
+                <div id="dashboard-content" class="dashboard-list">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        `,
+
+        submissionRow: (sub, role) => `
+            <div class="submission-item glass-card mb-16">
+                <div class="sub-info">
+                    <h3>${sub.title}</h3>
+                    <div class="sub-meta">
+                        <span>${sub.profiles?.display_name || 'Anonymous'}</span>
+                        <span>${sub.category.replace('_', ' ')}</span>
+                        <span>${new Date(sub.created_at).toLocaleDateString()}</span>
+                        <span class="badge badge-status status-${sub.status}">${sub.status}</span>
+                    </div>
+                </div>
+                <div class="sub-actions">
+                    <button class="btn btn-primary btn-sm action-preview" data-id="${sub.id}">View</button>
+                    ${sub.status === 'pending' ? `
+                        <button class="btn btn-success btn-sm action-approve" data-id="${sub.id}">Approve</button>
+                        <button class="btn btn-danger btn-sm action-reject" data-id="${sub.id}">Reject</button>
+                    ` : ''}
+                </div>
+            </div>
+        `,
+
+        userRow: (user) => `
+            <div class="submission-item glass-card mb-16">
+                <div class="sub-info">
+                    <h3>${user.display_name || 'Anonymous'}</h3>
+                    <div class="sub-meta">
+                        <span>${user.email}</span>
+                        <span>Joined: ${new Date(user.created_at).toLocaleDateString()}</span>
+                    </div>
+                </div>
+                <div class="sub-actions">
+                    <select class="form-control role-select" data-id="${user.id}">
+                        <option value="student" ${user.role === 'student' ? 'selected' : ''}>Student</option>
+                        <option value="teacher" ${user.role === 'teacher' ? 'selected' : ''}>Teacher</option>
+                        <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
+                    </select>
+                </div>
             </div>
         `
     },
