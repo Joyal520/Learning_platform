@@ -266,13 +266,6 @@ export const UI = {
                     </div>
                 </div>
             </section>
-
-            <section class="trending">
-                <h2>Trending Submissions</h2>
-                <div class="grid" id="trending-grid">
-                    <p class="text-muted">Loading trending items...</p>
-                </div>
-            </section>
         `,
 
         profile: (user) => `
@@ -375,22 +368,53 @@ export const UI = {
                             <input type="text" name="title" class="form-control" required placeholder="Enter a catchy title">
                         </div>
                         <div class="form-group">
-                            <label>Category*</label>
+                            <label>Content Type*</label>
                             <select name="category" class="form-control" required>
-                                <option value="" disabled selected>Select a category</option>
-                                <option value="short_stories">Short Stories</option>
-                                <option value="long_stories">Long Stories</option>
-                                <option value="comics">Comics</option>
-                                <option value="essays">Essays</option>
-                                <option value="articles">Articles</option>
-                                <option value="weird_facts">Weird Facts</option>
-                                <option value="conversations">Conversations</option>
-                                <option value="poems">Poems</option>
-                                <option value="images">Images</option>
-                                <option value="songs">Songs</option>
+                                <option value="" disabled selected>Select content type</option>
+                                <option value="short_stories">Short Story</option>
+                                <option value="long_stories">Long Story</option>
+                                <option value="poems">Poem</option>
+                                <option value="essays">Essay</option>
+                                <option value="articles">Article</option>
+                                <option value="conversations">Conversation</option>
+                                <option value="comics">Comic</option>
+                                <option value="images">Image</option>
+                                <option value="presentations">Presentations</option>
+                                <option value="flashcards">Flashcards</option>
                             </select>
                         </div>
                     </div>
+
+                    <!-- Theme Multi-Select (max 3) -->
+                    <div class="form-group">
+                        <label>Theme* <span class="text-muted text-sm">(select up to 3)</span></label>
+                        <div class="theme-selected-tags" id="theme-tags"></div>
+                        <div class="theme-dropdown" id="theme-dropdown">
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Motivational"> Motivational</label></div>
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Emotional"> Emotional</label></div>
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Funny"> Funny</label></div>
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Friendship"> Friendship</label></div>
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Fantasy"> Fantasy</label></div>
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Mystery"> Mystery</label></div>
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Adventure"> Adventure</label></div>
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Science"> Science</label></div>
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Technology"> Technology</label></div>
+                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Social Awareness"> Social Awareness</label></div>
+                        </div>
+                        <p class="theme-validation-msg hidden" id="theme-msg">Maximum 3 themes allowed.</p>
+                    </div>
+
+                    <!-- Audience Level -->
+                    <div class="form-group">
+                        <label>Audience Level*</label>
+                        <select name="audience_level" class="form-control" required>
+                            <option value="" disabled selected>Select audience</option>
+                            <option value="Kids">Kids</option>
+                            <option value="Adult">Adult</option>
+                            <option value="General">General</option>
+                        </select>
+                    </div>
+
                     <div class="form-group">
                         <label>Description</label>
                         <textarea name="description" class="form-control" rows="3" placeholder="Tell us more about your work..."></textarea>

@@ -119,7 +119,6 @@ const App = {
             case 'home':
                 main.innerHTML = UI.pages.home(this.profile);
                 UI.initHeroAnimations();
-                this.renderTrending();
                 break;
             case 'profile':
                 if (!this.user) return this.navigate('login');

@@ -133,7 +133,7 @@ export const DetailPage = {
                 UI.showLoader();
                 const { error } = await supabase.from('ratings').upsert({
                     submission_id: sub.id, user_id: user.id, rating: parseInt(rating)
-                });
+                }, { onConflict: 'submission_id,user_id' });
 
                 if (error) {
                     UI.showToast(error.message, 'error');
@@ -181,7 +181,7 @@ export const DetailPage = {
                 UI.showLoader();
                 const { error } = await supabase.from('ratings').upsert({
                     submission_id: sub.id, user_id: user.id, rating: parseInt(rating)
-                });
+                }, { onConflict: 'submission_id,user_id' });
 
                 if (error) {
                     UI.showToast(error.message, 'error');

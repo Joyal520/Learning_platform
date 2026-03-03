@@ -37,6 +37,9 @@ export const UploadPage = {
             });
         });
 
+        // ========== Theme Multi-Select ==========
+        this.setupThemeSelector();
+
         // Thumbnail preview
         thumbnailInput?.addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -95,10 +98,19 @@ export const UploadPage = {
                     contentText = formData.get('code_content');
                 }
 
+                // Validate themes
+                const selectedThemes = this.getSelectedThemes();
+                if (selectedThemes.length === 0) {
+                    UI.hideLoader();
+                    return UI.showToast('Please select at least 1 theme.', 'error');
+                }
+
                 const submissionData = {
                     author_id: user.id,
                     title: formData.get('title'),
                     category: formData.get('category'),
+                    themes: selectedThemes,
+                    audience_level: formData.get('audience_level'),
                     description: formData.get('description') || '',
                     content_text: contentText,
                     file_type: contentMode === 'file' ? file.type : (contentMode === 'code' ? 'text/html' : 'text/plain'),
@@ -150,6 +162,65 @@ export const UploadPage = {
     updateCodePreview(code, iframe) {
         if (!iframe) return;
         iframe.srcdoc = code;
+    },
+
+    // ========== Theme Multi-Select Logic ==========
+    setupThemeSelector() {
+        const checkboxes = document.querySelectorAll('input[name="themes"]');
+        const tagsContainer = document.getElementById('theme-tags');
+        const validationMsg = document.getElementById('theme-msg');
+
+        if (!checkboxes.length) return;
+
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                const selected = document.querySelectorAll('input[name="themes"]:checked');
+
+                // Enforce max 3
+                if (selected.length > 3) {
+                    cb.checked = false;
+                    validationMsg?.classList.remove('hidden');
+                    return;
+                }
+
+                validationMsg?.classList.add('hidden');
+
+                // Disable unchecked if 3 selected
+                checkboxes.forEach(c => {
+                    if (!c.checked) c.disabled = selected.length >= 3;
+                });
+
+                // Render tag chips
+                this.renderThemeTags(tagsContainer, checkboxes);
+            });
+        });
+    },
+
+    renderThemeTags(container, checkboxes) {
+        if (!container) return;
+        const selected = document.querySelectorAll('input[name="themes"]:checked');
+        container.innerHTML = Array.from(selected).map(cb => `
+            <span class="theme-tag" data-value="${cb.value}">
+                ${cb.value}
+                <span class="theme-tag-remove" data-theme="${cb.value}">×</span>
+            </span>
+        `).join('');
+
+        // Attach remove handlers
+        container.querySelectorAll('.theme-tag-remove').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const val = btn.dataset.theme;
+                const cb = document.querySelector(`input[name="themes"][value="${val}"]`);
+                if (cb) {
+                    cb.checked = false;
+                    cb.dispatchEvent(new Event('change'));
+                }
+            });
+        });
+    },
+
+    getSelectedThemes() {
+        return Array.from(document.querySelectorAll('input[name="themes"]:checked')).map(cb => cb.value);
     },
 
     async initEdit(id) {
