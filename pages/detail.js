@@ -139,9 +139,10 @@ export const DetailPage = {
                     UI.showToast(error.message, 'error');
                 } else {
                     UI.showToast('Rated!', 'success');
-                    // Update star colors locally first
+                    // Update star display and re-attach listeners
                     starContainer.innerHTML = UI.renderStars(rating);
-                    // Refresh stats
+                    this.attachStarListeners(starContainer, sub);
+                    // Refresh stats from DB
                     this.refreshStats(sub.id);
                 }
                 UI.hideLoader();
@@ -169,11 +170,52 @@ export const DetailPage = {
         if (data) btn.classList.add('liked');
     },
 
+    // Re-attach star click listeners after re-rendering stars
+    attachStarListeners(container, sub) {
+        container?.querySelectorAll('.star').forEach(star => {
+            star.addEventListener('click', async () => {
+                const rating = star.dataset.value;
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return UI.showToast('Please login to rate', 'error');
+
+                UI.showLoader();
+                const { error } = await supabase.from('ratings').upsert({
+                    submission_id: sub.id, user_id: user.id, rating: parseInt(rating)
+                });
+
+                if (error) {
+                    UI.showToast(error.message, 'error');
+                } else {
+                    UI.showToast('Rated!', 'success');
+                    container.innerHTML = UI.renderStars(rating);
+                    this.attachStarListeners(container, sub);
+                    this.refreshStats(sub.id);
+                }
+                UI.hideLoader();
+            });
+        });
+    },
+
     async refreshStats(subId) {
-        const { data } = await supabase.from('submission_stats').select('*').eq('id', subId).maybeSingle();
-        if (data) {
-            const likeCountSpan = document.getElementById('like-count');
-            if (likeCountSpan) likeCountSpan.textContent = data.like_count;
+        try {
+            const { data } = await supabase.from('submission_stats').select('*').eq('id', subId).maybeSingle();
+            if (data) {
+                // Update like count
+                const likeCountSpan = document.getElementById('like-count');
+                if (likeCountSpan) likeCountSpan.textContent = data.like_count || 0;
+
+                // Update average rating display
+                const avgRatingSpan = document.getElementById('avg-rating');
+                if (avgRatingSpan) avgRatingSpan.textContent = `(${(data.avg_rating || 0).toFixed(1)})`;
+
+                // Update star visual
+                const starContainer = document.getElementById('rating-stars');
+                if (starContainer && data.avg_rating) {
+                    starContainer.innerHTML = UI.renderStars(Math.round(data.avg_rating));
+                }
+            }
+        } catch (err) {
+            console.error('[DETAIL] refreshStats error:', err);
         }
     },
 

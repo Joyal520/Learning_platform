@@ -15,7 +15,6 @@ export const UI = {
     // =============================================
     initHeroAnimations() {
         this._initCyclingSubtitle();
-        this._initConfettiCanvas();
     },
 
     // --- Cycling Subtitle ---
@@ -250,15 +249,6 @@ export const UI = {
                 <!-- Claymorphism Background Image -->
                 <div class="hero-bg-image"></div>
 
-                <!-- Animated Dots Background (behind hero content) -->
-                <canvas id="hero-dots-canvas" class="hero-dots-canvas"></canvas>
-
-                <div class="hero-bg-decorators">
-                    <div class="decorator dec-1"></div>
-                    <div class="decorator dec-2"></div>
-                    <div class="decorator dec-3"></div>
-                </div>
-
                 <div class="hero-content-wrapper">
                     <h1 class="hero-main-title">EdTechra Creative Lab</h1>
                     <p class="hero-tagline">Showcase your creativity in the digital world. Inspire. Evolve.</p>
@@ -356,7 +346,7 @@ export const UI = {
                                     <div class="rating-stars" id="rating-stars">
                                         ${UI.renderStars(stats.avg_rating)}
                                     </div>
-                                    <span class="text-xs text-muted">(${Number(stats.avg_rating).toFixed(1)})</span>
+                                    <span class="text-xs text-muted" id="avg-rating">(${Number(stats.avg_rating).toFixed(1)})</span>
                                 </div>
                             </div>
 

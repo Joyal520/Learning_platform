@@ -492,34 +492,37 @@ h3,
     font-size: 0.85rem;
 }
 
-/* Hero */
+/* Hero — Full Viewport with Vivid Background */
 .hero {
-    padding: 100px 0 80px;
-    text-align: center;
-    max-width: 900px;
-    margin: 0 auto;
     position: relative;
     overflow: hidden;
+    text-align: center;
+    width: 100%;
+    max-width: 100%;
+    min-height: 85vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px 60px;
 }
 
-/* Claymorphism Background Image */
+/* Bright Claymorphism Background Image */
 .hero-bg-image {
     position: absolute;
     top: 0;
-    left: -10%;
-    width: 120%;
+    left: 0;
+    width: 100%;
     height: 100%;
     background-image: url('../images/hero-bg.png');
     background-size: cover;
-    background-position: center;
+    background-position: center top;
     background-repeat: no-repeat;
     z-index: 0;
-    opacity: 0.25;
-    filter: blur(2px);
+    opacity: 0.65;
     pointer-events: none;
 }
 
-/* Gradient overlay to keep text readable */
+/* Subtle gradient — keeps text readable, background stays vivid */
 .hero-bg-image::after {
     content: '';
     position: absolute;
@@ -528,25 +531,17 @@ h3,
     width: 100%;
     height: 100%;
     background: linear-gradient(to bottom,
-            rgba(10, 10, 26, 0.3) 0%,
-            rgba(10, 10, 26, 0.6) 50%,
-            rgba(10, 10, 26, 0.95) 100%);
-}
-
-/* Confetti Canvas — sits behind hero content */
-.hero-dots-canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 0;
-    pointer-events: none;
+            rgba(10, 10, 26, 0.1) 0%,
+            rgba(10, 10, 26, 0.3) 55%,
+            rgba(10, 10, 26, 0.9) 100%);
 }
 
 .hero-content-wrapper {
     position: relative;
     z-index: 1;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 16px;
 }
 
 /* Main Title */
@@ -565,7 +560,7 @@ h3,
 /* Tagline */
 .hero-tagline {
     font-size: 1.3rem;
-    color: var(--text-muted);
+    color: rgba(255, 255, 255, 0.85);
     margin-bottom: 12px;
     font-weight: 400;
     max-width: 600px;
@@ -595,7 +590,7 @@ h3,
 /* Welcome Line */
 .hero-welcome {
     font-size: 1rem;
-    color: rgba(255, 255, 255, 0.55);
+    color: rgba(255, 255, 255, 0.7);
     margin-bottom: 32px;
     font-weight: 400;
 }
@@ -621,6 +616,7 @@ h3,
     display: flex;
     gap: 16px;
     justify-content: center;
+    flex-wrap: wrap;
 }
 
 /* Trending Empty State */
@@ -643,21 +639,73 @@ h3,
     margin-bottom: 20px;
 }
 
-/* Responsive Hero */
+/* Responsive Hero — Mobile */
 @media (max-width: 768px) {
+    .hero {
+        min-height: 80vh;
+        padding: 60px 16px 40px;
+    }
+
     .hero-main-title {
-        font-size: 2.4rem;
+        font-size: 2.2rem;
+        margin-bottom: 12px;
     }
 
     .hero-tagline {
-        font-size: 1.05rem;
+        font-size: 1rem;
+        padding: 0 8px;
+    }
+
+    .cycling-subtitle-container {
+        height: 32px;
+        margin-bottom: 12px;
     }
 
     .cycling-subtitle {
-        font-size: 1rem;
+        font-size: 0.95rem;
     }
 
     .hero-welcome {
+        font-size: 0.9rem;
+        margin-bottom: 24px;
+    }
+
+    .hero-actions {
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .hero-actions .btn {
+        width: 100%;
+        max-width: 280px;
+    }
+
+    .hero-bg-image {
+        background-position: center center;
+    }
+
+    .hero h1 {
+        font-size: 2rem;
+    }
+
+    .hero p {
+        font-size: 1rem;
+        margin-bottom: 24px;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero {
+        min-height: 75vh;
+        padding: 50px 12px 30px;
+    }
+
+    .hero-main-title {
+        font-size: 1.8rem;
+    }
+
+    .hero-tagline {
         font-size: 0.9rem;
     }
 }
@@ -665,36 +713,6 @@ h3,
 @media (prefers-reduced-motion: reduce) {
     .cycling-subtitle {
         transition: none;
-    }
-
-    .hero-dots-canvas {
-        display: none;
-    }
-}
-
-@media (max-width: 768px) {
-    .hero {
-        padding: 60px 0 40px;
-    }
-
-    .hero h1 {
-        font-size: 2.25rem;
-    }
-
-    .hero p {
-        font-size: 1rem;
-        margin-bottom: 24px;
-    }
-
-    .hero-actions {
-        flex-direction: column;
-        gap: 12px;
-        padding: 0 24px;
-    }
-
-    .hero-actions .btn {
-        width: 100%;
-        justify-content: center;
     }
 }
 
