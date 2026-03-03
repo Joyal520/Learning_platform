@@ -10,6 +10,149 @@ export const UI = {
         });
     },
 
+    // =============================================
+    // Hero Animations: Cycling Subtitle + Confetti Dots
+    // =============================================
+    initHeroAnimations() {
+        this._initCyclingSubtitle();
+        this._initConfettiCanvas();
+    },
+
+    // --- Cycling Subtitle ---
+    // Phrases and timing are adjustable here
+    _initCyclingSubtitle() {
+        const el = document.getElementById('cycling-subtitle');
+        if (!el) return;
+
+        // Check prefers-reduced-motion
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+        const phrases = [
+            'Where Stories Live',
+            'Where Ideas Grow',
+            'Where Voices Matter',
+            'Where Creativity Wins'
+        ];
+        const VISIBLE_DURATION = 2000;   // ms each phrase is shown
+        const TRANSITION_MS = 400;        // ms for fade transition
+        let index = 0;
+
+        setInterval(() => {
+            // Fade out
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(10px)';
+
+            setTimeout(() => {
+                index = (index + 1) % phrases.length;
+                el.textContent = phrases[index];
+                // Fade in
+                el.style.opacity = '1';
+                el.style.transform = 'translateY(0)';
+            }, TRANSITION_MS);
+        }, VISIBLE_DURATION + TRANSITION_MS);
+    },
+
+    // --- Colorful Confetti Dots Canvas ---
+    // Inspired by the Antigravity success page confetti effect
+    _initConfettiCanvas() {
+        const canvas = document.getElementById('hero-dots-canvas');
+        if (!canvas) return;
+
+        // Check prefers-reduced-motion
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            canvas.style.display = 'none';
+            return;
+        }
+
+        const ctx = canvas.getContext('2d');
+        let animId;
+
+        const resize = () => {
+            const hero = canvas.parentElement;
+            canvas.width = hero.offsetWidth;
+            canvas.height = hero.offsetHeight;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        // Confetti colors (Google-style: blue, red, green, yellow, purple, orange)
+        const COLORS = [
+            '#4285f4', '#ea4335', '#34a853', '#fbbc04',
+            '#a855f7', '#f97316', '#06b6d4', '#ec4899'
+        ];
+        const NUM_PARTICLES = 35;
+        const particles = [];
+
+        // Particle shapes: circle, square, line
+        const SHAPES = ['circle', 'square', 'line'];
+
+        for (let i = 0; i < NUM_PARTICLES; i++) {
+            particles.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 4 + 2,
+                color: COLORS[Math.floor(Math.random() * COLORS.length)],
+                shape: SHAPES[Math.floor(Math.random() * SHAPES.length)],
+                speedX: (Math.random() - 0.5) * 0.6,
+                speedY: Math.random() * 0.4 + 0.15,
+                rotation: Math.random() * 360,
+                rotSpeed: (Math.random() - 0.5) * 2,
+                opacity: Math.random() * 0.5 + 0.3
+            });
+        }
+
+        const draw = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (const p of particles) {
+                p.x += p.speedX;
+                p.y += p.speedY;
+                p.rotation += p.rotSpeed;
+
+                // Wrap around edges
+                if (p.y > canvas.height + 10) { p.y = -10; p.x = Math.random() * canvas.width; }
+                if (p.x > canvas.width + 10) p.x = -10;
+                if (p.x < -10) p.x = canvas.width + 10;
+
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate((p.rotation * Math.PI) / 180);
+                ctx.globalAlpha = p.opacity;
+                ctx.fillStyle = p.color;
+                ctx.strokeStyle = p.color;
+
+                if (p.shape === 'circle') {
+                    ctx.beginPath();
+                    ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (p.shape === 'square') {
+                    ctx.fillRect(-p.size, -p.size, p.size * 2, p.size * 2);
+                } else if (p.shape === 'line') {
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(-p.size * 2, 0);
+                    ctx.lineTo(p.size * 2, 0);
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+
+            animId = requestAnimationFrame(draw);
+        };
+
+        draw();
+
+        // Cleanup on navigation away
+        const observer = new MutationObserver(() => {
+            if (!document.getElementById('hero-dots-canvas')) {
+                cancelAnimationFrame(animId);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.getElementById('main-content'), { childList: true });
+    },
+
     showLoader() { document.getElementById('loader')?.classList.remove('hidden'); },
     hideLoader() { document.getElementById('loader')?.classList.add('hidden'); },
 
@@ -104,22 +247,36 @@ export const UI = {
     pages: {
         home: (currentUser) => `
             <section class="hero homepage-hero">
+                <!-- Animated Dots Background (behind hero content) -->
+                <canvas id="hero-dots-canvas" class="hero-dots-canvas"></canvas>
+
                 <div class="hero-bg-decorators">
                     <div class="decorator dec-1"></div>
                     <div class="decorator dec-2"></div>
                     <div class="decorator dec-3"></div>
                 </div>
-                <h1>${currentUser?.display_name ? `Welcome back, ${currentUser.display_name}!` : 'EdTechra Creative Lab'}</h1>
-                <p>${currentUser?.display_name ? 'Your creative journey continues here.' : 'A premium space for student creators to share their talent.'}</p>
-                <div class="hero-actions">
-                    <a href="#explore" class="btn btn-primary btn-lg" data-link="explore">Explore Work</a>
-                    <a href="#upload" class="btn btn-outline btn-lg" data-link="upload">Upload Yours</a>
+
+                <div class="hero-content-wrapper">
+                    <h1 class="hero-main-title">EdTechra Creative Lab</h1>
+                    <p class="hero-tagline">Showcase your creativity in the digital world. Inspire. Evolve.</p>
+
+                    <!-- Cycling Subtitle — phrases and timing adjustable below -->
+                    <div class="cycling-subtitle-container" aria-live="polite">
+                        <span class="cycling-subtitle" id="cycling-subtitle">Where Stories Live</span>
+                    </div>
+
+                    <p class="hero-welcome">${currentUser?.display_name ? `Welcome back, ${currentUser.display_name}!` : 'Welcome back!'}</p>
+
+                    <div class="hero-actions">
+                        <a href="#explore" class="btn btn-primary btn-lg" data-link="explore">Explore Work</a>
+                        <a href="#upload" class="btn btn-outline btn-lg" data-link="upload">Upload Yours</a>
+                    </div>
                 </div>
             </section>
+
             <section class="trending">
                 <h2>Trending Submissions</h2>
                 <div class="grid" id="trending-grid">
-                    <!-- Trending items injected here -->
                     <p class="text-muted">Loading trending items...</p>
                 </div>
             </section>

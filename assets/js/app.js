@@ -118,6 +118,7 @@ const App = {
                 break;
             case 'home':
                 main.innerHTML = UI.pages.home(this.profile);
+                UI.initHeroAnimations();
                 this.renderTrending();
                 break;
             case 'profile':
@@ -177,10 +178,14 @@ const App = {
         const grid = document.getElementById('trending-grid');
         if (!grid) return;
 
-        const { data, error } = await API.getSubmissions(null, 'rating', 3);
+        const { data, error } = await API.getSubmissions(null, 'created_at', 6);
 
         if (error || !data || data.length === 0) {
-            grid.innerHTML = `<p class="text-muted">No trending items yet.</p>`;
+            grid.innerHTML = `<div class="trending-empty-state">
+                <h3>🚀 Be the first to trend!</h3>
+                <p class="text-muted">Upload your best work and start inspiring others.</p>
+                <a href="#upload" class="btn btn-primary" data-link="upload">Upload Now</a>
+            </div>`;
             return;
         }
 
