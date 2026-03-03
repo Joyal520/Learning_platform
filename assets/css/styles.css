@@ -246,6 +246,23 @@ h3,
 .nav-links {
     display: flex;
     gap: 32px;
+    align-items: center;
+}
+
+.user-menu {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.user-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-main);
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 @media (max-width: 768px) {
@@ -347,6 +364,64 @@ h3,
 
 .main-nav.mobile-open .mobile-menu-toggle span:nth-child(1) {
     transform: translateY(8px) rotate(45deg);
+}
+
+/* Explore Filters & Chips */
+.explore-filters {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+
+.search-box {
+    flex: 1;
+    min-width: 280px;
+}
+
+.category-filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.filter-chip {
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.filter-chip:hover {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.3);
+    color: var(--text-main);
+    transform: translateY(-1px);
+}
+
+.filter-chip.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+    box-shadow: 0 0 15px var(--primary-glow);
+}
+
+@media (max-width: 768px) {
+    .explore-filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .category-filters {
+        justify-content: center;
+    }
 }
 
 .main-nav.mobile-open .mobile-menu-toggle span:nth-child(2) {

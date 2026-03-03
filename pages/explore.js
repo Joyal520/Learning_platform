@@ -5,16 +5,18 @@ import { UI } from '../assets/js/ui.js';
 export const ExplorePage = {
     async init() {
         const grid = document.querySelector('#explore-grid');
-        const catFilter = document.querySelector('#filter-category');
-        const sortFilter = document.querySelector('#filter-sort');
         const searchInput = document.querySelector('#search-input');
+        const categoryFilters = document.querySelector('#category-filters');
+        let currentCategory = 'all';
 
         const loadSubmissions = async () => {
             grid.innerHTML = `<div class="loader-inline"><div class="spinner"></div></div>`;
 
-            const category = catFilter.value === 'all' ? null : catFilter.value;
-            const sort = sortFilter.value;
+            const category = currentCategory === 'all' ? null : currentCategory;
             const search = searchInput.value.toLowerCase();
+
+            // We use a default sort for now since we removed the sort select for a cleaner UI
+            const sort = 'latest';
 
             let { data, error } = await API.getSubmissions(category, sort);
 
@@ -23,7 +25,6 @@ export const ExplorePage = {
                 return;
             }
 
-            // Client side search filter (can be moved to server if needed)
             if (search) {
                 data = data.filter(s =>
                     s.title.toLowerCase().includes(search) ||
@@ -39,8 +40,19 @@ export const ExplorePage = {
             grid.innerHTML = data.map(sub => UI.renderCard(sub)).join('');
         };
 
-        catFilter.addEventListener('change', loadSubmissions);
-        sortFilter.addEventListener('change', loadSubmissions);
+        // Handle category filter clicks
+        categoryFilters?.addEventListener('click', (e) => {
+            const chip = e.target.closest('.filter-chip');
+            if (!chip) return;
+
+            // Update active state
+            categoryFilters.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+
+            currentCategory = chip.dataset.category;
+            loadSubmissions();
+        });
+
         searchInput.addEventListener('input', UI.debounce(loadSubmissions, 500));
 
         await loadSubmissions();
