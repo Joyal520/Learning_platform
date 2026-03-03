@@ -42,8 +42,19 @@ export const DetailPage = {
             this.setupEditButton(sub);
             this.setupFullscreenFab();
             this.setupPreviewFullscreen();
+            // Load fresh like/rate counts from DB
+            this.refreshStats(sub.id);
             UI.hideLoader();
             console.log('[DETAIL] ✅ Loaded');
+
+            // Clean up fullscreen state on navigation
+            window.addEventListener('hashchange', () => {
+                document.body.classList.remove('body-no-scroll');
+                document.querySelectorAll('.fullscreen-active').forEach(el => {
+                    el.classList.remove('fullscreen-active');
+                });
+            }, { once: true });
+
         } catch (err) {
             console.error('[DETAIL] ❌ Error:', err);
             main.innerHTML = `<div style="padding:2rem;text-align:center"><h2>Error loading</h2><p>${err.message}</p></div>`;
@@ -198,21 +209,43 @@ export const DetailPage = {
 
     async refreshStats(subId) {
         try {
-            const { data } = await supabase.from('submission_stats').select('*').eq('id', subId).maybeSingle();
-            if (data) {
-                // Update like count
-                const likeCountSpan = document.getElementById('like-count');
-                if (likeCountSpan) likeCountSpan.textContent = data.like_count || 0;
+            // Try submission_stats view first
+            let likeCount = 0;
+            let avgRating = 0;
 
-                // Update average rating display
-                const avgRatingSpan = document.getElementById('avg-rating');
-                if (avgRatingSpan) avgRatingSpan.textContent = `(${(data.avg_rating || 0).toFixed(1)})`;
+            // Count likes directly
+            const { count: lCount, error: likeErr } = await supabase
+                .from('likes')
+                .select('id', { count: 'exact', head: true })
+                .eq('submission_id', subId);
 
-                // Update star visual
-                const starContainer = document.getElementById('rating-stars');
-                if (starContainer && data.avg_rating) {
-                    starContainer.innerHTML = UI.renderStars(Math.round(data.avg_rating));
-                }
+            if (!likeErr && lCount !== null) {
+                likeCount = lCount;
+            }
+
+            // Calculate average rating directly
+            const { data: ratings, error: rateErr } = await supabase
+                .from('ratings')
+                .select('rating')
+                .eq('submission_id', subId);
+
+            if (!rateErr && ratings && ratings.length > 0) {
+                const sum = ratings.reduce((acc, r) => acc + r.rating, 0);
+                avgRating = sum / ratings.length;
+            }
+
+            // Update like count in UI
+            const likeCountSpan = document.getElementById('like-count');
+            if (likeCountSpan) likeCountSpan.textContent = likeCount;
+
+            // Update average rating display
+            const avgRatingSpan = document.getElementById('avg-rating');
+            if (avgRatingSpan) avgRatingSpan.textContent = `(${avgRating.toFixed(1)})`;
+
+            // Update star visual
+            const starContainer = document.getElementById('rating-stars');
+            if (starContainer && avgRating > 0) {
+                starContainer.innerHTML = UI.renderStars(Math.round(avgRating));
             }
         } catch (err) {
             console.error('[DETAIL] refreshStats error:', err);

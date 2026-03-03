@@ -31,6 +31,11 @@
     box-sizing: border-box;
 }
 
+html {
+    overflow-x: hidden;
+    width: 100%;
+}
+
 body {
     font-family: 'Space Grotesk', 'Inter', sans-serif;
     background-color: var(--background);
@@ -497,8 +502,9 @@ h3,
     position: relative;
     overflow: hidden;
     text-align: center;
-    width: 100%;
-    max-width: 100%;
+    width: 100vw;
+    margin-left: calc(-50vw + 50%);
+    max-width: 100vw;
     min-height: 85vh;
     display: flex;
     align-items: center;
@@ -642,8 +648,22 @@ h3,
 /* Responsive Hero — Mobile */
 @media (max-width: 768px) {
     .hero {
-        min-height: 80vh;
+        min-height: auto;
         padding: 60px 16px 40px;
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .hero-bg-image {
+        background-position: center center;
+        opacity: 0.4;
+    }
+
+    .hero-bg-image::after {
+        background: linear-gradient(to bottom,
+                rgba(10, 10, 26, 0.4) 0%,
+                rgba(10, 10, 26, 0.65) 40%,
+                rgba(10, 10, 26, 0.95) 100%);
     }
 
     .hero-main-title {
@@ -654,6 +674,7 @@ h3,
     .hero-tagline {
         font-size: 1rem;
         padding: 0 8px;
+        color: rgba(255, 255, 255, 0.95);
     }
 
     .cycling-subtitle-container {
@@ -668,6 +689,7 @@ h3,
     .hero-welcome {
         font-size: 0.9rem;
         margin-bottom: 24px;
+        color: rgba(255, 255, 255, 0.85);
     }
 
     .hero-actions {
@@ -1205,8 +1227,8 @@ h3,
     display: none !important;
 }
 
-/* Base Backdrop Dimming */
-.body-no-scroll::before {
+/* Base Backdrop Dimming — only display when fullscreen-active exists */
+.body-no-scroll .fullscreen-active~.fullscreen-backdrop {
     content: '';
     position: fixed;
     inset: 0;
