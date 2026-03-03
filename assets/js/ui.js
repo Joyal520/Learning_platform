@@ -6,7 +6,7 @@ export const UI = {
     init() {
         // Menu toggle mobile
         document.getElementById('menu-toggle')?.addEventListener('click', () => {
-            document.querySelector('.nav-links').classList.toggle('mobile-open');
+            document.querySelector('.main-nav').classList.toggle('mobile-open');
         });
     },
 
@@ -44,7 +44,6 @@ export const UI = {
         };
         const color = categoryColors[sub.category] || '#6366f1';
         let thumbnailUrl = sub.thumbnail_url || null;
-        // Check if thumbnail_path contains a base64 data URL or a storage path
         if (!thumbnailUrl && sub.thumbnail_path) {
             if (sub.thumbnail_path.startsWith('data:')) {
                 thumbnailUrl = sub.thumbnail_path;
@@ -90,6 +89,7 @@ export const UI = {
 
     showToast(message, type = 'info') {
         const container = document.getElementById('toast-container');
+        if (!container) return;
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
         toast.innerHTML = `<span>${message}</span>`;
@@ -101,44 +101,14 @@ export const UI = {
         }, 3000);
     },
 
-    detail(sub, currentUser, userRole) {
-        const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, download_count: 0 };
-        const contentPreview = this.renderContentPreview(sub);
-        const canEdit = (currentUser && currentUser.id === sub.author_id) || userRole === 'admin';
-        return `
-            <section class="detail-page">
-                <div class="detail-header">
-                    <a href="#explore" class="btn btn-outline btn-sm" data-link="explore">← Back to Explore</a>
-                </div>
-                <div class="detail-card glass-card">
-                    <div class="detail-content">
-                        <span class="badge badge-category">${sub.category?.replace('_', ' ') || ''}</span>
-                        <h1 class="detail-title">${sub.title}</h1>
-                        <p class="detail-author">By ${sub.profiles?.display_name || 'Anonymous'} · ${new Date(sub.created_at).toLocaleDateString()}</p>
-                        ${sub.description ? `<p class="detail-description">${sub.description}</p>` : ''}
-                        <div class="detail-preview">
-                            ${contentPreview}
-                        </div>
-                    </div>
-                    <div class="detail-actions">
-                        <button id="like-btn" class="btn btn-outline btn-sm">❤ Like <span>${stats.like_count}</span></button>
-                        <div id="rating-stars" class="rating-stars">
-                            ${this.renderStars(stats.avg_rating)}
-                        </div>
-                        ${sub.file_path ? `<button id="download-btn" class="btn btn-primary btn-sm">📥 Download</button>` : ''}
-                        ${canEdit ? `<button id="edit-btn" class="btn btn-edit btn-sm">✏️ Edit</button>` : ''}
-                    </div>
-                </div>
-            </section>
-
-            <!-- Floating Fullscreen Button — same as Edectra Tech Quiz -->
-            <button class="fullscreen-fab" id="fullscreenFab" title="Toggle Fullscreen">⛶</button>
-        `;
-    },
-
     pages: {
         home: () => `
-            <section class="hero">
+            <section class="hero homepage-hero">
+                <div class="hero-bg-decorators">
+                    <div class="decorator dec-1"></div>
+                    <div class="decorator dec-2"></div>
+                    <div class="decorator dec-3"></div>
+                </div>
                 <h1>EdTechra Creative Lab</h1>
                 <p>A premium space for student creators to share their talent.</p>
                 <div class="hero-actions">
@@ -249,204 +219,85 @@ export const UI = {
 
         explore: () => `
             <div class="page-header">
-                <h1>Explore Student Talent</h1>
-                <p class="text-muted">Browse through approved works from our student community.</p>
+                <h1>Explore Creative Works</h1>
+                <p class="text-muted">Discover the best content from student creators.</p>
             </div>
-            <div class="explore-filters card">
-                <div class="filter-group">
-                    <label>Category</label>
-                    <select id="filter-category" class="form-control">
-                        <option value="all">All Categories</option>
-                        <option value="short_stories">Short Stories</option>
-                        <option value="long_stories">Long Stories</option>
-                        <option value="comics">Comics</option>
-                        <option value="essays">Essays</option>
-                        <option value="articles">Articles</option>
-                        <option value="weird_facts">Weird Facts</option>
-                        <option value="conversations">Conversations</option>
-                        <option value="poems">Poems</option>
-                        <option value="images">Images</option>
-                        <option value="songs">Songs</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>Sort By</label>
-                    <select id="filter-sort" class="form-control">
-                        <option value="created_at">Newest First</option>
-                        <option value="rating">Top Rated</option>
-                        <option value="likes">Most Liked</option>
-                        <option value="downloads">Most Downloaded</option>
-                    </select>
-                </div>
-                <div class="filter-group search">
-                    <label>Search</label>
+            <div class="explore-filters card glass-card p-20 mb-30">
+                <div class="search-box">
                     <input type="text" id="search-input" class="form-control" placeholder="Search by title or author...">
                 </div>
-            </div>
-            <div id="explore-grid" class="grid-3 explore-grid">
-                <div class="loader-inline"><div class="spinner"></div></div>
-            </div>
-        `,
-
-        detail: (sub) => `
-            <div class="detail-container">
-                <div class="detail-header">
-                    <a href="#explore" class="back-link">&larr; Back to Explore</a>
-                    <h1>${sub.title}</h1>
-                    <div class="sub-meta">
-                        <span class="badge badge-category">${sub.category.replace('_', ' ')}</span>
-                        <span>By ${sub.profiles?.display_name || 'Anonymous'}</span>
-                        <span>• ${new Date(sub.created_at).toLocaleDateString()}</span>
-                    </div>
-                </div>
-                
-                <div class="detail-content card p-40 shadow-sm">
-                    ${UI.renderContentPreview(sub)}
-                    <p class="sub-description mt-20">${sub.description || ''}</p>
-                </div>
-
-                <div class="detail-actions">
-                    <div class="interaction-group">
-                        <button class="btn btn-outline" id="like-btn" data-id="${sub.id}">
-                            <span class="icon">❤</span> <span id="like-count">${sub.submission_stats?.[0]?.like_count || 0}</span>
-                        </button>
-                        <div class="rating-stars" id="rating-stars" data-id="${sub.id}">
-                            ${UI.renderStars(sub.submission_stats?.[0]?.avg_rating || 0)}
-                        </div>
-                    </div>
-                    ${sub.file_path ? `
-                        <button class="btn btn-primary" id="download-btn" data-id="${sub.id}">
-                            Download File
-                        </button>
-                    ` : ''}
+                <div class="category-filters" id="category-filters">
+                    <button class="filter-chip active" data-category="all">All</button>
+                    <button class="filter-chip" data-category="short_stories">Short Stories</button>
+                    <button class="filter-chip" data-category="long_stories">Long Stories</button>
+                    <button class="filter-chip" data-category="comics">Comics</button>
+                    <button class="filter-chip" data-category="essays">Essays</button>
+                    <button class="filter-chip" data-category="articles">Articles</button>
+                    <button class="filter-chip" data-category="weird_facts">Weird Facts</button>
+                    <button class="filter-chip" data-category="conversations">Conversations</button>
+                    <button class="filter-chip" data-category="poems">Poems</button>
+                    <button class="filter-chip" data-category="images">Images</button>
+                    <button class="filter-chip" data-category="songs">Songs</button>
                 </div>
             </div>
-        `,
-
-        dashboard: (role) => `
-            <div class="page-header">
-                <h1>${role === 'admin' ? 'Admin' : 'Teacher'} Dashboard</h1>
-                <p class="text-muted">Manage ${role === 'admin' ? 'users and ' : ''}content moderation.</p>
+            <div class="grid" id="explore-grid">
+                <!-- Explored items injected here -->
             </div>
-            
-            ${role === 'admin' ? `
-                <div class="stats-grid grid-4 mb-40">
-                    <div class="card p-24"><h3>Total Users</h3><p id="stat-users" class="stat-val">-</p></div>
-                    <div class="card p-24"><h3>Pending</h3><p id="stat-pending" class="stat-val">-</p></div>
-                    <div class="card p-24"><h3>Approved</h3><p id="stat-approved" class="stat-val">-</p></div>
-                    <div class="card p-24 storage-card">
-                        <h3>System Storage</h3>
-                        <div class="storage-stats">
-                            <p id="stat-storage" class="stat-val">-</p>
-                            <span class="text-muted">/ 1 GB</span>
-                        </div>
-                        <div class="storage-bar-container">
-                            <div id="storage-bar" class="storage-bar" style="width: 0%"></div>
-                        </div>
-                    </div>
-                </div>
-            ` : ''}
-
-            <div class="tabs">
-                <button class="tab-btn active" data-tab="pending">Pending Review</button>
-                <button class="tab-btn" data-tab="all">All Submissions</button>
-                ${role === 'admin' ? `<button class="tab-btn" data-tab="users">User Management</button>` : ''}
-            </div>
-
-            <div id="dashboard-content" class="mt-20">
-                <div class="loader-inline"><div class="spinner"></div></div>
-            </div>
-        `,
-
-        submissionRow: (sub, role) => `
-            <div class="submission-item dashboard-row" data-id="${sub.id}">
-                <div class="sub-info">
-                    <h3>${sub.title}</h3>
-                    <div class="sub-meta">
-                        <span>By ${sub.profiles?.display_name || 'Anonymous'}</span>
-                        <span>• ${sub.category}</span>
-                        <span>• ${new Date(sub.created_at).toLocaleDateString()}</span>
-                    </div>
-                </div>
-                <div class="sub-actions">
-                    <button class="btn btn-outline btn-sm action-preview" data-id="${sub.id}">Preview</button>
-                    ${role === 'admin' ? `
-                        <button class="btn btn-success btn-sm action-approve" data-id="${sub.id}">Approve</button>
-                    ` : ''}
-                    <button class="btn btn-danger btn-sm action-reject" data-id="${sub.id}">Reject</button>
-                </div>
-            </div>
-        `,
-
-        userRow: (u) => `
-            <div class="submission-item dashboard-row">
-                <div class="sub-info">
-                    <h3>${u.display_name || 'Anonymous'}</h3>
-                    <div class="sub-meta">
-                        <span>Role: ${u.role}</span>
-                        <span>• Joined: ${new Date(u.created_at).toLocaleDateString()}</span>
-                    </div>
-                </div>
-                <div class="sub-actions">
-                    <select class="form-control sm role-select" data-id="${u.id}">
-                        <option value="student" ${u.role === 'student' ? 'selected' : ''}>Student</option>
-                        <option value="teacher" ${u.role === 'teacher' ? 'selected' : ''}>Teacher</option>
-                        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
-                    </select>
-                </div>
-            </div>
+            <div id="explore-loader" class="loader-inline hidden"><div class="spinner"></div></div>
         `,
 
         login: () => `
             <div class="auth-card animate-fade-in">
                 <h2>Welcome Back</h2>
-                <p class="text-muted">Sign in to EDTECHRA Hub</p>
+                <p class="text-muted">Sign in to continue your creative journey.</p>
                 <form id="login-form">
                     <div class="form-group">
-                        <label>Email Address</label>
-                        <input type="email" name="email" class="form-control" required placeholder="name@school.edu">
+                        <label>Email</label>
+                        <input type="email" name="email" class="form-control" required placeholder="name@example.com">
                     </div>
                     <div class="form-group">
                         <label>Password</label>
                         <input type="password" name="password" class="form-control" required placeholder="••••••••">
                     </div>
-                    <button type="submit" class="btn btn-primary btn-full">Login</button>
+                    <button type="submit" class="btn btn-primary btn-lg w-100">Login</button>
                     
-                    <div class="divider"><span>OR</span></div>
+                    <div class="auth-divider"><span>OR</span></div>
                     
-                    <button type="button" id="google-login" class="btn btn-outline btn-block">
+                    <button type="button" class="btn btn-outline w-100 google-btn" id="google-login">
                         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18" height="18" alt="Google">
                         Continue with Google
                     </button>
 
-                    <p class="auth-footer">Don't have an account? <a href="#" data-link="signup">Sign Up</a></p>
+                    <p class="auth-footer">Don't have an account? <a href="#" data-link="onboarding">Sign Up</a></p>
                 </form>
             </div>
         `,
 
         signup: () => `
             <div class="auth-card animate-fade-in">
-                <h2>Join Student Hub</h2>
-                <p class="text-muted">Create your profile to start sharing</p>
+                <h2>Create Account</h2>
+                <p class="text-muted">Join the EDTECHRA community today.</p>
                 <form id="signup-form">
                     <div class="form-group">
-                        <label>Display Name</label>
-                        <input type="text" name="display_name" class="form-control" required placeholder="CreativeCat">
+                        <label>Full Name</label>
+                        <input type="text" name="display_name" class="form-control" required placeholder="John Doe">
                     </div>
                     <div class="form-group">
-                        <label>Email Address</label>
-                        <input type="email" name="email" class="form-control" required placeholder="name@school.edu">
+                        <label>Email</label>
+                        <input type="email" name="email" class="form-control" required placeholder="name@example.com">
                     </div>
                     <div class="form-group">
                         <label>Password</label>
-                        <input type="password" name="password" class="form-control" required minlength="6" placeholder="••••••••">
+                        <input type="password" name="password" class="form-control" required placeholder="Min. 6 characters">
                     </div>
+                    
                     <input type="hidden" name="role" value="${localStorage.getItem('edtechra_role') || 'student'}">
-                    <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+
+                    <button type="submit" class="btn btn-primary btn-lg w-100">Create Account</button>
                     
-                    <div class="divider"><span>OR</span></div>
+                    <div class="auth-divider"><span>OR</span></div>
                     
-                    <button type="button" id="google-signup" class="btn btn-outline btn-block">
+                    <button type="button" class="btn btn-outline w-100 google-btn" id="google-signup">
                         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18" height="18" alt="Google">
                         Sign up with Google
                     </button>
@@ -503,7 +354,6 @@ export const UI = {
         const googleBtn = document.getElementById(type === 'login' ? 'google-login' : 'google-signup');
         googleBtn?.addEventListener('click', async () => {
             UI.showLoader();
-            // Ensure any role selected is ready for sync after redirect
             const { error } = await Auth.signInWithGoogle();
             if (error) UI.showToast(error.message, 'error');
             UI.hideLoader();

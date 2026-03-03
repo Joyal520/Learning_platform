@@ -15,6 +15,17 @@ const App = {
     async init() {
         UI.showLoader();
 
+        // Handle auth errors in URL (Search params or Fragments)
+        const params = new URLSearchParams(window.location.search);
+        const fragmentParams = new URLSearchParams(window.location.hash.substring(1));
+        const errorMsg = params.get('error_description') || fragmentParams.get('error_description');
+
+        if (errorMsg) {
+            UI.showToast(errorMsg.replace(/\+/g, ' '), 'error');
+            // Clean up URL to prevent repeated toasts
+            window.history.replaceState(null, '', window.location.pathname);
+        }
+
         // Listen for auth changes
         Auth.onAuthStateChange(async (event, session) => {
             console.log('Auth event:', event);
@@ -75,6 +86,12 @@ const App = {
 
     async route() {
         const rawHash = window.location.hash.substring(1) || 'home';
+
+        // If the hash contains error info, it's not a valid page route
+        if (rawHash.includes('error_description') || rawHash.includes('access_token')) {
+            return this.navigate('home');
+        }
+
         // Handle cases like #/home or #explore
         const cleanHash = rawHash.startsWith('/') ? rawHash.substring(1) : rawHash;
         const [page, id] = cleanHash.split('/');
@@ -161,17 +178,22 @@ const App = {
     },
 
     renderNav() {
+        const nav = document.querySelector('.main-nav');
         const navAuth = document.getElementById('nav-auth');
         const navLinks = document.getElementById('nav-links');
 
         if (this.user) {
+            nav.classList.add('user-logged-in');
             navAuth.innerHTML = `
                 <div class="user-menu">
                     <span class="user-name">${this.profile?.display_name || this.user.email}</span>
                     <button class="btn btn-outline btn-sm" id="logout-btn">Logout</button>
                 </div>
             `;
-            document.getElementById('logout-btn')?.addEventListener('click', () => Auth.signOut());
+            document.getElementById('logout-btn')?.addEventListener('click', () => {
+                nav.classList.remove('mobile-open');
+                Auth.signOut();
+            });
 
             navLinks.innerHTML = `
                 <a href="#" class="nav-link" data-link="home">Home</a>
@@ -184,12 +206,25 @@ const App = {
                 navLinks.innerHTML += `<a href="#" class="nav-link" data-link="dashboard">Dashboard</a>`;
             }
         } else {
+            nav.classList.remove('user-logged-in');
             navAuth.innerHTML = `
                 <a href="#" class="btn btn-outline" data-link="login">Login</a>
                 <a href="#" class="btn btn-primary" data-link="signup">Sign Up</a>
             `;
             navLinks.innerHTML = `<a href="#" class="nav-link" data-link="home">Home</a>`;
         }
+
+        // Close mobile menu when a nav link is clicked
+        navLinks.querySelectorAll('[data-link]').forEach(link => {
+            link.addEventListener('click', () => {
+                nav.classList.remove('mobile-open');
+            });
+        });
+        navAuth.querySelectorAll('[data-link]').forEach(link => {
+            link.addEventListener('click', () => {
+                nav.classList.remove('mobile-open');
+            });
+        });
     },
 
     updateNavActive() {
