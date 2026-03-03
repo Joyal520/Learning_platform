@@ -41,7 +41,7 @@ body {
     overflow-x: hidden;
 }
 
-/* Liquid Mesh Background */
+/* Static Premium Background (High Performance) */
 body::before {
     content: '';
     position: fixed;
@@ -56,52 +56,20 @@ body::before {
         radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
         #04040c;
     filter: blur(60px);
-    /* Reduced blur for performance */
-    animation: liquidMesh 30s ease-in-out infinite;
-    /* Slower, smoother animation */
 }
 
-@keyframes liquidMesh {
-
-    0%,
-    100% {
-        transform: scale(1);
-    }
-
-    50% {
-        transform: scale(1.05);
-    }
-}
-
-/* Floating Orbs */
+/* Floating Orbs (Static) */
 body::after {
     content: '';
     position: fixed;
     width: 600px;
     height: 600px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.05) 0%, transparent 70%);
     top: -100px;
     right: -200px;
     z-index: -1;
-    animation: floatOrb 25s ease-in-out infinite;
     pointer-events: none;
-}
-
-@keyframes floatOrb {
-
-    0%,
-    100% {
-        transform: translate(0, 0) scale(1);
-    }
-
-    33% {
-        transform: translate(-80px, 120px) scale(1.1);
-    }
-
-    66% {
-        transform: translate(100px, -50px) scale(0.9);
-    }
 }
 
 /* Homepage Hero Specific Animations */
@@ -502,9 +470,6 @@ h3,
     opacity: 1;
 }
 
-.btn-primary:hover {
-    /* Standard hover effects removed for performance - Snake Hover only */
-}
 
 .btn-outline {
     background-color: transparent;
@@ -675,7 +640,6 @@ h3,
 }
 
 .content-card:hover {
-    /* Standard hover effects removed for performance - Snake Hover only */
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 

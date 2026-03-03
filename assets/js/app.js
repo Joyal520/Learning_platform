@@ -82,9 +82,11 @@ const App = {
     },
 
     navigate(page) {
-        window.location.hash = page;
-        // route() will be called by hashchange listener if added, 
-        // or manually here if not. Let's add hashchange listener for better DX.
+        if (window.location.hash.substring(1) === page) {
+            this.route();
+        } else {
+            window.location.hash = page;
+        }
     },
 
     async route() {
