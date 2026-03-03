@@ -102,18 +102,18 @@ export const UI = {
     },
 
     pages: {
-        home: () => `
+        home: (currentUser) => `
             <section class="hero homepage-hero">
                 <div class="hero-bg-decorators">
                     <div class="decorator dec-1"></div>
                     <div class="decorator dec-2"></div>
                     <div class="decorator dec-3"></div>
                 </div>
-                <h1>EdTechra Creative Lab</h1>
-                <p>A premium space for student creators to share their talent.</p>
+                <h1>${currentUser?.display_name ? `Welcome back, ${currentUser.display_name}!` : 'EdTechra Creative Lab'}</h1>
+                <p>${currentUser?.display_name ? 'Your creative journey continues here.' : 'A premium space for student creators to share their talent.'}</p>
                 <div class="hero-actions">
                     <a href="#explore" class="btn btn-primary btn-lg" data-link="explore">Explore Work</a>
-                    <a href="#upload" class="btn btn-outline btn-lg" data-link="upload">Upload Yours</a>
+                    <button class="btn btn-outline btn-lg" data-link="upload">Upload Yours</button>
                 </div>
             </section>
             <section class="trending">
@@ -124,6 +124,91 @@ export const UI = {
                 </div>
             </section>
         `,
+
+        profile: (user) => `
+            <div class="profile-container animate-fade-in">
+                <div class="glass-card profile-card">
+                    <div class="profile-header">
+                        <div class="profile-avatar-large">
+                            ${(user.display_name || 'U').charAt(0).toUpperCase()}
+                        </div>
+                        <h2>Profile Settings</h2>
+                        <p class="text-muted">Update your public presence on EDTECHRA.</p>
+                    </div>
+
+                    <form id="profile-form">
+                        <div class="form-group">
+                            <label>Display Name</label>
+                            <input type="text" name="display_name" class="form-control" value="${user.display_name || ''}" placeholder="How should we call you?">
+                        </div>
+                        <div class="form-group">
+                            <label>Email (Read-only)</label>
+                            <input type="email" class="form-control" value="${user.email || ''}" readonly style="opacity: 0.6">
+                        </div>
+                        <div class="form-group">
+                            <label>Role</label>
+                            <input type="text" class="form-control" value="${user.role || 'student'}" readonly style="opacity: 0.6">
+                        </div>
+                        
+                        <div style="margin-top: 32px">
+                            <button type="submit" class="btn btn-primary btn-lg w-100">Save Changes</button>
+                            <button type="button" class="btn btn-outline btn-lg w-100 mt-10" id="logout-btn-profile">Logout</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `,
+
+        detail: (sub, currentUser, userRole) => {
+            const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
+            const isOwner = currentUser?.id === sub.author_id;
+            const isAdmin = userRole === 'admin';
+
+            return `
+                <div class="detail-container animate-fade-in">
+                    <div class="detail-header">
+                        <a href="#explore" class="back-link" data-link="explore">← Back to Explore</a>
+                        <h1 class="detail-title">${sub.title}</h1>
+                        <p class="detail-author">By ${sub.profiles?.display_name || 'Anonymous'} • ${new Date(sub.created_at).toLocaleDateString()}</p>
+                    </div>
+
+                    <div class="detail-card glass-card">
+                        <div class="detail-content">
+                            ${this.renderContentPreview(sub)}
+                        </div>
+                        
+                        <div class="detail-description">
+                            <p>${sub.description || 'No description provided.'}</p>
+                        </div>
+
+                        <div class="detail-actions">
+                            <div class="interaction-group">
+                                <button class="interaction-btn" id="like-btn" title="Like this work">
+                                    <svg class="heart-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                    </svg>
+                                    <span id="like-count">${stats.like_count}</span>
+                                </button>
+
+                                <div class="rating-group">
+                                    <div class="rating-stars" id="rating-stars">
+                                        ${this.renderStars(stats.avg_rating)}
+                                    </div>
+                                    <span class="text-xs text-muted">(${Number(stats.avg_rating).toFixed(1)})</span>
+                                </div>
+                            </div>
+
+                            <div class="main-actions">
+                                ${sub.file_path ? `<button class="btn btn-outline" id="download-btn">Download File</button>` : ''}
+                                ${isOwner || isAdmin ? `<button class="btn btn-edit" id="edit-btn">Edit Submission</button>` : ''}
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="fullscreen-fab" id="fullscreenFab" title="Toggle Fullscreen Site">⛶</button>
+                </div>
+            `;
+        },
 
         upload: () => `
             <div class="page-header">
@@ -309,25 +394,38 @@ export const UI = {
 
         onboarding: () => `
             <div class="auth-card onboarding-card animate-fade-in">
-                <div class="onboarding-header">
-                    <h2>Welcome to EDTECHRA</h2>
-                    <p class="text-muted">First, tell us who you are so we can tailor your experience.</p>
+                <!-- Step 1: Name -->
+                <div id="onboarding-step-1" class="onboarding-step active">
+                    <div class="onboarding-header">
+                        <h2>How can we call you?</h2>
+                        <p class="text-muted">Like Snapchat, let's start with your name.</p>
+                    </div>
+                    <input type="text" id="onboarding-name" class="name-input-large" placeholder="Your Name" autofocus>
+                    <button id="next-to-roles" class="btn btn-primary btn-lg w-100">Continue</button>
                 </div>
-                <div class="role-grid">
-                    <div class="role-option-large" data-role="student">
-                        <span class="role-emoji">🎓</span>
-                        <h3>Student</h3>
-                        <p>Explore, learn, and share your creative work.</p>
+
+                <!-- Step 2: Roles -->
+                <div id="onboarding-step-2" class="onboarding-step">
+                    <div class="onboarding-header">
+                        <h2>Choose Your Path</h2>
+                        <p class="text-muted">What's your primary goal on EDTECHRA?</p>
                     </div>
-                    <div class="role-option-large" data-role="teacher">
-                        <span class="role-emoji">👩‍🏫</span>
-                        <h3>Teacher</h3>
-                        <p>Review student work and manage submissions.</p>
-                    </div>
-                    <div class="role-option-large" data-role="admin">
-                        <span class="role-emoji">🛡️</span>
-                        <h3>Admin</h3>
-                        <p>Full system access and user management.</p>
+                    <div class="role-grid">
+                        <div class="role-option-large" data-role="student">
+                            <span class="role-emoji">🎓</span>
+                            <h3>Student</h3>
+                            <p>Explore, learn, and share your creative work.</p>
+                        </div>
+                        <div class="role-option-large" data-role="teacher">
+                            <span class="role-emoji">👩‍🏫</span>
+                            <h3>Teacher</h3>
+                            <p>Review student work and manage submissions.</p>
+                        </div>
+                        <div class="role-option-large" data-role="admin">
+                            <span class="role-emoji">🛡️</span>
+                            <h3>Admin</h3>
+                            <p>Full system access and user management.</p>
+                        </div>
                     </div>
                 </div>
                 <p class="text-center mt-20">Already have a role? <a href="#login">Sign In</a></p>
@@ -336,6 +434,19 @@ export const UI = {
     },
 
     setupOnboarding() {
+        const nextBtn = document.getElementById('next-to-roles');
+        const nameInput = document.getElementById('onboarding-name');
+
+        nextBtn?.addEventListener('click', () => {
+            const name = nameInput.value.trim();
+            if (!name) return UI.showToast('Please enter your name', 'error');
+
+            localStorage.setItem('edtechra_display_name', name);
+
+            document.getElementById('onboarding-step-1').classList.remove('active');
+            document.getElementById('onboarding-step-2').classList.add('active');
+        });
+
         document.querySelectorAll('.role-option-large').forEach(card => {
             card.addEventListener('click', () => {
                 const role = card.dataset.role;
@@ -346,9 +457,47 @@ export const UI = {
         });
     },
 
+    setupProfileEdit(user) {
+        const form = document.getElementById('profile-form');
+        const logoutBtn = document.getElementById('logout-btn-profile');
+
+        logoutBtn?.addEventListener('click', async () => {
+            UI.showLoader();
+            await Auth.signOut();
+            UI.hideLoader();
+            window.location.hash = 'login';
+        });
+
+        form?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            const data = {
+                display_name: formData.get('display_name')
+            };
+
+            UI.showLoader();
+            const { error } = await Auth.updateProfile(user.id, data);
+            UI.hideLoader();
+
+            if (error) {
+                UI.showToast(error.message, 'error');
+            } else {
+                UI.showToast('Profile updated!', 'success');
+                // Refresh App state
+                window.location.reload();
+            }
+        });
+    },
+
     setupAuthForms(type) {
         const form = document.querySelector(`#${type}-form`);
         if (!form) return;
+
+        // Auto-fill display name from onboarding if present
+        if (type === 'signup') {
+            const nameInput = form.querySelector('[name="display_name"]');
+            if (nameInput) nameInput.value = localStorage.getItem('edtechra_display_name') || '';
+        }
 
         // Google Auth Listener
         const googleBtn = document.getElementById(type === 'login' ? 'google-login' : 'google-signup');
@@ -380,7 +529,8 @@ export const UI = {
             } else {
                 UI.showToast(type === 'login' ? 'Welcome back!' : 'Account created successfully!', 'success');
                 if (type === 'signup') {
-                    localStorage.removeItem('edtechra_role'); // Clean up
+                    localStorage.removeItem('edtechra_role');
+                    localStorage.removeItem('edtechra_display_name');
                     window.location.hash = 'login';
                 }
             }

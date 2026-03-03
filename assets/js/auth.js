@@ -57,6 +57,14 @@ export const Auth = {
         return { data, error };
     },
 
+    async updateProfile(userId, data) {
+        const { error } = await supabase
+            .from('profiles')
+            .update(data)
+            .eq('id', userId);
+        return { error };
+    },
+
     async updateProfileRole(userId, role) {
         const { error } = await supabase
             .from('profiles')

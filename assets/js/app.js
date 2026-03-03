@@ -117,8 +117,13 @@ const App = {
                 UI.setupOnboarding();
                 break;
             case 'home':
-                main.innerHTML = UI.pages.home();
+                main.innerHTML = UI.pages.home(this.profile);
                 this.renderTrending();
+                break;
+            case 'profile':
+                if (!this.user) return this.navigate('login');
+                main.innerHTML = UI.pages.profile(this.profile || this.user);
+                UI.setupProfileEdit(this.profile || this.user);
                 break;
             case 'login':
                 if (this.user) return this.navigate('home');
@@ -191,7 +196,7 @@ const App = {
             nav.classList.add('user-logged-in');
             navAuth.innerHTML = `
                 <div class="user-menu">
-                    <span class="user-name">${this.profile?.display_name || this.user.email}</span>
+                    <span class="user-name" data-link="profile" style="cursor:pointer">${this.profile?.display_name || this.user.email}</span>
                     <button class="btn btn-outline btn-sm" id="logout-btn">Logout</button>
                 </div>
             `;
@@ -203,6 +208,7 @@ const App = {
             navLinks.innerHTML = `
                 <a href="#" class="nav-link" data-link="home">Home</a>
                 <a href="#" class="nav-link" data-link="explore">Explore</a>
+                <a href="#" class="nav-link" data-link="profile">Profile</a>
                 <a href="#" class="nav-link" data-link="upload">Upload</a>
                 <a href="#" class="nav-link" data-link="my-uploads">My Uploads</a>
             `;

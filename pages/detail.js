@@ -37,7 +37,7 @@ export const DetailPage = {
 
             const currentUser = App.user;
             const userRole = App.profile?.role;
-            main.innerHTML = UI.detail(sub, currentUser, userRole);
+            main.innerHTML = UI.pages.detail(sub, currentUser, userRole);
             this.setupInteractions(sub);
             this.setupEditButton(sub);
             this.setupFullscreenFab();
@@ -92,23 +92,36 @@ export const DetailPage = {
         const likeBtn = document.getElementById('like-btn');
         const starContainer = document.getElementById('rating-stars');
         const downloadBtn = document.getElementById('download-btn');
+        const likeCountSpan = document.getElementById('like-count');
+
+        // Check if already liked and update UI
+        this.checkIfLiked(sub.id, likeBtn);
 
         likeBtn?.addEventListener('click', async () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return UI.showToast('Please login to like', 'error');
+
+            UI.showLoader();
             const { error } = await supabase.from('likes').insert({
                 submission_id: sub.id, user_id: user.id
             });
+
             if (error) {
-                if (error.code === '23505') {
+                if (error.code === '23505') { // Unique constraint violation (already liked)
                     await supabase.from('likes').delete().match({ submission_id: sub.id, user_id: user.id });
+                    likeBtn.classList.remove('liked');
                     UI.showToast('Unliked');
                 } else {
                     UI.showToast(error.message, 'error');
                 }
             } else {
+                likeBtn.classList.add('liked');
                 UI.showToast('Liked!', 'success');
             }
+
+            // Refresh counts
+            this.refreshStats(sub.id);
+            UI.hideLoader();
         });
 
         starContainer?.querySelectorAll('.star').forEach(star => {
@@ -116,11 +129,22 @@ export const DetailPage = {
                 const rating = star.dataset.value;
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) return UI.showToast('Please login to rate', 'error');
+
+                UI.showLoader();
                 const { error } = await supabase.from('ratings').upsert({
                     submission_id: sub.id, user_id: user.id, rating: parseInt(rating)
                 });
-                if (error) UI.showToast(error.message, 'error');
-                else UI.showToast('Rated!', 'success');
+
+                if (error) {
+                    UI.showToast(error.message, 'error');
+                } else {
+                    UI.showToast('Rated!', 'success');
+                    // Update star colors locally first
+                    starContainer.innerHTML = UI.renderStars(rating);
+                    // Refresh stats
+                    this.refreshStats(sub.id);
+                }
+                UI.hideLoader();
             });
         });
 
@@ -131,6 +155,26 @@ export const DetailPage = {
             });
             window.open(sub.public_url, '_blank');
         });
+    },
+
+    async checkIfLiked(subId, btn) {
+        if (!btn) return;
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data } = await supabase.from('likes').select('id').match({
+            submission_id: subId, user_id: user.id
+        }).maybeSingle();
+
+        if (data) btn.classList.add('liked');
+    },
+
+    async refreshStats(subId) {
+        const { data } = await supabase.from('submission_stats').select('*').eq('id', subId).maybeSingle();
+        if (data) {
+            const likeCountSpan = document.getElementById('like-count');
+            if (likeCountSpan) likeCountSpan.textContent = data.like_count;
+        }
     },
 
     setupEditButton(sub) {
