@@ -113,7 +113,7 @@ export const UI = {
                 <p>${currentUser?.display_name ? 'Your creative journey continues here.' : 'A premium space for student creators to share their talent.'}</p>
                 <div class="hero-actions">
                     <a href="#explore" class="btn btn-primary btn-lg" data-link="explore">Explore Work</a>
-                    <button class="btn btn-outline btn-lg" data-link="upload">Upload Yours</button>
+                    <a href="#upload" class="btn btn-outline btn-lg" data-link="upload">Upload Yours</a>
                 </div>
             </section>
             <section class="trending">
@@ -132,14 +132,16 @@ export const UI = {
                         <div class="profile-avatar-large">
                             ${(user.display_name || 'U').charAt(0).toUpperCase()}
                         </div>
-                        <h2>Profile Settings</h2>
-                        <p class="text-muted">Update your public presence on EDTECHRA.</p>
+                        <div class="profile-titles">
+                            <h2>Profile Settings</h2>
+                            <p class="text-muted">Update your public presence on EDTECHRA.</p>
+                        </div>
                     </div>
 
                     <form id="profile-form">
                         <div class="form-group">
                             <label>Display Name</label>
-                            <input type="text" name="display_name" class="form-control" value="${user.display_name || ''}" placeholder="How should we call you?">
+                            <input type="text" name="display_name" class="form-control" value="${user.display_name || user.email?.split('@')[0] || ''}" placeholder="How should we call you?">
                         </div>
                         <div class="form-group">
                             <label>Email (Read-only)</label>
@@ -150,9 +152,9 @@ export const UI = {
                             <input type="text" class="form-control" value="${user.role || 'student'}" readonly style="opacity: 0.6">
                         </div>
                         
-                        <div style="margin-top: 32px">
-                            <button type="submit" class="btn btn-primary btn-lg w-100">Save Changes</button>
-                            <button type="button" class="btn btn-outline btn-lg w-100 mt-10" id="logout-btn-profile">Logout</button>
+                        <div class="profile-form-actions">
+                            <button type="submit" class="btn btn-primary btn-lg">Save Changes</button>
+                            <button type="button" class="btn btn-outline btn-lg" id="logout-btn-profile">Logout</button>
                         </div>
                     </form>
                 </div>
