@@ -15,8 +15,8 @@ export const ExplorePage = {
             const category = currentCategory === 'all' ? null : currentCategory;
             const search = searchInput.value.toLowerCase();
 
-            // We use a default sort for now since we removed the sort select for a cleaner UI
-            const sort = 'latest';
+            // Use 'created_at' for the latest submissions
+            const sort = 'created_at';
 
             let { data, error } = await API.getSubmissions(category, sort);
 
