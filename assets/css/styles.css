@@ -51,25 +51,25 @@ body::before {
     height: 100%;
     z-index: -2;
     background:
-        radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
-        radial-gradient(circle at 85% 85%, rgba(34, 211, 238, 0.15) 0%, transparent 40%),
-        radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(34, 211, 238, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
         #04040c;
-    filter: blur(80px);
-    animation: liquidMesh 20s linear infinite;
+    filter: blur(60px);
+    /* Reduced blur for performance */
+    animation: liquidMesh 30s ease-in-out infinite;
+    /* Slower, smoother animation */
 }
 
 @keyframes liquidMesh {
-    0% {
-        background-position: 0% 0%, 0% 0%, 0% 0%;
+
+    0%,
+    100% {
+        transform: scale(1);
     }
 
     50% {
-        background-position: 10% 20%, -10% -20%, 5% 5%;
-    }
-
-    100% {
-        background-position: 0% 0%, 0% 0%, 0% 0%;
+        transform: scale(1.05);
     }
 }
 
@@ -503,8 +503,7 @@ h3,
 }
 
 .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px var(--primary-glow);
+    /* Standard hover effects removed for performance - Snake Hover only */
 }
 
 .btn-outline {
@@ -676,9 +675,8 @@ h3,
 }
 
 .content-card:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4), 0 0 20px var(--primary-glow);
-    border-color: rgba(255, 255, 255, 0.2);
+    /* Standard hover effects removed for performance - Snake Hover only */
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
 
