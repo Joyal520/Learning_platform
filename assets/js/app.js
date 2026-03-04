@@ -35,15 +35,30 @@ const App = {
                 const { data } = await Auth.getProfile(this.user.id);
                 this.profile = data;
 
-                // OAuth Role Sync Logic: 
-                // If profile is fresh but we have a pending role from onboarding
+                // OAuth Sync Logic: Sync role and name from onboarding
                 const pendingRole = localStorage.getItem('edtechra_role');
+                const pendingName = localStorage.getItem('edtechra_display_name');
+
+                let profileUpdated = false;
+
                 if (this.profile && pendingRole && this.profile.role === 'student' && pendingRole !== 'student') {
                     await Auth.updateProfileRole(this.user.id, pendingRole);
                     this.profile.role = pendingRole;
                     localStorage.removeItem('edtechra_role');
-                    UI.showToast(`Account set up as ${pendingRole}!`, 'success');
+                    profileUpdated = true;
                 }
+
+                if (this.profile && pendingName && (!this.profile.display_name || this.profile.display_name === this.user.email)) {
+                    await Auth.updateProfile(this.user.id, { display_name: pendingName });
+                    this.profile.display_name = pendingName;
+                    localStorage.removeItem('edtechra_display_name');
+                    profileUpdated = true;
+                }
+
+                if (profileUpdated) {
+                    UI.showToast(`Account setup complete! Welcome, ${this.profile.display_name}!`, 'success');
+                }
+
 
                 // Auto-promote 'joel' accounts to admin
                 if (this.profile && this.profile.role !== 'admin') {

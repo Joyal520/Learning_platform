@@ -14,10 +14,17 @@ function withTimeout(promise, ms, label) {
 export const API = {
     // Submissions
     async getSubmissions(category = null, sort = 'created_at', limit = 20) {
+        // Optimized: only select fields needed for the card grid to save bandwidth/memory
         let query = supabase
             .from('submissions')
             .select(`
-                *,
+                id,
+                title,
+                category,
+                author_id,
+                thumbnail_path,
+                status,
+                created_at,
                 profiles!author_id (display_name)
             `)
             .eq('status', 'approved');
@@ -32,6 +39,7 @@ export const API = {
 
         return { data, error };
     },
+
 
     async uploadSubmission(submissionData, file = null) {
         console.log('[API] === UPLOAD START ===');

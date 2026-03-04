@@ -748,7 +748,7 @@ export const UI = {
                 <div id="onboarding-step-1" class="onboarding-step active">
                     <div class="onboarding-header">
                         <h2>How can we call you?</h2>
-                        <p class="text-muted">Like Snapchat, let's start with your name.</p>
+                        <p class="text-muted">Let's start with your name.</p>
                     </div>
                     <input type="text" id="onboarding-name" class="name-input-large" placeholder="Your Name" autofocus>
                     <button id="next-to-roles" class="btn btn-primary btn-lg w-100">Continue</button>
