@@ -42,16 +42,17 @@ export const ExplorePage = {
 
         // Handle category filter clicks
         categoryFilters?.addEventListener('click', (e) => {
-            const chip = e.target.closest('.filter-chip');
+            const chip = e.target.closest('.category-clay-item');
             if (!chip) return;
 
             // Update active state
-            categoryFilters.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            categoryFilters.querySelectorAll('.category-clay-item').forEach(c => c.classList.remove('active'));
             chip.classList.add('active');
 
             currentCategory = chip.dataset.category;
             loadSubmissions();
         });
+
 
         searchInput.addEventListener('input', UI.debounce(loadSubmissions, 500));
 

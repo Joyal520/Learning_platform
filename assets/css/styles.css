@@ -2033,3 +2033,211 @@ select.form-control option {
     border: none;
     background: #fff;
 }
+
+/* ============================================================
+   CLAYMORPHISM & EXPLORE SIDEBAR (Variant 2)
+   ============================================================ */
+
+:root {
+    --clay-bg-light: #f0f4f8;
+    --clay-shadow-out: 8px 8px 16px rgba(163, 177, 198, 0.4),
+        -8px -8px 16px rgba(255, 255, 255, 0.8);
+    --clay-shadow-in: inset 6px 6px 12px rgba(163, 177, 198, 0.3),
+        inset -6px -6px 12px rgba(255, 255, 255, 0.7);
+    --clay-radius: 32px;
+}
+
+/* Sidebar Layout for Explore */
+.explore-container {
+    display: flex;
+    gap: 30px;
+    margin-top: 20px;
+    min-height: calc(100vh - 120px);
+}
+
+.explore-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 100px;
+    height: fit-content;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.explore-main {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+/* Claymorphism Components */
+.clay-card {
+    background: var(--clay-bg-light);
+    border-radius: var(--clay-radius);
+    box-shadow: var(--clay-shadow-out);
+    padding: 25px;
+    border: none;
+    transition: transform 0.3s ease;
+    color: #4a5568;
+    /* Soft dark gray for light theme */
+}
+
+.clay-card:hover {
+    transform: translateY(-5px);
+}
+
+.clay-inset {
+    background: var(--clay-bg-light);
+    border-radius: 20px;
+    box-shadow: var(--clay-shadow-in);
+    border: none;
+    padding: 15px 20px;
+    width: 100%;
+}
+
+.clay-btn {
+    background: var(--clay-bg-light);
+    border-radius: 50px;
+    box-shadow: var(--clay-shadow-out);
+    border: none;
+    padding: 12px 24px;
+    font-weight: 600;
+    color: #4a5568;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.clay-btn:active {
+    box-shadow: var(--clay-shadow-in);
+    transform: scale(0.98);
+}
+
+.clay-btn.active {
+    box-shadow: var(--clay-shadow-in);
+    background: #e2e8f0;
+    color: var(--primary);
+}
+
+/* Explore Hero Unit */
+.explore-hero {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+    background: linear-gradient(135deg, #e0e7ff, #f0f9ff);
+    border-radius: var(--clay-radius);
+    padding: 40px;
+    box-shadow: var(--clay-shadow-out);
+    margin-bottom: 20px;
+}
+
+.explore-hero-content {
+    flex: 1;
+}
+
+.explore-hero-title {
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 10px;
+    line-height: 1.2;
+}
+
+.explore-hero-subtitle {
+    font-size: 1.1rem;
+    color: #64748b;
+    margin-bottom: 0;
+}
+
+.explore-hero-image {
+    width: 200px;
+    height: 200px;
+    object-fit: contain;
+    filter: drop-shadow(10px 10px 20px rgba(0, 0, 0, 0.1));
+}
+
+/* Search Box Clay Variant */
+.search-box-clay {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.search-box-clay input {
+    background: transparent;
+    border: none;
+    outline: none;
+    width: 100%;
+    font-size: 1rem;
+    color: #4a5568;
+}
+
+/* Category Sidebar List */
+.category-sidebar-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.category-clay-item {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    font-size: 0.95rem;
+}
+
+/* Content Card Clay Variant */
+.content-card.clay-card {
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.content-card.clay-card .card-thumbnail {
+    height: 200px;
+    border-radius: var(--clay-radius) var(--clay-radius) 0 0;
+}
+
+.content-card.clay-card .card-body {
+    padding: 20px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Responsive adjustments for Sidebar */
+@media (max-width: 992px) {
+    .explore-container {
+        flex-direction: column;
+    }
+
+    .explore-sidebar {
+        width: 100%;
+        position: relative;
+        top: 0;
+        overflow-x: auto;
+        padding-bottom: 10px;
+    }
+
+    .category-sidebar-list {
+        flex-direction: row;
+        width: max-content;
+    }
+
+    .explore-hero {
+        flex-direction: column-reverse;
+        text-align: center;
+        padding: 30px;
+    }
+
+    .explore-hero-image {
+        width: 150px;
+        height: 150px;
+    }
+}

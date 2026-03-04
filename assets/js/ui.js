@@ -366,7 +366,7 @@ export const UI = {
                 <span class="thumb-emoji">${UI.categoryEmoji(sub.category)}</span>
                </div>`;
         return `
-            <div class="content-card glass-card" data-id="${sub.id}">
+            <div class="content-card clay-card animate-fade-in" data-id="${sub.id}">
                 ${thumbnail}
                 <div class="card-body">
                     <span class="badge badge-category" style="--cat-color:${color}">${sub.category.replace('_', ' ')}</span>
@@ -377,11 +377,12 @@ export const UI = {
                             <span>★ ${Number(stats.avg_rating).toFixed(1)}</span>
                             <span>❤ ${stats.like_count}</span>
                         </div>
-                        <a href="#detail/${sub.id}" class="btn btn-primary btn-sm" data-link="detail/${sub.id}">View</a>
+                        <a href="#detail/${sub.id}" class="btn clay-btn btn-sm" data-link="detail/${sub.id}">View</a>
                     </div>
                 </div>
             </div>
         `;
+
     },
 
     categoryEmoji(cat) {
@@ -653,33 +654,54 @@ export const UI = {
         `,
 
         explore: () => `
-            <div class="page-header">
-                <h1>Explore Creative Works</h1>
-                <p class="text-muted">Discover the best content from student creators.</p>
+            <div class="explore-container animate-fade-in">
+                <!-- Sidebar: Search & Filters -->
+                <aside class="explore-sidebar">
+                    <div class="clay-card">
+                        <h4 class="mb-15">Search</h4>
+                        <div class="clay-inset search-box-clay">
+                            <span>🔍</span>
+                            <input type="text" id="search-input" placeholder="Search by title or author...">
+                        </div>
+                    </div>
+
+                    <div class="clay-card">
+                        <h4 class="mb-15">Categories</h4>
+                        <div class="category-sidebar-list" id="category-filters">
+                            <button class="clay-btn category-clay-item active" data-category="all">All Works</button>
+                            <button class="clay-btn category-clay-item" data-category="short_stories">Short Stories</button>
+                            <button class="clay-btn category-clay-item" data-category="long_stories">Long Stories</button>
+                            <button class="clay-btn category-clay-item" data-category="comics">Comics</button>
+                            <button class="clay-btn category-clay-item" data-category="essays">Essays</button>
+                            <button class="clay-btn category-clay-item" data-category="articles">Articles</button>
+                            <button class="clay-btn category-clay-item" data-category="weird_facts">Weird Facts</button>
+                            <button class="clay-btn category-clay-item" data-category="conversations">Conversations</button>
+                            <button class="clay-btn category-clay-item" data-category="poems">Poems</button>
+                            <button class="clay-btn category-clay-item" data-category="images">Images</button>
+                            <button class="clay-btn category-clay-item" data-category="songs">Songs</button>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Main Content Area -->
+                <main class="explore-main">
+                    <!-- Explore Hero -->
+                    <div class="explore-hero">
+                        <div class="explore-hero-content">
+                            <h1 class="explore-hero-title">Creative Works</h1>
+                            <p class="explore-hero-subtitle">Discover and learn from student creators around the world.</p>
+                        </div>
+                        <img src="assets/images/clay-hero.png" alt="Clay Illustration" class="explore-hero-image">
+                    </div>
+
+                    <div class="grid" id="explore-grid">
+                        <!-- Explored items injected here -->
+                    </div>
+                    <div id="explore-loader" class="loader-inline hidden"><div class="spinner"></div></div>
+                </main>
             </div>
-            <div class="explore-filters card glass-card p-20 mb-30">
-                <div class="search-box">
-                    <input type="text" id="search-input" class="form-control" placeholder="Search by title or author...">
-                </div>
-                <div class="category-filters" id="category-filters">
-                    <button class="filter-chip active" data-category="all">All</button>
-                    <button class="filter-chip" data-category="short_stories">Short Stories</button>
-                    <button class="filter-chip" data-category="long_stories">Long Stories</button>
-                    <button class="filter-chip" data-category="comics">Comics</button>
-                    <button class="filter-chip" data-category="essays">Essays</button>
-                    <button class="filter-chip" data-category="articles">Articles</button>
-                    <button class="filter-chip" data-category="weird_facts">Weird Facts</button>
-                    <button class="filter-chip" data-category="conversations">Conversations</button>
-                    <button class="filter-chip" data-category="poems">Poems</button>
-                    <button class="filter-chip" data-category="images">Images</button>
-                    <button class="filter-chip" data-category="songs">Songs</button>
-                </div>
-            </div>
-            <div class="grid" id="explore-grid">
-                <!-- Explored items injected here -->
-            </div>
-            <div id="explore-loader" class="loader-inline hidden"><div class="spinner"></div></div>
         `,
+
 
         login: () => `
             <div class="auth-card animate-fade-in">
