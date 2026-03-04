@@ -14,7 +14,7 @@ function withTimeout(promise, ms, label) {
 export const API = {
     // Submissions
     async getSubmissions(category = null, sort = 'created_at', limit = 20) {
-        // Optimized: only select fields needed for the card grid to save bandwidth/memory
+        // Optimized: only select fields needed for the card grid
         let query = supabase
             .from('submissions')
             .select(`
@@ -25,11 +25,9 @@ export const API = {
                 thumbnail_path,
                 status,
                 created_at,
-                profiles!author_id (display_name),
-                submission_stats (avg_rating, like_count)
+                profiles!author_id (display_name)
             `)
             .eq('status', 'approved');
-
 
         if (category) {
             query = query.eq('category', category);
@@ -39,8 +37,31 @@ export const API = {
             .order(sort, { ascending: false })
             .limit(limit);
 
+        if (error || !data || data.length === 0) return { data, error };
+
+        // Fetch stats separately from the view
+        try {
+            const ids = data.map(s => s.id);
+            const { data: statsData } = await supabase
+                .from('submission_stats')
+                .select('id, avg_rating, like_count')
+                .in('id', ids);
+
+            if (statsData) {
+                const statsMap = {};
+                statsData.forEach(s => { statsMap[s.id] = s; });
+                data.forEach(sub => {
+                    const st = statsMap[sub.id];
+                    sub.submission_stats = st ? [st] : [{ avg_rating: 0, like_count: 0 }];
+                });
+            }
+        } catch (e) {
+            console.warn('[API] Could not fetch stats:', e.message);
+        }
+
         return { data, error };
     },
+
 
 
     async uploadSubmission(submissionData, file = null) {
