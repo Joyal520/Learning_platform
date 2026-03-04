@@ -111,6 +111,7 @@ export const API = {
 
         } catch (err) {
             console.error('[API] ❌ UNEXPECTED ERROR:', err);
+            UI.showToast(`Upload failed: ${err.message}`, 'error');
             return { error: { message: err.message || 'Upload failed unexpectedly' } };
         }
     },
@@ -118,13 +119,14 @@ export const API = {
     async updateSubmission(id, updateData) {
         console.log('[API] === UPDATE START ===', id, updateData);
         try {
+            // Remove .select() to speed up and avoid potential RLS/returning issues
+            // Increase timeout to 30s for larger payloads
             const { data, error } = await withTimeout(
                 supabase
                     .from('submissions')
                     .update(updateData)
-                    .eq('id', id)
-                    .select(),
-                15000,
+                    .eq('id', id),
+                30000,
                 'Database UPDATE'
             );
 
@@ -133,7 +135,7 @@ export const API = {
                 return { error };
             }
 
-            console.log('[API] ✅ UPDATE succeeded!', data);
+            console.log('[API] ✅ UPDATE succeeded!');
             return { data, error: null };
         } catch (err) {
             console.error('[API] ❌ UNEXPECTED UPDATE ERROR:', err);

@@ -161,7 +161,7 @@ export const UploadPage = {
 
     updateCodePreview(code, iframe) {
         if (!iframe) return;
-        iframe.srcdoc = code;
+        iframe.srcdoc = UI.wrapCodeForPreview(code);
     },
 
     // ========== Theme Multi-Select Logic ==========

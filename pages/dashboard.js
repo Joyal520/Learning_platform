@@ -78,6 +78,7 @@ export const DashboardPage = {
             if (this.currentTab === 'pending') query = query.eq('status', 'pending');
 
             const { data, error } = await query;
+
             if (error) return UI.showToast(error.message, 'error');
 
             if (data.length === 0) {

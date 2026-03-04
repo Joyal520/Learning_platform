@@ -155,14 +155,103 @@ export const UI = {
     showLoader() { document.getElementById('loader')?.classList.remove('hidden'); },
     hideLoader() { document.getElementById('loader')?.classList.add('hidden'); },
 
+    wrapCodeForPreview(code) {
+        if (!code) return '';
+        const trimmed = code.trim();
+        const isFullHtml = trimmed.toLowerCase().startsWith('<!doctype') ||
+            (trimmed.toLowerCase().includes('<html') && trimmed.toLowerCase().includes('</html>'));
+
+        if (isFullHtml) return code;
+
+        // Otherwise, wrap in a React/Babel-friendly template
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Preview</title>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom": "https://esm.sh/react-dom@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
+      }
+    }
+    </script>
+    <style>
+        body { margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fff; color: #333; }
+        #root { min-height: 100vh; }
+        .preview-loading { position: fixed; top: 10px; right: 10px; background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #6b7280; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <div id="loading" class="preview-loading">Initializing preview...</div>
+    
+    <script type="text/babel" data-type="module">
+        // Global error capture for the user's script
+        window.onerror = function(message, source, lineno, colno, error) {
+            const rootEl = document.getElementById('root');
+            if (rootEl) {
+                rootEl.innerHTML = \`<div style="color:#e11d48; padding:20px; border:1px solid #fda4af; background:#fff1f2; border-radius:8px; font-family:sans-serif;">
+                    <h3 style="margin-top:0">🚀 Preview Error</h3>
+                    <p>The code could not be rendered:</p>
+                    <pre style="background:#000; color:#fff; padding:15px; border-radius:4px; overflow:auto; white-space:pre-wrap;">\${(error || message).toString()}</pre>
+                </div>\`;
+            }
+            document.getElementById('loading').style.display = 'none';
+        };
+
+        try {
+            // --- User Code Start ---
+            ${code}
+            // --- User Code End ---
+
+            // Expose commonly named components to window so the auto-renderer can find them
+            if (typeof App !== 'undefined') window._App = App;
+            if (typeof Main !== 'undefined') window._App = Main;
+        } catch (e) {
+            window.onerror(e.message, null, null, null, e);
+        }
+    </script>
+
+    <script type="text/babel" data-type="module">
+        (async () => {
+            const rootEl = document.getElementById('root');
+            if (!rootEl) return;
+
+            // Wait for user script to run
+            setTimeout(async () => {
+                document.getElementById('loading').style.display = 'none';
+                
+                // If nothing rendered yet, try to auto-render App/Main
+                if (rootEl.innerHTML === '' && window._App) {
+                    try {
+                        const { default: r } = await import('react');
+                        const { createRoot: cr } = await import('react-dom/client');
+                        cr(rootEl).render(r.createElement(window._App));
+                    } catch (e) {
+                        console.warn('Auto-render failed:', e);
+                    }
+                }
+            }, 300);
+        })();
+    </script>
+</body>
+</html>`;
+    },
+
     renderContentPreview(sub) {
         if (sub.file_type === 'text/html' && sub.content_text) {
+            const wrappedCode = this.wrapCodeForPreview(sub.content_text);
             return `<div class="code-preview-container" id="previewContainer">
                         <div class="preview-header">
                             <p class="preview-label">Web Preview</p>
                             <button class="preview-fullscreen-btn" id="previewFullscreenBtn" title="Toggle Fullscreen Mode">⛶ Fullscreen</button>
                         </div>
-                        <iframe class="code-preview-frame" sandbox="allow-scripts" srcdoc="${sub.content_text.replace(/"/g, '&quot;')}"></iframe>
+                        <iframe class="code-preview-frame" sandbox="allow-scripts" srcdoc="${wrappedCode.replace(/"/g, '&quot;')}"></iframe>
                     </div>`;
         }
         if (sub.content_text) return `<div class="text-presentation">${sub.content_text}</div>`;
@@ -727,7 +816,8 @@ export const UI = {
             UI.showLoader();
             await Auth.signOut();
             UI.hideLoader();
-            window.location.hash = 'login';
+            window.location.hash = '#home';
+            window.location.reload();
         });
 
         form?.addEventListener('submit', async (e) => {

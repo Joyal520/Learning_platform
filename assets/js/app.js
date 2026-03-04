@@ -204,9 +204,11 @@ const App = {
                     <button class="btn btn-outline btn-sm" id="logout-btn">Logout</button>
                 </div>
             `;
-            document.getElementById('logout-btn')?.addEventListener('click', () => {
+            document.getElementById('logout-btn')?.addEventListener('click', async () => {
                 nav.classList.remove('mobile-open');
-                Auth.signOut();
+                await Auth.signOut();
+                window.location.hash = '#home';
+                window.location.reload();
             });
 
             navLinks.innerHTML = `
