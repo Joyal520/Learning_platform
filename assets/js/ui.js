@@ -33,7 +33,9 @@ export const UI = {
         this._initHeroParticles(hero);
         this._initHeroParallax(hero);
         this._initHeroFullscreen(hero);
+        this._initHeroCardTilt(hero);
     },
+
 
 
 
@@ -144,6 +146,43 @@ export const UI = {
             appObserver.observe(mainContent, { childList: true });
         }
     },
+
+    _initHeroCardTilt(hero) {
+        const card = hero.querySelector('.glass-card-hero');
+        if (!card) return;
+
+        let ticking = false;
+
+        const handleMove = (e) => {
+            if (ticking) return;
+            ticking = true;
+
+            requestAnimationFrame(() => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+
+                const rotateX = (centerY - y) / 10;
+                const rotateY = (x - centerX) / 10;
+
+                card.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+                ticking = false;
+            });
+        };
+
+        const handleLeave = () => {
+            card.style.transform = 'rotateX(0) rotateY(0)';
+        };
+
+        hero.addEventListener('mousemove', handleMove);
+        hero.addEventListener('mouseleave', handleLeave);
+
+        // Mobile: use light device orientation if possible or just skip to save battery
+    },
+
 
 
     // --- Cycling Subtitle ---
