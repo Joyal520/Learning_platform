@@ -730,12 +730,15 @@ export const UI = {
 
                     <button type="submit" class="btn btn-primary btn-lg w-100">Create Account</button>
                     
+                    ${localStorage.getItem('edtechra_role') === 'admin' ? '' : `
                     <div class="auth-divider"><span>OR</span></div>
                     
                     <button type="button" class="btn btn-outline w-100 google-btn" id="google-signup">
                         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18" height="18" alt="Google">
                         Sign up with Google
                     </button>
+                    `}
+
 
                     <p class="auth-footer">Already have an account? <a href="#" data-link="login">Login</a></p>
                 </form>

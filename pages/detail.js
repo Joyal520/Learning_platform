@@ -38,7 +38,9 @@ export const DetailPage = {
             const currentUser = App.user;
             const userRole = App.profile?.role;
             main.innerHTML = UI.pages.detail(sub, currentUser, userRole);
+            this._currentSub = sub; // Store reference for refreshStats
             this.setupInteractions(sub);
+
             this.setupEditButton(sub);
             this.setupFullscreenFab();
             this.setupPreviewFullscreen();
@@ -209,7 +211,6 @@ export const DetailPage = {
 
     async refreshStats(subId) {
         try {
-            // Try submission_stats view first
             let likeCount = 0;
             let avgRating = 0;
 
@@ -242,15 +243,20 @@ export const DetailPage = {
             const avgRatingSpan = document.getElementById('avg-rating');
             if (avgRatingSpan) avgRatingSpan.textContent = `(${avgRating.toFixed(1)})`;
 
-            // Update star visual
+            // Update star visual AND re-attach listeners
             const starContainer = document.getElementById('rating-stars');
             if (starContainer && avgRating > 0) {
                 starContainer.innerHTML = UI.renderStars(Math.round(avgRating));
+                // Re-attach click listeners so ratings keep working
+                if (this._currentSub) {
+                    this.attachStarListeners(starContainer, this._currentSub);
+                }
             }
         } catch (err) {
             console.error('[DETAIL] refreshStats error:', err);
         }
     },
+
 
     setupEditButton(sub) {
         const editBtn = document.getElementById('edit-btn');

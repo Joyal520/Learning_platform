@@ -25,9 +25,11 @@ export const API = {
                 thumbnail_path,
                 status,
                 created_at,
-                profiles!author_id (display_name)
+                profiles!author_id (display_name),
+                submission_stats (avg_rating, like_count)
             `)
             .eq('status', 'approved');
+
 
         if (category) {
             query = query.eq('category', category);
