@@ -15,7 +15,136 @@ export const UI = {
     // =============================================
     initHeroAnimations() {
         this._initCyclingSubtitle();
+        this._initHeroEffects();
     },
+
+    // =============================================
+    // NEW Hero Effects: Parallax + CSS Particles
+    // =============================================
+    _initHeroEffects() {
+        const hero = document.querySelector('.hero');
+        if (!hero) return;
+
+        // Check prefers-reduced-motion
+        const isReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        if (isReducedMotion) return;
+
+        this._initHeroParticles(hero);
+        this._initHeroParallax(hero);
+        this._initHeroFullscreen(hero);
+    },
+
+
+
+    _initHeroParticles(hero) {
+        const container = hero.querySelector('.particles');
+        if (!container) return;
+
+        container.innerHTML = '';
+        const count = window.innerWidth < 768 ? 50 : 120;
+
+        for (let i = 0; i < count; i++) {
+            const p = document.createElement('div');
+            p.className = 'particle';
+
+            const size = Math.random() * 5 + 3; // 3px to 8px
+            const left = Math.random() * 100;
+            const duration = Math.random() * 7 + 8; // 8s to 15s rise
+            const delay = Math.random() * -duration;
+
+            Object.assign(p.style, {
+                width: `${size}px`,
+                height: `${size}px`,
+                left: `${left}%`,
+                bottom: '-20px',
+                animationDuration: `${duration}s`,
+                animationDelay: `${delay}s`,
+                opacity: '0' // Handled by animation
+            });
+
+            container.appendChild(p);
+        }
+    },
+
+
+
+    _initHeroFullscreen(hero) {
+        const btn = hero.querySelector('.hero-fullscreen-btn');
+        if (!btn) return;
+
+        btn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch((err) => {
+                    console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        });
+
+        // Update icon based on state
+        document.addEventListener('fullscreenchange', () => {
+            const isFull = !!document.fullscreenElement;
+            btn.innerHTML = isFull ?
+                `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>` :
+                `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>`;
+        });
+    },
+
+
+
+    _initHeroParallax(hero) {
+        const bg = hero.querySelector('.hero-bg');
+        if (!bg) return;
+
+        let isVisible = false;
+        let ticking = false;
+
+        const observer = new IntersectionObserver((entries) => {
+            isVisible = entries[0].isIntersecting;
+        }, { threshold: 0.1 });
+
+        observer.observe(hero);
+
+        const updateParallax = () => {
+            if (!isVisible) {
+                ticking = false;
+                return;
+            }
+
+            const y = window.scrollY * 0.08;
+            const clampedY = Math.max(-20, Math.min(20, y));
+
+            bg.style.transform = `scale(1.08) translate3d(0, ${clampedY}px, 0)`;
+            ticking = false;
+        };
+
+        const onScroll = () => {
+            if (!ticking) {
+                requestAnimationFrame(updateParallax);
+                ticking = true;
+            }
+        };
+
+        window.addEventListener('scroll', onScroll, { passive: true });
+
+        // Clean up on navigation
+        const appObserver = new MutationObserver(() => {
+            if (!document.querySelector('.hero')) {
+                window.removeEventListener('scroll', onScroll);
+                observer.disconnect();
+                appObserver.disconnect();
+            }
+        });
+        const mainContent = document.getElementById('main-content');
+        if (mainContent) {
+            appObserver.observe(mainContent, { childList: true });
+        }
+    },
+
 
     // --- Cycling Subtitle ---
     // Phrases and timing are adjustable here
@@ -54,103 +183,10 @@ export const UI = {
     // --- Colorful Confetti Dots Canvas ---
     // Inspired by the Antigravity success page confetti effect
     _initConfettiCanvas() {
-        const canvas = document.getElementById('hero-dots-canvas');
-        if (!canvas) return;
-
-        // Check prefers-reduced-motion
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            canvas.style.display = 'none';
-            return;
-        }
-
-        const ctx = canvas.getContext('2d');
-        let animId;
-
-        const resize = () => {
-            const hero = canvas.parentElement;
-            canvas.width = hero.offsetWidth;
-            canvas.height = hero.offsetHeight;
-        };
-        resize();
-        window.addEventListener('resize', resize);
-
-        // Confetti colors (Google-style: blue, red, green, yellow, purple, orange)
-        const COLORS = [
-            '#4285f4', '#ea4335', '#34a853', '#fbbc04',
-            '#a855f7', '#f97316', '#06b6d4', '#ec4899'
-        ];
-        const NUM_PARTICLES = 35;
-        const particles = [];
-
-        // Particle shapes: circle, square, line
-        const SHAPES = ['circle', 'square', 'line'];
-
-        for (let i = 0; i < NUM_PARTICLES; i++) {
-            particles.push({
-                x: Math.random() * canvas.width,
-                y: Math.random() * canvas.height,
-                size: Math.random() * 4 + 2,
-                color: COLORS[Math.floor(Math.random() * COLORS.length)],
-                shape: SHAPES[Math.floor(Math.random() * SHAPES.length)],
-                speedX: (Math.random() - 0.5) * 0.6,
-                speedY: Math.random() * 0.4 + 0.15,
-                rotation: Math.random() * 360,
-                rotSpeed: (Math.random() - 0.5) * 2,
-                opacity: Math.random() * 0.5 + 0.3
-            });
-        }
-
-        const draw = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            for (const p of particles) {
-                p.x += p.speedX;
-                p.y += p.speedY;
-                p.rotation += p.rotSpeed;
-
-                // Wrap around edges
-                if (p.y > canvas.height + 10) { p.y = -10; p.x = Math.random() * canvas.width; }
-                if (p.x > canvas.width + 10) p.x = -10;
-                if (p.x < -10) p.x = canvas.width + 10;
-
-                ctx.save();
-                ctx.translate(p.x, p.y);
-                ctx.rotate((p.rotation * Math.PI) / 180);
-                ctx.globalAlpha = p.opacity;
-                ctx.fillStyle = p.color;
-                ctx.strokeStyle = p.color;
-
-                if (p.shape === 'circle') {
-                    ctx.beginPath();
-                    ctx.arc(0, 0, p.size, 0, Math.PI * 2);
-                    ctx.fill();
-                } else if (p.shape === 'square') {
-                    ctx.fillRect(-p.size, -p.size, p.size * 2, p.size * 2);
-                } else if (p.shape === 'line') {
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(-p.size * 2, 0);
-                    ctx.lineTo(p.size * 2, 0);
-                    ctx.stroke();
-                }
-
-                ctx.restore();
-            }
-
-            animId = requestAnimationFrame(draw);
-        };
-
-        draw();
-
-        // Cleanup on navigation away
-        const observer = new MutationObserver(() => {
-            if (!document.getElementById('hero-dots-canvas')) {
-                cancelAnimationFrame(animId);
-                observer.disconnect();
-            }
-        });
-        observer.observe(document.getElementById('main-content'), { childList: true });
+        // Disabled in favor of lightweight CSS particles
+        return;
     },
+
 
     showLoader() { document.getElementById('loader')?.classList.remove('hidden'); },
     hideLoader() { document.getElementById('loader')?.classList.add('hidden'); },
@@ -334,28 +370,38 @@ export const UI = {
 
     pages: {
         home: (currentUser) => `
-            <section class="hero homepage-hero">
-                <!-- Claymorphism Background Image -->
-                <div class="hero-bg-image"></div>
+            <section class="hero">
+                <div class="hero-bg"></div>
+                <div class="particles"></div>
 
-                <div class="hero-content-wrapper">
-                    <h1 class="hero-main-title">EdTechra Creative Lab</h1>
-                    <p class="hero-tagline">Showcase your creativity in the digital world. Inspire. Evolve.</p>
+                <div class="hero-content">
+                    <div class="glass-card-hero">
+                        <h1 class="hero-title">EdTechra Creative Lab</h1>
+                        <p class="hero-subtitle">Showcase your creativity in the digital world. Inspire. Evolve.</p>
 
-                    <!-- Cycling Subtitle — phrases and timing adjustable below -->
-                    <div class="cycling-subtitle-container" aria-live="polite">
-                        <span class="cycling-subtitle" id="cycling-subtitle">Where Stories Live</span>
-                    </div>
+                        <!-- Cycling Subtitle — phrases and timing adjustable below -->
+                        <div class="cycling-subtitle-container" aria-live="polite">
+                            <span class="cycling-subtitle" id="cycling-subtitle">Where Stories Live</span>
+                        </div>
 
-                    <p class="hero-welcome">${currentUser?.display_name ? `Welcome back, ${currentUser.display_name}!` : 'Welcome back!'}</p>
+                        <p class="hero-welcome">${currentUser?.display_name ? `Welcome back, ${currentUser.display_name}!` : 'Welcome back!'}</p>
 
-                    <div class="hero-actions">
-                        <a href="#explore" class="btn btn-primary btn-lg" data-link="explore">Explore Work</a>
-                        <a href="#upload" class="btn btn-outline btn-lg" data-link="upload">Upload Yours</a>
+                        <div class="hero-actions">
+                            <a href="#explore" class="btn btn-primary btn-lg" data-link="explore">Explore Work</a>
+                            <a href="#upload" class="btn btn-outline btn-lg" data-link="upload">Upload Yours</a>
+                        </div>
                     </div>
                 </div>
+
+                <button class="hero-fullscreen-btn" title="Toggle Fullscreen">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                    </svg>
+                </button>
             </section>
         `,
+
+
 
         profile: (user) => `
             <div class="profile-container animate-fade-in">
