@@ -2388,3 +2388,13 @@ body.explore-view .mobile-menu-toggle span {
         margin-top: 10px;
     }
 }
+/* --- Fixes for Upload Page Shaking & Thumbnail --- */
+.page-loader { position: fixed; inset: 0; background: rgba(10, 10, 26, 0.8); backdrop-filter: blur(5px); z-index: 9999; display: flex; align-items: center; justify-content: center; transition: opacity 0.3s ease; }
+.page-loader.hidden { opacity: 0; pointer-events: none; }
+.thumbnail-upload-area { position: relative; width: 100%; height: 200px; border: 2px dashed rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: rgba(255, 255, 255, 0.02); transition: all 0.3s ease; cursor: pointer; }
+.thumbnail-upload-area:hover { border-color: var(--primary); background: rgba(255, 255, 255, 0.05); }
+.thumbnail-preview { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; padding: 10px; }
+.thumbnail-preview img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.thumbnail-placeholder { color: rgba(255, 255, 255, 0.5); font-size: 0.95rem; text-align: center; }
+.thumbnail-preview.has-image .thumbnail-placeholder { display: none; }
+.thumbnail-file-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10; }
