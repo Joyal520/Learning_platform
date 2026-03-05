@@ -44,7 +44,9 @@ export const UI = {
         if (!container) return;
 
         container.innerHTML = '';
-        const count = window.innerWidth < 768 ? 40 : 80; // Reduced from 50/120 for performance
+        // Skip particles entirely on mobile for performance
+        if (window.innerWidth < 768) return;
+        const count = 80;
 
         for (let i = 0; i < count; i++) {
             const p = document.createElement('div');
@@ -717,7 +719,7 @@ export const UI = {
                             <h1 class="explore-hero-title">Creative Works</h1>
                             <p class="explore-hero-subtitle">Discover and learn from student creators around the world.</p>
                         </div>
-                        <img src="assets/images/clay-hero.png" alt="Clay Illustration" class="explore-hero-image">
+                        <img src="assets/images/clay-hero.png" alt="Clay Illustration" class="explore-hero-image" loading="lazy">
                     </div>
 
                     <div class="grid" id="explore-grid">

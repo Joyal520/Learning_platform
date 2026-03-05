@@ -63,6 +63,17 @@ body::before {
     filter: blur(60px);
 }
 
+/* On mobile, skip the expensive runtime blur and use a simpler gradient */
+@media (max-width: 768px) {
+    body::before {
+        filter: none;
+        background:
+            radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
+            radial-gradient(circle at 85% 85%, rgba(34, 211, 238, 0.08) 0%, transparent 40%),
+            #04040c;
+    }
+}
+
 /* Floating Orbs (Static) */
 body::after {
     content: '';
@@ -2655,4 +2666,72 @@ body.explore-view .mobile-menu-toggle span {
 .main-nav.mobile-open .nav-link:hover,
 .main-nav.mobile-open .nav-link.active {
     color: var(--primary) !important;
+}
+
+/* ============================================================
+   MOBILE PERFORMANCE OPTIMIZATIONS
+   Disable expensive GPU effects on mobile devices.
+   ============================================================ */
+@media (max-width: 768px) {
+
+    /* Remove floating orb pseudo-element */
+    body::after {
+        display: none;
+    }
+
+    /* Hide particles entirely */
+    .particles {
+        display: none !important;
+    }
+
+    /* Reduce backdrop-filter on nav */
+    .main-nav {
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+    }
+
+    /* Remove backdrop-filter from non-essential elements */
+    .glass-card,
+    .toast,
+    .submission-item,
+    .explore-filters,
+    .role-option-large,
+    .page-loader {
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+
+    /* Simplify glass card hero */
+    .glass-card-hero {
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+    }
+
+    /* Disable snake-border animations on buttons */
+    .btn-snake span {
+        display: none !important;
+    }
+
+    /* Reduce content-card hover animation complexity */
+    .content-card {
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .content-card:hover {
+        transform: translateY(-4px);
+    }
+
+    /* Simplify hero-bg rendering */
+    .hero-bg {
+        transform: none;
+        will-change: auto;
+    }
+
+    /* Remove fullscreen FAB backdrop-filter */
+    .fullscreen-fab {
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
 }
