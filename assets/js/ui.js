@@ -44,7 +44,7 @@ export const UI = {
         if (!container) return;
 
         container.innerHTML = '';
-        const count = window.innerWidth < 768 ? 50 : 120;
+        const count = window.innerWidth < 768 ? 40 : 80; // Reduced from 50/120 for performance
 
         for (let i = 0; i < count; i++) {
             const p = document.createElement('div');
@@ -118,8 +118,9 @@ export const UI = {
             }
 
             const y = window.scrollY * 0.08;
-            const clampedY = Math.max(-20, Math.min(20, y));
+            const clampedY = Math.max(-15, Math.min(15, y)); // Slightly tighter clamp
 
+            // Using translate3d for better GPU utilization
             bg.style.transform = `scale(1.08) translate3d(0, ${clampedY}px, 0)`;
             ticking = false;
         };
@@ -133,14 +134,12 @@ export const UI = {
 
         window.addEventListener('scroll', onScroll, { passive: true });
 
-        // Clean up on navigation
-        const appObserver = new MutationObserver(() => {
-            if (!document.querySelector('.hero')) {
-                window.removeEventListener('scroll', onScroll);
-                observer.disconnect();
-                appObserver.disconnect();
-            }
-        });
+        // Optimization: Disable parallax if "Reduced Motion" is enabled
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            window.removeEventListener('scroll', onScroll);
+        }
+
+        // Clean up on navigation (MutationObserver is already set up in the existing code)
         const mainContent = document.getElementById('main-content');
         if (mainContent) {
             appObserver.observe(mainContent, { childList: true });
@@ -654,7 +653,7 @@ export const UI = {
         `,
 
         explore: () => `
-            <div class="explore-container animate-fade-in">
+            <div class="explore-container light-theme-explore animate-fade-in">
                 <!-- Sidebar: Search & Filters -->
                 <aside class="explore-sidebar">
                     <div class="clay-card">

@@ -117,6 +117,9 @@ const App = {
         const [page, id] = cleanHash.split('/');
         this.currentPage = page || 'home';
 
+        // Toggle light theme class on body for specific pages
+        document.body.classList.toggle('explore-view', this.currentPage === 'explore');
+
         // Force onboarding for first-time unauth visitors
         const hasRole = localStorage.getItem('edtechra_role');
         if (!this.user && !hasRole && page !== 'login' && page !== 'onboarding' && page !== 'explore') {

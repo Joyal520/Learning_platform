@@ -96,9 +96,9 @@ body::after {
     position: absolute;
     inset: 0;
     background: url('../images/hero-bg.png') center/cover no-repeat;
-    filter: brightness(1.25) contrast(1.05) saturate(1.1);
-    transform: scale(1.08);
-    /* prevents edge gaps during movement */
+    filter: brightness(1.2) contrast(1.05) saturate(1.1);
+    transform: scale(1.08) translate3d(0, 0, 0);
+    /* Force GPU */
     will-change: transform;
     z-index: 0;
 }
@@ -233,9 +233,11 @@ body::after {
         0 0 20px #ffdb4d,
         0 0 30px #ffa500;
     /* Extremely bright glow */
-    will-change: transform, opacity;
+    will-change: transform;
     animation: risingEmbers linear infinite;
     z-index: 10;
+    transform: translate3d(0, 0, 0);
+    /* Force GPU */
 }
 
 @keyframes risingEmbers {
@@ -572,6 +574,18 @@ h3,
     color: var(--text-main);
 }
 
+/* Contrast fix for Explore (Light Theme) */
+body.explore-view .btn-outline {
+    border-color: rgba(30, 41, 59, 0.4);
+    color: #1e293b;
+}
+
+body.explore-view .btn-outline:hover {
+    background: #1e293b !important;
+    color: #ffffff !important;
+    border-color: #1e293b;
+}
+
 .btn-success {
     background: var(--success);
     color: white;
@@ -753,7 +767,8 @@ h3,
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     /* Smaller, attractive cards */
     gap: 24px;
-    margin-bottom: 60px;
+    margin-bottom: 30px;
+    /* Reduced from 60px */
 }
 
 /* Square Frosty Cards */
@@ -989,8 +1004,9 @@ h3,
 
 .glass-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), 0 0 20px var(--primary-glow);
-    border-color: var(--border-glow);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+    /* Simplified shadow */
+    border-color: var(--primary);
 }
 
 /* ========== Card Thumbnails ========== */
@@ -2133,7 +2149,8 @@ select.form-control option {
     border-radius: var(--clay-radius);
     padding: 40px;
     box-shadow: var(--clay-shadow-out);
-    margin-bottom: 20px;
+    margin-bottom: 10px;
+    /* Reduced from 20px */
 }
 
 .explore-hero-content {
@@ -2215,29 +2232,159 @@ select.form-control option {
 @media (max-width: 992px) {
     .explore-container {
         flex-direction: column;
+        gap: 15px;
+        overflow-x: hidden;
+        /* Prevent horizontal page scroll */
     }
 
     .explore-sidebar {
         width: 100%;
         position: relative;
         top: 0;
-        overflow-x: auto;
-        padding-bottom: 10px;
+        padding-bottom: 5px;
+        gap: 15px;
+    }
+
+    .explore-sidebar .clay-card {
+        padding: 15px;
+        border-radius: 20px;
+        box-shadow: 4px 4px 10px rgba(163, 177, 198, 0.2),
+            -4px -4px 10px rgba(255, 255, 255, 0.6);
+        overflow: hidden;
     }
 
     .category-sidebar-list {
         flex-direction: row;
-        width: max-content;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 5px 0 10px;
+        gap: 10px;
+        scrollbar-width: none;
+        /* Firefox */
+    }
+
+    .category-sidebar-list::-webkit-scrollbar {
+        display: none;
+        /* Chrome/Safari */
+    }
+
+    .category-clay-item {
+        width: auto;
+        flex-shrink: 0;
+        white-space: nowrap;
+        padding: 8px 16px;
+        font-size: 0.85rem;
     }
 
     .explore-hero {
         flex-direction: column-reverse;
         text-align: center;
-        padding: 30px;
+        padding: 24px 20px;
+        gap: 20px;
+    }
+
+    .explore-hero-title {
+        font-size: 1.8rem;
     }
 
     .explore-hero-image {
-        width: 150px;
-        height: 150px;
+        width: 120px;
+        height: 120px;
+    }
+
+    .search-box-clay {
+        padding: 10px 15px;
+    }
+}
+
+/* ============================================================
+   LIGHT THEME OVERRIDE FOR EXPLORE PAGE
+   ============================================================ */
+body.explore-view::before,
+body.explore-view::after {
+    display: none !important;
+}
+
+body.explore-view {
+    background: #f8fafc !important;
+    background-color: #f8fafc !important;
+    color: #1e293b;
+}
+
+body.explore-view .main-nav {
+    background: rgba(255, 255, 255, 0.9);
+    border-bottom: 1px solid #e2e8f0;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+
+body.explore-view .logo,
+body.explore-view .nav-link,
+body.explore-view .user-name {
+    color: #1e293b !important;
+}
+
+body.explore-view .nav-link:hover,
+body.explore-view .nav-link.active {
+    color: var(--primary) !important;
+}
+
+body.explore-view .mobile-menu-toggle span {
+    background-color: #1e293b;
+}
+
+.light-theme-explore {
+    --background: #f8fafc;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --surface: #ffffff;
+    --surface-glass: rgba(255, 255, 255, 0.9);
+    --border: #e2e8f0;
+
+    background: transparent;
+    color: var(--text-main);
+    padding: 0;
+    margin-top: 20px;
+    position: relative;
+    z-index: 1;
+}
+
+.light-theme-explore .explore-hero-title,
+.light-theme-explore .explore-hero-subtitle,
+.light-theme-explore h1,
+.light-theme-explore h2,
+.light-theme-explore h3,
+.light-theme-explore h4,
+.light-theme-explore p {
+    color: var(--text-main);
+}
+
+.light-theme-explore .text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Sidebar Headings */
+.light-theme-explore .explore-sidebar h4 {
+    color: #1e293b;
+    font-weight: 700;
+}
+
+/* Card Content Fixes */
+.light-theme-explore .content-card.clay-card {
+    background: #ffffff;
+}
+
+.light-theme-explore .content-card .card-title {
+    color: #1e293b;
+    font-weight: 700;
+}
+
+.light-theme-explore .content-card .card-author {
+    color: #64748b;
+}
+
+@media (max-width: 768px) {
+    .light-theme-explore {
+        margin-top: 10px;
     }
 }

@@ -39,25 +39,28 @@ export const API = {
 
         if (error || !data || data.length === 0) return { data, error };
 
-        // Fetch stats separately from the view
-        try {
-            const ids = data.map(s => s.id);
-            const { data: statsData } = await supabase
-                .from('submission_stats')
-                .select('id, avg_rating, like_count')
-                .in('id', ids);
-
-            if (statsData) {
-                const statsMap = {};
-                statsData.forEach(s => { statsMap[s.id] = s; });
+        // Fetch stats separately from the view - non-blocking for data if possible
+        const ids = data.map(s => s.id);
+        supabase
+            .from('submission_stats')
+            .select('id, avg_rating, like_count')
+            .in('id', ids)
+            .then(({ data: statsData }) => {
+                if (statsData) {
+                    const statsMap = {};
+                    statsData.forEach(s => { statsMap[s.id] = s; });
+                    data.forEach(sub => {
+                        const st = statsMap[sub.id];
+                        sub.submission_stats = st ? [st] : [{ avg_rating: 0, like_count: 0 }];
+                    });
+                }
+            })
+            .catch(e => {
+                console.warn('[API] Could not fetch stats:', e.message);
                 data.forEach(sub => {
-                    const st = statsMap[sub.id];
-                    sub.submission_stats = st ? [st] : [{ avg_rating: 0, like_count: 0 }];
+                    if (!sub.submission_stats) sub.submission_stats = [{ avg_rating: 0, like_count: 0 }];
                 });
-            }
-        } catch (e) {
-            console.warn('[API] Could not fetch stats:', e.message);
-        }
+            });
 
         return { data, error };
     },
