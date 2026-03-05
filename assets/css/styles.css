@@ -2388,13 +2388,191 @@ body.explore-view .mobile-menu-toggle span {
         margin-top: 10px;
     }
 }
+
 /* --- Fixes for Upload Page Shaking & Thumbnail --- */
-.page-loader { position: fixed; inset: 0; background: rgba(10, 10, 26, 0.8); backdrop-filter: blur(5px); z-index: 9999; display: flex; align-items: center; justify-content: center; transition: opacity 0.3s ease; }
-.page-loader.hidden { opacity: 0; pointer-events: none; }
-.thumbnail-upload-area { position: relative; width: 100%; height: 200px; border: 2px dashed rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: rgba(255, 255, 255, 0.02); transition: all 0.3s ease; cursor: pointer; }
-.thumbnail-upload-area:hover { border-color: var(--primary); background: rgba(255, 255, 255, 0.05); }
-.thumbnail-preview { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; padding: 10px; }
-.thumbnail-preview img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
-.thumbnail-placeholder { color: rgba(255, 255, 255, 0.5); font-size: 0.95rem; text-align: center; }
-.thumbnail-preview.has-image .thumbnail-placeholder { display: none; }
-.thumbnail-file-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10; }
+.page-loader {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 26, 0.8);
+    backdrop-filter: blur(5px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.3s ease;
+}
+
+.page-loader.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.thumbnail-upload-area {
+    position: relative;
+    width: 100%;
+    height: 200px;
+    border: 2px dashed rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.02);
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.thumbnail-upload-area:hover {
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.thumbnail-preview {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    padding: 10px;
+}
+
+.thumbnail-preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+.thumbnail-placeholder {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.95rem;
+    text-align: center;
+}
+
+.thumbnail-preview.has-image .thumbnail-placeholder {
+    display: none;
+}
+
+.thumbnail-file-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 10;
+}
+
+/* --- Snake Hover Effect for View Button --- */
+.btn-snake {
+    position: relative;
+    padding: 6px 18px;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-decoration: none;
+    font-size: 0.7rem;
+    font-weight: 700;
+    overflow: hidden;
+    transition: 0.5s;
+    background: rgba(255, 255, 255, 0.03);
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 4px;
+}
+
+.btn-snake:hover {
+    background: var(--primary);
+    color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 0 5px var(--primary), 0 0 25px var(--primary), 0 0 50px var(--primary), 0 0 100px var(--primary);
+}
+
+.btn-snake span {
+    position: absolute;
+    display: block;
+}
+
+.btn-snake span:nth-child(1) {
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--primary));
+    animation: btn-anim1 1s linear infinite;
+}
+
+@keyframes btn-anim1 {
+    0% {
+        left: -100%;
+    }
+
+    50%,
+    100% {
+        left: 100%;
+    }
+}
+
+.btn-snake span:nth-child(2) {
+    top: -100%;
+    right: 0;
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(180deg, transparent, var(--primary));
+    animation: btn-anim2 1s linear infinite;
+    animation-delay: 0.25s;
+}
+
+@keyframes btn-anim2 {
+    0% {
+        top: -100%;
+    }
+
+    50%,
+    100% {
+        top: 100%;
+    }
+}
+
+.btn-snake span:nth-child(3) {
+    bottom: 0;
+    right: -100%;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(270deg, transparent, var(--primary));
+    animation: btn-anim3 1s linear infinite;
+    animation-delay: 0.5s;
+}
+
+@keyframes btn-anim3 {
+    0% {
+        right: -100%;
+    }
+
+    50%,
+    100% {
+        right: 100%;
+    }
+}
+
+.btn-snake span:nth-child(4) {
+    bottom: -100%;
+    left: 0;
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(360deg, transparent, var(--primary));
+    animation: btn-anim4 1s linear infinite;
+    animation-delay: 0.75s;
+}
+
+@keyframes btn-anim4 {
+    0% {
+        bottom: -100%;
+    }
+
+    50%,
+    100% {
+        bottom: 100%;
+    }
+}

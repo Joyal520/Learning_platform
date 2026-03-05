@@ -380,7 +380,10 @@ export const UI = {
                             <span>★ ${Number(stats.avg_rating).toFixed(1)}</span>
                             <span>❤ ${stats.like_count}</span>
                         </div>
-                        <a href="#detail/${sub.id}" class="btn clay-btn btn-sm" data-link="detail/${sub.id}">View</a>
+                        <a href="#detail/${sub.id}" class="btn clay-btn btn-sm btn-snake" data-link="detail/${sub.id}">
+                            <span></span><span></span><span></span><span></span>
+                            View
+                        </a>
                     </div>
                 </div>
             </div>
