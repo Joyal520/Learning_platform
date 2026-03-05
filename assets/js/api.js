@@ -73,12 +73,15 @@ export const API = {
     async uploadSubmission(submissionData, file = null, thumbnailBlob = null, displayBlob = null) {
         console.log('[API] === UPLOAD START ===');
         try {
-            // Step 1: Insert to get the ID
-            const { data: sub, error: insertError } = await withTimeout(
-                supabase.from('submissions').insert([submissionData]).select('id').single(),
-                60000,
-                'Database INSERT'
-            );
+            // Log payload size for debugging
+            const payloadStr = JSON.stringify(submissionData);
+            console.log(`[API] Payload size: ${(payloadStr.length / 1024).toFixed(2)} KB`);
+
+            const { data: sub, error: insertError } = await supabase
+                .from('submissions')
+                .insert([submissionData])
+                .select('id')
+                .single();
 
             if (insertError) throw insertError;
             const subId = sub.id;
@@ -176,11 +179,11 @@ export const API = {
             }
 
             console.log('[API] 💾 Updating database record...');
-            const { data, error } = await withTimeout(
-                supabase.from('submissions').update(updateData).eq('id', id).select('id'),
-                60000,
-                'Database UPDATE'
-            );
+            const { data, error } = await supabase
+                .from('submissions')
+                .update(updateData)
+                .eq('id', id)
+                .select('id');
 
             if (error) {
                 console.error('[API] ❌ DB Update Error:', error);
