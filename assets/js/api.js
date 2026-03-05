@@ -74,12 +74,12 @@ export const API = {
         console.log('[API] Data:', JSON.stringify(submissionData, null, 2));
 
         try {
-            // Step 1: Plain INSERT — no .select() to avoid any RLS/hang issues
+            // Step 1: Insert with .select() to get the ID directly
             console.log('[API] Step 1: Inserting into submissions table...');
 
             const insertResult = await withTimeout(
-                supabase.from('submissions').insert([submissionData]),
-                15000,
+                supabase.from('submissions').insert([submissionData]).select(),
+                60000,
                 'Database INSERT'
             );
 
@@ -92,22 +92,9 @@ export const API = {
 
             console.log('[API] ✅ INSERT succeeded!');
 
-            // Step 2: If we need the ID (for file upload), query it separately
+            // Step 2: Use the returned ID for file upload
             if (file) {
-                console.log('[API] Step 2: Getting submission ID...');
-                const { data: rows } = await withTimeout(
-                    supabase
-                        .from('submissions')
-                        .select('id')
-                        .eq('author_id', submissionData.author_id)
-                        .eq('title', submissionData.title)
-                        .order('created_at', { ascending: false })
-                        .limit(1),
-                    10000,
-                    'Get submission ID'
-                );
-
-                const sub = rows?.[0];
+                const sub = insertResult.data?.[0];
                 if (!sub) {
                     console.warn('[API] Could not find inserted submission for file upload');
                     return { data: { id: 'unknown' }, error: null };
@@ -149,7 +136,6 @@ export const API = {
 
         } catch (err) {
             console.error('[API] ❌ UNEXPECTED ERROR:', err);
-            UI.showToast(`Upload failed: ${err.message}`, 'error');
             return { error: { message: err.message || 'Upload failed unexpectedly' } };
         }
     },
