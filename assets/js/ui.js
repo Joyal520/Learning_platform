@@ -139,10 +139,14 @@ export const UI = {
             window.removeEventListener('scroll', onScroll);
         }
 
-        // Clean up on navigation (MutationObserver is already set up in the existing code)
+        // Clean up on navigation
         const mainContent = document.getElementById('main-content');
         if (mainContent) {
-            appObserver.observe(mainContent, { childList: true });
+            const observer = new MutationObserver(() => {
+                window.removeEventListener('scroll', onScroll);
+                observer.disconnect();
+            });
+            observer.observe(mainContent, { childList: true });
         }
     },
 
