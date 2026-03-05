@@ -75,8 +75,8 @@ export const API = {
         try {
             // Step 1: Insert to get the ID
             const { data: sub, error: insertError } = await withTimeout(
-                supabase.from('submissions').insert([submissionData]).select().single(),
-                30000,
+                supabase.from('submissions').insert([submissionData]).select('id').single(),
+                60000,
                 'Database INSERT'
             );
 
@@ -177,8 +177,8 @@ export const API = {
 
             console.log('[API] 💾 Updating database record...');
             const { data, error } = await withTimeout(
-                supabase.from('submissions').update(updateData).eq('id', id).select(),
-                30000,
+                supabase.from('submissions').update(updateData).eq('id', id).select('id'),
+                60000,
                 'Database UPDATE'
             );
 
