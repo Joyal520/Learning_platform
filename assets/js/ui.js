@@ -327,7 +327,10 @@ export const UI = {
             return `<div class="code-preview-container" id="previewContainer">
                         <div class="preview-header">
                             <p class="preview-label">Web Preview</p>
-                            <button class="preview-fullscreen-btn" id="previewFullscreenBtn" title="Toggle Fullscreen Mode">⛶ Fullscreen</button>
+                            <button class="preview-fullscreen-btn btn-snake" id="previewFullscreenBtn" title="Toggle Fullscreen Mode">
+                                <span></span><span></span><span></span><span></span>
+                                ⛶ Fullscreen
+                            </button>
                         </div>
                         <iframe class="code-preview-frame" sandbox="allow-scripts" srcdoc="${wrappedCode.replace(/"/g, '&quot;')}"></iframe>
                     </div>`;
@@ -433,8 +436,14 @@ export const UI = {
                         <p class="hero-welcome">${currentUser?.display_name ? `Welcome back, ${currentUser.display_name}!` : 'Welcome back!'}</p>
 
                         <div class="hero-actions">
-                            <a href="#explore" class="btn btn-primary btn-lg" data-link="explore">Explore Work</a>
-                            <a href="#upload" class="btn btn-outline btn-lg" data-link="upload">Upload Yours</a>
+                            <a href="#explore" class="btn btn-primary btn-lg btn-snake" data-link="explore">
+                                <span></span><span></span><span></span><span></span>
+                                Explore Work
+                            </a>
+                            <a href="#upload" class="btn btn-outline btn-lg btn-snake" data-link="upload">
+                                <span></span><span></span><span></span><span></span>
+                                Upload Yours
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -477,8 +486,14 @@ export const UI = {
                         </div>
                         
                         <div class="profile-form-actions">
-                            <button type="submit" class="btn btn-primary btn-lg">Save Changes</button>
-                            <button type="button" class="btn btn-outline btn-lg" id="logout-btn-profile">Logout</button>
+                            <button type="submit" class="btn btn-primary btn-lg btn-snake">
+                                <span></span><span></span><span></span><span></span>
+                                Save Changes
+                            </button>
+                            <button type="button" class="btn btn-outline btn-lg btn-snake" id="logout-btn-profile">
+                                <span></span><span></span><span></span><span></span>
+                                Logout
+                            </button>
                         </div>
                     </form>
                 </div>
@@ -525,13 +540,16 @@ export const UI = {
                             </div>
 
                             <div class="main-actions">
-                                ${sub.file_path ? `<button class="btn btn-outline" id="download-btn">Download File</button>` : ''}
-                                ${isOwner || isAdmin ? `<button class="btn btn-edit" id="edit-btn">Edit Submission</button>` : ''}
+                                ${sub.file_path ? `<button class="btn btn-outline btn-snake" id="download-btn"><span></span><span></span><span></span><span></span>Download File</button>` : ''}
+                                ${isOwner || isAdmin ? `<button class="btn btn-edit btn-snake" id="edit-btn"><span></span><span></span><span></span><span></span>Edit Submission</button>` : ''}
                             </div>
                         </div>
                     </div>
 
-                    <button class="fullscreen-fab" id="fullscreenFab" title="Toggle Fullscreen Site">⛶</button>
+                    <button class="fullscreen-fab btn-snake" id="fullscreenFab" title="Toggle Fullscreen Site">
+                        <span></span><span></span><span></span><span></span>
+                        ⛶
+                    </button>
                 </div>
             `;
         },
@@ -643,7 +661,10 @@ export const UI = {
                     </div>
 
                     <div class="form-actions">
-                        <button type="submit" class="btn btn-primary btn-lg">Submit for Review</button>
+                        <button type="submit" class="btn btn-primary btn-lg btn-snake">
+                            <span></span><span></span><span></span><span></span>
+                            Submit for Review
+                        </button>
                     </div>
                 </form>
             </div>
@@ -674,17 +695,17 @@ export const UI = {
                     <div class="clay-card">
                         <h4 class="mb-15">Categories</h4>
                         <div class="category-sidebar-list" id="category-filters">
-                            <button class="clay-btn category-clay-item active" data-category="all">All Works</button>
-                            <button class="clay-btn category-clay-item" data-category="short_stories">Short Stories</button>
-                            <button class="clay-btn category-clay-item" data-category="long_stories">Long Stories</button>
-                            <button class="clay-btn category-clay-item" data-category="comics">Comics</button>
-                            <button class="clay-btn category-clay-item" data-category="essays">Essays</button>
-                            <button class="clay-btn category-clay-item" data-category="articles">Articles</button>
-                            <button class="clay-btn category-clay-item" data-category="weird_facts">Weird Facts</button>
-                            <button class="clay-btn category-clay-item" data-category="conversations">Conversations</button>
-                            <button class="clay-btn category-clay-item" data-category="poems">Poems</button>
-                            <button class="clay-btn category-clay-item" data-category="images">Images</button>
-                            <button class="clay-btn category-clay-item" data-category="songs">Songs</button>
+                            <button class="clay-btn category-clay-item btn-snake active" data-category="all"><span></span><span></span><span></span><span></span>All Works</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="short_stories"><span></span><span></span><span></span><span></span>Short Stories</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="long_stories"><span></span><span></span><span></span><span></span>Long Stories</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="comics"><span></span><span></span><span></span><span></span>Comics</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="essays"><span></span><span></span><span></span><span></span>Essays</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="articles"><span></span><span></span><span></span><span></span>Articles</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="weird_facts"><span></span><span></span><span></span><span></span>Weird Facts</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="conversations"><span></span><span></span><span></span><span></span>Conversations</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="poems"><span></span><span></span><span></span><span></span>Poems</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="images"><span></span><span></span><span></span><span></span>Images</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="songs"><span></span><span></span><span></span><span></span>Songs</button>
                         </div>
                     </div>
                 </aside>
@@ -722,11 +743,12 @@ export const UI = {
                         <label>Password</label>
                         <input type="password" name="password" class="form-control" required placeholder="••••••••">
                     </div>
-                    <button type="submit" class="btn btn-primary btn-lg w-100">Login</button>
+                    <button type="submit" class="btn btn-primary btn-lg w-100 btn-snake"><span></span><span></span><span></span><span></span>Login</button>
                     
                     <div class="auth-divider"><span>OR</span></div>
                     
-                    <button type="button" class="btn btn-outline w-100 google-btn" id="google-login">
+                    <button type="button" class="btn btn-outline w-100 google-btn btn-snake" id="google-login">
+                        <span></span><span></span><span></span><span></span>
                         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18" height="18" alt="Google">
                         Continue with Google
                     </button>
@@ -756,12 +778,13 @@ export const UI = {
                     
                     <input type="hidden" name="role" value="${localStorage.getItem('edtechra_role') || 'student'}">
 
-                    <button type="submit" class="btn btn-primary btn-lg w-100">Create Account</button>
+                    <button type="submit" class="btn btn-primary btn-lg w-100 btn-snake"><span></span><span></span><span></span><span></span>Create Account</button>
                     
                     ${localStorage.getItem('edtechra_role') === 'admin' ? '' : `
                     <div class="auth-divider"><span>OR</span></div>
                     
-                    <button type="button" class="btn btn-outline w-100 google-btn" id="google-signup">
+                    <button type="button" class="btn btn-outline w-100 google-btn btn-snake" id="google-signup">
+                        <span></span><span></span><span></span><span></span>
                         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18" height="18" alt="Google">
                         Sign up with Google
                     </button>
@@ -782,7 +805,10 @@ export const UI = {
                         <p class="text-muted">Let's start with your name.</p>
                     </div>
                     <input type="text" id="onboarding-name" class="name-input-large" placeholder="Your Name" autofocus>
-                    <button id="next-to-roles" class="btn btn-primary btn-lg w-100">Continue</button>
+                    <button id="next-to-roles" class="btn btn-primary btn-lg w-100 btn-snake">
+                        <span></span><span></span><span></span><span></span>
+                        Continue
+                    </button>
                 </div>
 
                 <!-- Step 2: Roles -->
@@ -792,17 +818,20 @@ export const UI = {
                         <p class="text-muted">What's your primary goal on EDTECHRA?</p>
                     </div>
                     <div class="role-grid">
-                        <div class="role-option-large" data-role="student">
+                        <div class="role-option-large btn-snake" data-role="student">
+                            <span></span><span></span><span></span><span></span>
                             <span class="role-emoji">🎓</span>
                             <h3>Student</h3>
                             <p>Explore, learn, and share your creative work.</p>
                         </div>
-                        <div class="role-option-large" data-role="teacher">
+                        <div class="role-option-large btn-snake" data-role="teacher">
+                            <span></span><span></span><span></span><span></span>
                             <span class="role-emoji">👩‍🏫</span>
                             <h3>Teacher</h3>
                             <p>Review student work and manage submissions.</p>
                         </div>
-                        <div class="role-option-large" data-role="admin">
+                        <div class="role-option-large btn-snake" data-role="admin">
+                            <span></span><span></span><span></span><span></span>
                             <span class="role-emoji">🛡️</span>
                             <h3>Admin</h3>
                             <p>Full system access and user management.</p>
@@ -848,9 +877,9 @@ export const UI = {
                 ` : ''}
 
                 <div class="tabs">
-                    <button class="tab-btn active" data-tab="pending">Pending Review</button>
-                    <button class="tab-btn" data-tab="approved">Live Works</button>
-                    ${role === 'admin' ? '<button class="tab-btn" data-tab="users">Users & Roles</button>' : ''}
+                    <button class="tab-btn btn-snake active" data-tab="pending"><span></span><span></span><span></span><span></span>Pending Review</button>
+                    <button class="tab-btn btn-snake" data-tab="approved"><span></span><span></span><span></span><span></span>Live Works</button>
+                    ${role === 'admin' ? '<button class="tab-btn btn-snake" data-tab="users"><span></span><span></span><span></span><span></span>Users & Roles</button>' : ''}
                 </div>
 
                 <div id="dashboard-content" class="dashboard-list">
@@ -871,10 +900,10 @@ export const UI = {
                     </div>
                 </div>
                 <div class="sub-actions">
-                    <button class="btn btn-primary btn-sm action-preview" data-id="${sub.id}">View</button>
+                    <button class="btn btn-primary btn-sm btn-snake action-preview" data-id="${sub.id}"><span></span><span></span><span></span><span></span>View</button>
                     ${sub.status === 'pending' ? `
-                        <button class="btn btn-success btn-sm action-approve" data-id="${sub.id}">Approve</button>
-                        <button class="btn btn-danger btn-sm action-reject" data-id="${sub.id}">Reject</button>
+                        <button class="btn btn-success btn-sm btn-snake action-approve" data-id="${sub.id}"><span></span><span></span><span></span><span></span>Approve</button>
+                        <button class="btn btn-danger btn-sm btn-snake action-reject" data-id="${sub.id}"><span></span><span></span><span></span><span></span>Reject</button>
                     ` : ''}
                 </div>
             </div>

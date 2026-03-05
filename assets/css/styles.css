@@ -2465,42 +2465,75 @@ body.explore-view .mobile-menu-toggle span {
 }
 
 /* --- Snake Hover Effect for View Button --- */
+/* --- Snake Hover Effect for Buttons --- */
 .btn-snake {
     position: relative;
-    padding: 6px 18px;
+    padding: 12px 28px;
     color: var(--primary);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 1.2px;
     text-decoration: none;
-    font-size: 0.7rem;
+    font-size: 0.85rem;
     font-weight: 700;
     overflow: hidden;
-    transition: 0.5s;
-    background: rgba(255, 255, 255, 0.03);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    background: rgba(255, 255, 255, 0.05);
     border: none !important;
-    box-shadow: none !important;
-    border-radius: 4px;
+    border-radius: 12px;
+    z-index: 1;
+    /* 3D Depth Effect */
+    box-shadow:
+        0 4px 0 rgba(0, 0, 0, 0.2),
+        0 8px 15px rgba(0, 0, 0, 0.1),
+        inset 0 -2px 5px rgba(0, 0, 0, 0.1),
+        inset 0 2px 5px rgba(255, 255, 255, 0.1);
+}
+
+/* Small, Round "View" Button specific styling */
+.btn-sm.btn-snake {
+    padding: 8px 20px;
+    font-size: 0.75rem;
+    border-radius: 50px !important;
+    /* Fully rounded capsule */
 }
 
 .btn-snake:hover {
     background: var(--primary);
     color: #fff;
-    border-radius: 8px;
-    box-shadow: 0 0 5px var(--primary), 0 0 25px var(--primary), 0 0 50px var(--primary), 0 0 100px var(--primary);
+    transform: translateY(-4px);
+    box-shadow:
+        0 8px 0 rgba(0, 0, 0, 0.2),
+        0 15px 25px rgba(0, 0, 0, 0.2),
+        0 0 15px var(--primary);
+}
+
+.btn-snake:active {
+    transform: translateY(2px);
+    box-shadow:
+        0 2px 0 rgba(0, 0, 0, 0.2),
+        0 5px 10px rgba(0, 0, 0, 0.2);
 }
 
 .btn-snake span {
     position: absolute;
     display: block;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    filter: blur(1px);
+}
+
+.btn-snake:hover span {
+    opacity: 1;
 }
 
 .btn-snake span:nth-child(1) {
     top: 0;
     left: -100%;
     width: 100%;
-    height: 2px;
+    height: 3px;
     background: linear-gradient(90deg, transparent, var(--primary));
-    animation: btn-anim1 1s linear infinite;
+    animation: btn-anim1 4s linear infinite;
+    /* Slower 4s loop */
 }
 
 @keyframes btn-anim1 {
@@ -2517,11 +2550,11 @@ body.explore-view .mobile-menu-toggle span {
 .btn-snake span:nth-child(2) {
     top: -100%;
     right: 0;
-    width: 2px;
+    width: 3px;
     height: 100%;
     background: linear-gradient(180deg, transparent, var(--primary));
-    animation: btn-anim2 1s linear infinite;
-    animation-delay: 0.25s;
+    animation: btn-anim2 4s linear infinite;
+    animation-delay: 1s;
 }
 
 @keyframes btn-anim2 {
@@ -2539,10 +2572,10 @@ body.explore-view .mobile-menu-toggle span {
     bottom: 0;
     right: -100%;
     width: 100%;
-    height: 2px;
+    height: 3px;
     background: linear-gradient(270deg, transparent, var(--primary));
-    animation: btn-anim3 1s linear infinite;
-    animation-delay: 0.5s;
+    animation: btn-anim3 4s linear infinite;
+    animation-delay: 2s;
 }
 
 @keyframes btn-anim3 {
@@ -2559,11 +2592,11 @@ body.explore-view .mobile-menu-toggle span {
 .btn-snake span:nth-child(4) {
     bottom: -100%;
     left: 0;
-    width: 2px;
+    width: 3px;
     height: 100%;
     background: linear-gradient(360deg, transparent, var(--primary));
-    animation: btn-anim4 1s linear infinite;
-    animation-delay: 0.75s;
+    animation: btn-anim4 4s linear infinite;
+    animation-delay: 3s;
 }
 
 @keyframes btn-anim4 {
