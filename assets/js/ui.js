@@ -335,7 +335,8 @@ export const UI = {
         const categoryColors = {
             short_stories: '#6366f1', long_stories: '#8b5cf6', comics: '#ec4899',
             essays: '#14b8a6', articles: '#f59e0b', weird_facts: '#ef4444',
-            conversations: '#06b6d4', poems: '#a855f7', images: '#22c55e', songs: '#f97316'
+            conversations: '#06b6d4', poems: '#a855f7', images: '#22c55e', songs: '#f97316',
+            presentations: '#8b5cf6', flashcards: '#f59e0b'
         };
         const color = categoryColors[sub.category] || '#6366f1';
 
@@ -394,7 +395,7 @@ export const UI = {
         const map = {
             short_stories: '📖', long_stories: '📚', comics: '🦸', essays: '✍️',
             articles: '📰', weird_facts: '🤯', conversations: '💬', poems: '🌸',
-            images: '🖼️', songs: '🎵'
+            images: '🖼️', songs: '🎵', presentations: '📊', flashcards: '🎴'
         };
         return map[cat] || '📄';
     },
@@ -700,6 +701,8 @@ export const UI = {
                             <button class="clay-btn category-clay-item btn-snake" data-category="poems"><span></span><span></span><span></span><span></span>Poems</button>
                             <button class="clay-btn category-clay-item btn-snake" data-category="images"><span></span><span></span><span></span><span></span>Images</button>
                             <button class="clay-btn category-clay-item btn-snake" data-category="songs"><span></span><span></span><span></span><span></span>Songs</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="presentations"><span></span><span></span><span></span><span></span>Presentations</button>
+                            <button class="clay-btn category-clay-item btn-snake" data-category="flashcards"><span></span><span></span><span></span><span></span>Flashcards</button>
                         </div>
                     </div>
                 </aside>
