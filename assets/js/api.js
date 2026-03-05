@@ -133,10 +133,14 @@ export const API = {
                 }
 
                 console.log('[API] Step 4: Updating file path...');
-                await supabase
-                    .from('submissions')
-                    .update({ file_path: filePath, file_type: file.type })
-                    .eq('id', sub.id);
+                await withTimeout(
+                    supabase
+                        .from('submissions')
+                        .update({ file_path: filePath, file_type: file.type })
+                        .eq('id', sub.id),
+                    10000,
+                    'Update file path'
+                );
             }
 
             console.log('[API] === UPLOAD COMPLETE ✅ ===');
@@ -159,7 +163,7 @@ export const API = {
                     .from('submissions')
                     .update(updateData)
                     .eq('id', id),
-                30000,
+                20000, // Reduced from 30s to be more aggressive in timing out
                 'Database UPDATE'
             );
 

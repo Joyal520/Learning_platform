@@ -88,12 +88,20 @@ export const UploadPage = {
                 }
 
                 UI.showLoader();
+                console.log('[Upload] Getting user session...');
 
-                // Get user
-                const { data: { user } } = await supabase.auth.getUser();
-                if (!user) {
+                // Safety timeout for getUser
+                const { data: authData, error: userError } = await Promise.race([
+                    supabase.auth.getUser(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT: Auth Verification')), 8000))
+                ]).catch(err => ({ data: { user: null }, error: err }));
+
+                const user = authData?.user;
+
+                if (!user || userError) {
                     UI.hideLoader();
-                    return UI.showToast('You must be logged in to upload.', 'error');
+                    console.error('[Upload] Auth context error:', userError);
+                    return UI.showToast('Authentication failed or timed out. Please try logging in again.', 'error');
                 }
 
                 // Determine content text
@@ -128,10 +136,14 @@ export const UploadPage = {
                 const thumbnailFile = formData.get('thumbnail');
                 if (thumbnailFile && thumbnailFile.size > 0) {
                     try {
-                        const thumbDataUrl = await this.fileToBase64(thumbnailFile, 400);
+                        console.log('[Upload] Processing thumbnail...');
+                        const thumbDataUrl = await Promise.race([
+                            this.fileToBase64(thumbnailFile, 400),
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT: Thumbnail Processing')), 10000))
+                        ]);
                         submissionData.thumbnail_path = thumbDataUrl;
                     } catch (thumbErr) {
-                        console.warn('Thumbnail conversion skipped:', thumbErr);
+                        console.warn('Thumbnail conversion skipped or timed out:', thumbErr);
                     }
                 }
 
@@ -451,10 +463,14 @@ export const UploadPage = {
                     const thumbnailFile = formData.get('thumbnail');
                     if (thumbnailFile && thumbnailFile.size > 0) {
                         try {
-                            const thumbDataUrl = await UploadPage.fileToBase64(thumbnailFile, 400);
+                            console.log('[Upload] Processing edit thumbnail...');
+                            const thumbDataUrl = await Promise.race([
+                                UploadPage.fileToBase64(thumbnailFile, 400),
+                                new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT: Edit Thumbnail Processing')), 10000))
+                            ]);
                             updateData.thumbnail_path = thumbDataUrl;
                         } catch (thumbErr) {
-                            console.warn('Thumbnail conversion failed:', thumbErr);
+                            console.warn('Thumbnail conversion failed or timed out:', thumbErr);
                         }
                     }
 
