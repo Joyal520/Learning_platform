@@ -274,4 +274,5 @@ const App = {
 window.addEventListener('hashchange', () => App.route());
 document.addEventListener('DOMContentLoaded', () => App.init());
 
+window.App = App; // Expose globally for cross-module access (e.g. profile save)
 export default App;

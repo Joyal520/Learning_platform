@@ -936,8 +936,9 @@ export const UI = {
         form?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(form);
+            const newName = formData.get('display_name');
             const data = {
-                display_name: formData.get('display_name')
+                display_name: newName
             };
 
             UI.showLoader();
@@ -948,8 +949,15 @@ export const UI = {
                 UI.showToast(error.message, 'error');
             } else {
                 UI.showToast('Profile updated!', 'success');
-                // Refresh App state
-                window.location.reload();
+                // Update App state in-place without a full reload
+                // This avoids the blank page caused by auth state race conditions
+                if (window.App) {
+                    if (window.App.profile) window.App.profile.display_name = newName;
+                    window.App.renderNav();
+                }
+                // Also update the name input to reflect the saved value
+                const nameInput = form.querySelector('[name="display_name"]');
+                if (nameInput) nameInput.value = newName;
             }
         });
     },
