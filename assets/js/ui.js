@@ -407,10 +407,10 @@ export const UI = {
 
                         <div class="hero-actions">
                             <a href="#explore" class="hero-btn hero-btn-primary" data-link="explore">
-                                🔍 Explore Work
+                                Explore Work
                             </a>
                             <a href="#upload" class="hero-btn hero-btn-secondary" data-link="upload">
-                                ✨ Upload Yours
+                                Upload Yours
                             </a>
                         </div>
                     </div>
