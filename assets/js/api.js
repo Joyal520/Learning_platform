@@ -73,17 +73,27 @@ export const API = {
     async uploadSubmission(submissionData, file = null, thumbnailBlob = null, displayBlob = null) {
         console.log('[API] === UPLOAD START ===');
         try {
+            // Step 0: Verify session/auth to prevent hangs
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                console.warn('[API] No active session found. Attempting anyway...');
+            } else {
+                console.log('[API] 🔑 Session verified for:', session.user.email);
+            }
+
             // Log payload size for debugging
             const payloadStr = JSON.stringify(submissionData);
-            console.log(`[API] Payload size: ${(payloadStr.length / 1024).toFixed(2)} KB`);
+            console.log(`[API] 📦 Payload size: ${(payloadStr.length / 1024).toFixed(2)} KB`);
 
-            const { data: sub, error: insertError } = await supabase
-                .from('submissions')
-                .insert([submissionData])
-                .select('id')
-                .single();
+            console.log('[API] 📨 Sending insert request...');
+            const { data: sub, error: insertError } = await withTimeout(
+                supabase.from('submissions').insert([submissionData]).select('id').single(),
+                90000,
+                'Database INSERT'
+            );
 
             if (insertError) throw insertError;
+            console.log('[API] ✅ Insert successful, ID:', sub.id);
             const subId = sub.id;
             const updateObject = {};
 
