@@ -1,6 +1,7 @@
 import { API } from '../assets/js/api.js';
 import { UI } from '../assets/js/ui.js';
 import { supabase } from '../assets/js/supabase.js';
+import App from '../assets/js/app.js';
 
 export const UploadPage = {
     init() {
@@ -88,20 +89,14 @@ export const UploadPage = {
                 }
 
                 UI.showLoader();
-                console.log('[Upload] Getting user session...');
+                console.log('[Upload] Getting user session from App state...');
 
-                // Safety timeout for getUser
-                const { data: authData, error: userError } = await Promise.race([
-                    supabase.auth.getUser(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT: Auth Verification')), 8000))
-                ]).catch(err => ({ data: { user: null }, error: err }));
+                const user = App.user;
 
-                const user = authData?.user;
-
-                if (!user || userError) {
+                if (!user) {
                     UI.hideLoader();
-                    console.error('[Upload] Auth context error:', userError);
-                    return UI.showToast('Authentication failed or timed out. Please try logging in again.', 'error');
+                    console.error('[Upload] Auth context error: No active session in App.user');
+                    return UI.showToast('Authentication failed or expired. Please try logging in again.', 'error');
                 }
 
                 // Determine content text
