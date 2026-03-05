@@ -99,8 +99,7 @@ export const UI = {
 
 
     _initHeroParallax(hero) {
-        const bg = hero.querySelector('.hero-bg');
-        if (!bg) return;
+        return; // Parallax effect removed as requested
 
         let isVisible = false;
         let ticking = false;
@@ -436,11 +435,11 @@ export const UI = {
                         <p class="hero-welcome">${currentUser?.display_name ? `Welcome back, ${currentUser.display_name}!` : 'Welcome back!'}</p>
 
                         <div class="hero-actions">
-                            <a href="#explore" class="btn btn-primary btn-lg btn-snake" data-link="explore">
+                            <a href="#explore" class="btn btn-hero-custom btn-lg btn-snake" data-link="explore">
                                 <span></span><span></span><span></span><span></span>
                                 Explore Work
                             </a>
-                            <a href="#upload" class="btn btn-outline btn-lg btn-snake" data-link="upload">
+                            <a href="#upload" class="btn btn-hero-custom btn-lg btn-snake" data-link="upload">
                                 <span></span><span></span><span></span><span></span>
                                 Upload Yours
                             </a>

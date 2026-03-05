@@ -38,6 +38,26 @@ export const ExplorePage = {
             }
 
             grid.innerHTML = data.map(sub => UI.renderCard(sub)).join('');
+
+            // Asynchronously load and update stats
+            const ids = data.map(s => s.id);
+            API.getStatsForSubmissions(ids).then(statsMap => {
+                ids.forEach(id => {
+                    const st = statsMap[id];
+                    if (st) {
+                        const card = document.querySelector(`.content-card[data-id="${id}"]`);
+                        if (card) {
+                            const statsDiv = card.querySelector('.card-stats');
+                            if (statsDiv) {
+                                statsDiv.innerHTML = `
+                                    <span>★ ${Number(st.avg_rating).toFixed(1)}</span>
+                                    <span>❤ ${st.like_count}</span>
+                                `;
+                            }
+                        }
+                    }
+                });
+            }).catch(console.error);
         };
 
         // Handle category filter clicks

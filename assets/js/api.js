@@ -39,34 +39,31 @@ export const API = {
 
         if (error || !data || data.length === 0) return { data, error };
 
-        // Fetch stats separately from the view - await to ensure they are present on render
-        const ids = data.map(s => s.id);
+        // Initialize stats to 0 so UI renders immediately without waiting for the slow view query
+        data.forEach(sub => {
+            sub.submission_stats = [{ avg_rating: 0, like_count: 0 }];
+        });
+
+        return { data, error };
+    },
+
+    async getStatsForSubmissions(ids) {
+        if (!ids || ids.length === 0) return {};
         try {
             const { data: statsData } = await supabase
                 .from('submission_stats')
                 .select('id, avg_rating, like_count')
                 .in('id', ids);
 
+            const statsMap = {};
             if (statsData) {
-                const statsMap = {};
                 statsData.forEach(s => { statsMap[s.id] = s; });
-                data.forEach(sub => {
-                    const st = statsMap[sub.id];
-                    sub.submission_stats = st ? [st] : [{ avg_rating: 0, like_count: 0 }];
-                });
-            } else {
-                data.forEach(sub => {
-                    sub.submission_stats = [{ avg_rating: 0, like_count: 0 }];
-                });
             }
+            return statsMap;
         } catch (e) {
             console.warn('[API] Could not fetch stats:', e.message);
-            data.forEach(sub => {
-                sub.submission_stats = [{ avg_rating: 0, like_count: 0 }];
-            });
+            return {};
         }
-
-        return { data, error };
     },
 
 
