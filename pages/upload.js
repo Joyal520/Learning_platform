@@ -1,6 +1,7 @@
 import { API } from '../assets/js/api.js';
 import { UI } from '../assets/js/ui.js';
 import { supabase } from '../assets/js/supabase.js';
+import { ImageUtils } from '../assets/js/image-utils.js';
 import App from '../assets/js/app.js';
 
 export const UploadPage = {
@@ -42,15 +43,27 @@ export const UploadPage = {
         this.setupThemeSelector();
 
         // Thumbnail preview
-        thumbnailInput?.addEventListener('change', (e) => {
+        thumbnailInput?.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file && file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    thumbnailPreview.innerHTML = `<img src="${ev.target.result}" alt="Thumbnail preview">`;
+                // Quick validation
+                if (file.size > 10 * 1024 * 1024) {
+                    UI.showToast('Image exceeds 10MB limit.', 'error');
+                    e.target.value = '';
+                    return;
+                }
+
+                // Show generic loader on preview area
+                thumbnailPreview.innerHTML = '<div class="loader-inline"><div class="spinner"></div></div>';
+
+                try {
+                    // Generate placeholder preview (fast)
+                    const placeholder = await ImageUtils.generatePlaceholder(file);
+                    thumbnailPreview.innerHTML = `<img src="${placeholder}" alt="Thumbnail preview" style="filter: blur(4px)">`;
                     thumbnailPreview.classList.add('has-image');
-                };
-                reader.readAsDataURL(file);
+                } catch (err) {
+                    console.error('Preview error:', err);
+                }
             }
         });
 
@@ -73,7 +86,7 @@ export const UploadPage = {
                 const submitBtn = form.querySelector('button[type="submit"]');
                 if (submitBtn) {
                     submitBtn.disabled = true;
-                    submitBtn.textContent = '⏳ Submitting...';
+                    submitBtn.textContent = '⏳ Processing...';
                 }
 
                 const formData = new FormData(form);
@@ -82,21 +95,22 @@ export const UploadPage = {
 
                 // Validation
                 if (contentMode === 'file' && (!file || file.size === 0)) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit for Review';
                     return UI.showToast('Please select a file to upload.', 'error');
                 }
                 if (contentMode === 'file' && file.size > 50 * 1024 * 1024) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit for Review';
                     return UI.showToast('File size exceeds 50MB limit.', 'error');
                 }
 
                 UI.showLoader();
-                console.log('[Upload] Getting user session from App state...');
-
                 const user = App.user;
 
                 if (!user) {
                     UI.hideLoader();
-                    console.error('[Upload] Auth context error: No active session in App.user');
-                    return UI.showToast('Authentication failed or expired. Please try logging in again.', 'error');
+                    return UI.showToast('Authentication failed. Please login again.', 'error');
                 }
 
                 // Determine content text
@@ -107,10 +121,11 @@ export const UploadPage = {
                     contentText = formData.get('code_content');
                 }
 
-                // Validate themes
                 const selectedThemes = this.getSelectedThemes();
                 if (selectedThemes.length === 0) {
                     UI.hideLoader();
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit for Review';
                     return UI.showToast('Please select at least 1 theme.', 'error');
                 }
 
@@ -127,45 +142,45 @@ export const UploadPage = {
                     status: 'pending'
                 };
 
-                // Convert thumbnail to base64 if present (no storage needed)
+                // Processing high-performance image pipeline
+                let thumbnailBlob = null;
+                let displayBlob = null;
                 const thumbnailFile = formData.get('thumbnail');
-                if (thumbnailFile && thumbnailFile.size > 0) {
+
+                if (thumbnailFile && thumbnailFile.size > 0 && thumbnailFile.type.startsWith('image/')) {
+                    if (thumbnailFile.size > 10 * 1024 * 1024) {
+                        UI.hideLoader();
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Submit for Review';
+                        return UI.showToast('Thumbnail image exceeds 10MB limit.', 'error');
+                    }
+
+                    console.log('[Upload] Starting image compression pipeline...');
                     try {
-                        console.log('[Upload] Processing thumbnail...');
-                        const thumbDataUrl = await Promise.race([
-                            this.fileToBase64(thumbnailFile, 400),
-                            new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT: Thumbnail Processing')), 10000))
-                        ]);
-                        submissionData.thumbnail_path = thumbDataUrl;
-                    } catch (thumbErr) {
-                        console.warn('Thumbnail conversion skipped or timed out:', thumbErr);
+                        const versions = await ImageUtils.createThumbnailAndDisplayVersions(thumbnailFile);
+                        thumbnailBlob = versions.thumbnail;
+                        displayBlob = versions.display;
+                    } catch (imgErr) {
+                        console.error('[Upload] Image pipeline failed:', imgErr);
                     }
                 }
 
                 console.log('Submitting:', submissionData);
+                if (submitBtn) submitBtn.textContent = '⏳ Uploading...';
 
-                // Only pass file for file mode
                 const fileToUpload = (contentMode === 'file' && file && file.size > 0) ? file : null;
-                let { error } = await API.uploadSubmission(submissionData, fileToUpload);
-
-                // If it fails because thumbnail_path column doesn't exist, retry without it
-                if (error && error.message?.includes('thumbnail_path')) {
-                    console.warn('Retrying without thumbnail_path...');
-                    delete submissionData.thumbnail_path;
-                    const retry = await API.uploadSubmission(submissionData, fileToUpload);
-                    error = retry.error;
-                }
+                const { error } = await API.uploadSubmission(submissionData, fileToUpload, thumbnailBlob, displayBlob);
 
                 if (error) {
                     console.error('Upload error:', error);
-                    UI.showToast(error.message || 'Upload failed. Please try again.', 'error');
+                    UI.showToast(error.message || 'Upload failed.', 'error');
                 } else {
                     UI.showToast('Uploaded successfully! Waiting for review.', 'success');
                     window.location.hash = '#my-uploads';
                 }
             } catch (err) {
                 console.error('Unexpected upload error:', err);
-                UI.showToast('Something went wrong. Check the console for details.', 'error');
+                UI.showToast('Something went wrong. Check the console.', 'error');
             } finally {
                 UI.hideLoader();
                 const submitBtn = form.querySelector('button[type="submit"]');
@@ -182,7 +197,6 @@ export const UploadPage = {
         iframe.srcdoc = UI.wrapCodeForPreview(code);
     },
 
-    // ========== Theme Multi-Select Logic ==========
     setupThemeSelector() {
         const checkboxes = document.querySelectorAll('input[name="themes"]');
         const tagsContainer = document.getElementById('theme-tags');
@@ -194,7 +208,6 @@ export const UploadPage = {
             cb.addEventListener('change', () => {
                 const selected = document.querySelectorAll('input[name="themes"]:checked');
 
-                // Enforce max 3
                 if (selected.length > 3) {
                     cb.checked = false;
                     validationMsg?.classList.remove('hidden');
@@ -202,13 +215,10 @@ export const UploadPage = {
                 }
 
                 validationMsg?.classList.add('hidden');
-
-                // Disable unchecked if 3 selected
                 checkboxes.forEach(c => {
                     if (!c.checked) c.disabled = selected.length >= 3;
                 });
 
-                // Render tag chips
                 this.renderThemeTags(tagsContainer, checkboxes);
             });
         });
@@ -224,7 +234,6 @@ export const UploadPage = {
             </span>
         `).join('');
 
-        // Attach remove handlers
         container.querySelectorAll('.theme-tag-remove').forEach(btn => {
             btn.addEventListener('click', () => {
                 const val = btn.dataset.theme;
@@ -246,11 +255,9 @@ export const UploadPage = {
         if (!form) return;
 
         UI.showLoader();
-        this.setupThemeSelector(); // Re-attach listeners for edit mode 
-
+        this.setupThemeSelector();
 
         try {
-            // Fetch the submission
             const { data: sub, error } = await supabase
                 .from('submissions')
                 .select('*')
@@ -264,7 +271,6 @@ export const UploadPage = {
                 return;
             }
 
-            // Check permission: must be owner or admin
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
                 UI.hideLoader();
@@ -272,42 +278,21 @@ export const UploadPage = {
                 return;
             }
 
-            // Get profile to check role
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('role')
-                .eq('id', user.id)
-                .single();
-
+            const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
             const isOwner = user.id === sub.author_id;
             const isAdmin = profile?.role === 'admin';
 
             if (!isOwner && !isAdmin) {
-                UI.showToast('You do not have permission to edit this submission.', 'error');
+                UI.showToast('Unauthorized.', 'error');
                 UI.hideLoader();
                 window.location.hash = 'explore';
                 return;
             }
 
-            // Update page header
-            const pageHeader = document.querySelector('.page-header');
-            if (pageHeader) {
-                pageHeader.querySelector('h1').textContent = 'Edit Your Work';
-                pageHeader.querySelector('p').textContent = 'Update your submission details below.';
-            }
-
-            // Pre-fill form fields
-            const titleInput = form.querySelector('input[name="title"]');
-            const categorySelect = form.querySelector('select[name="category"]');
-            const descriptionTextarea = form.querySelector('textarea[name="description"]');
-            const contentTextarea = form.querySelector('textarea[name="content_text"]');
-            const codeTextarea = form.querySelector('textarea[name="code_content"]');
-
-            if (titleInput) titleInput.value = sub.title || '';
-            if (categorySelect) categorySelect.value = sub.category || '';
-            if (descriptionTextarea) descriptionTextarea.value = sub.description || '';
-
-            // Pre-fill new fields
+            // Fill fields
+            form.querySelector('input[name="title"]').value = sub.title || '';
+            form.querySelector('select[name="category"]').value = sub.category || '';
+            form.querySelector('textarea[name="description"]').value = sub.description || '';
             const audienceSelect = form.querySelector('select[name="audience_level"]');
             if (audienceSelect) audienceSelect.value = sub.audience_level || 'General';
 
@@ -316,10 +301,7 @@ export const UploadPage = {
                     const cb = form.querySelector(`input[name="themes"][value="${theme}"]`);
                     if (cb) cb.checked = true;
                 });
-                // Update dots/tags
                 this.renderThemeTags(document.getElementById('theme-tags'), document.querySelectorAll('input[name="themes"]'));
-
-                // Enforce disabled state if 3 selected
                 const checkboxesArr = document.querySelectorAll('input[name="themes"]');
                 const selectedCount = document.querySelectorAll('input[name="themes"]:checked').length;
                 checkboxesArr.forEach(c => {
@@ -327,115 +309,74 @@ export const UploadPage = {
                 });
             }
 
-            // Determine content mode and switch to it
+            // Content Mode
             const fileGroup = document.querySelector('#file-input-group');
             const textGroup = document.querySelector('#text-input-group');
             const codeGroup = document.querySelector('#code-input-group');
 
             if (sub.file_type === 'text/html' && sub.content_text) {
-                // Code mode
-                const codeRadio = form.querySelector('input[name="content_mode"][value="code"]');
-                if (codeRadio) codeRadio.checked = true;
+                form.querySelector('input[name="content_mode"][value="code"]').checked = true;
                 fileGroup?.classList.add('hidden');
                 textGroup?.classList.add('hidden');
                 codeGroup?.classList.remove('hidden');
-                if (codeTextarea) codeTextarea.value = sub.content_text || '';
+                form.querySelector('textarea[name="code_content"]').value = sub.content_text || '';
                 fileGroup?.querySelector('input')?.removeAttribute('required');
-                codeGroup?.querySelector('textarea')?.setAttribute('required', '');
-                // Update preview
-                const previewFrame = document.getElementById('code-preview-frame');
-                this.updateCodePreview(sub.content_text, previewFrame);
+                this.updateCodePreview(sub.content_text, document.getElementById('code-preview-frame'));
             } else if (sub.content_text && !sub.file_path) {
-                // Text mode
-                const textRadio = form.querySelector('input[name="content_mode"][value="text"]');
-                if (textRadio) textRadio.checked = true;
+                form.querySelector('input[name="content_mode"][value="text"]').checked = true;
                 fileGroup?.classList.add('hidden');
                 textGroup?.classList.remove('hidden');
                 codeGroup?.classList.add('hidden');
-                if (contentTextarea) contentTextarea.value = sub.content_text || '';
+                form.querySelector('textarea[name="content_text"]').value = sub.content_text || '';
                 fileGroup?.querySelector('input')?.removeAttribute('required');
-                textGroup?.querySelector('textarea')?.setAttribute('required', '');
             } else {
-                // File mode — keep default, but don't require new file upload
                 fileGroup?.querySelector('input')?.removeAttribute('required');
             }
 
-            // Change submit button text
             const submitBtn = form.querySelector('button[type="submit"]');
             if (submitBtn) submitBtn.textContent = '💾 Save Changes';
 
-            // Setup thumbnail preview for edit mode
+            // New thumbnail change handler
             const thumbnailInput = document.getElementById('thumbnail-input');
             const thumbnailPreview = document.getElementById('thumbnail-preview');
-            thumbnailInput?.addEventListener('change', (e) => {
+
+            // Show existing thumbnail if available
+            const existingThumb = sub.thumbnail_url || sub.thumbnail_path;
+            if (existingThumb) {
+                thumbnailPreview.innerHTML = `<img src="${existingThumb}" alt="Current thumbnail">`;
+                thumbnailPreview.classList.add('has-image');
+            }
+
+            thumbnailInput?.addEventListener('change', async (e) => {
                 const file = e.target.files[0];
                 if (file && file.type.startsWith('image/')) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                        thumbnailPreview.innerHTML = `<img src="${ev.target.result}" alt="Thumbnail preview">`;
-                        thumbnailPreview.classList.add('has-image');
-                    };
-                    reader.readAsDataURL(file);
+                    if (file.size > 10 * 1024 * 1024) {
+                        UI.showToast('Image exceeds 10MB limit.', 'error');
+                        e.target.value = '';
+                        return;
+                    }
+                    thumbnailPreview.innerHTML = '<div class="loader-inline"><div class="spinner"></div></div>';
+                    try {
+                        const placeholder = await ImageUtils.generatePlaceholder(file);
+                        thumbnailPreview.innerHTML = `<img src="${placeholder}" alt="Preview" style="filter:blur(4px)">`;
+                    } catch (err) { console.error(err); }
                 }
             });
 
-            // Setup content mode toggling (reuse from init)
-            const modeRadios = form.querySelectorAll('input[name="content_mode"]');
-            modeRadios.forEach(radio => {
-                radio.addEventListener('change', (e) => {
-                    fileGroup?.classList.add('hidden');
-                    textGroup?.classList.add('hidden');
-                    codeGroup?.classList.add('hidden');
-
-                    fileGroup?.querySelector('input')?.removeAttribute('required');
-                    textGroup?.querySelector('textarea')?.removeAttribute('required');
-                    codeGroup?.querySelector('textarea')?.removeAttribute('required');
-
-                    if (e.target.value === 'file') {
-                        fileGroup?.classList.remove('hidden');
-                    } else if (e.target.value === 'text') {
-                        textGroup?.classList.remove('hidden');
-                        textGroup?.querySelector('textarea')?.setAttribute('required', '');
-                    } else if (e.target.value === 'code') {
-                        codeGroup?.classList.remove('hidden');
-                        codeGroup?.querySelector('textarea')?.setAttribute('required', '');
-                    }
-                });
-            });
-
-            // Live code preview for edit mode
-            const editCodeTextarea = document.getElementById('code-textarea');
-            const editCodePreviewFrame = document.getElementById('code-preview-frame');
-            let debounceTimer;
-            editCodeTextarea?.addEventListener('input', () => {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => {
-                    this.updateCodePreview(editCodeTextarea.value, editCodePreviewFrame);
-                }, 500);
-            });
-
-            // Override form submit for edit
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
-
-                const submitBtn = form.querySelector('button[type="submit"]');
+                UI.showLoader();
                 if (submitBtn) {
                     submitBtn.disabled = true;
                     submitBtn.textContent = '⏳ Saving...';
                 }
 
-                UI.showLoader();
-
                 try {
                     const formData = new FormData(form);
                     const contentMode = formData.get('content_mode');
-
                     let contentText = null;
-                    if (contentMode === 'text') {
-                        contentText = formData.get('content_text');
-                    } else if (contentMode === 'code') {
-                        contentText = formData.get('code_content');
-                    }
+                    if (contentMode === 'text') contentText = formData.get('content_text');
+                    else if (contentMode === 'code') contentText = formData.get('code_content');
 
                     const updateData = {
                         title: formData.get('title'),
@@ -443,37 +384,28 @@ export const UploadPage = {
                         description: formData.get('description') || '',
                         themes: this.getSelectedThemes(),
                         audience_level: formData.get('audience_level') || 'General',
-                        status: 'pending', // Reset status to pending for re-review
-                        review_note: null,   // Clear previous rejection notes
-                        approved_by: null    // Clear previous approver
+                        status: 'pending'
                     };
 
-                    // Only update content fields if they changed
                     if (contentText !== null) {
                         updateData.content_text = contentText;
                         updateData.file_type = contentMode === 'code' ? 'text/html' : 'text/plain';
                     }
 
-                    // Handle thumbnail if a new one was selected
+                    let thumbnailBlob = null;
+                    let displayBlob = null;
                     const thumbnailFile = formData.get('thumbnail');
-                    if (thumbnailFile && thumbnailFile.size > 0) {
-                        try {
-                            console.log('[Upload] Processing edit thumbnail...');
-                            const thumbDataUrl = await Promise.race([
-                                UploadPage.fileToBase64(thumbnailFile, 400),
-                                new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT: Edit Thumbnail Processing')), 10000))
-                            ]);
-                            updateData.thumbnail_path = thumbDataUrl;
-                        } catch (thumbErr) {
-                            console.warn('Thumbnail conversion failed or timed out:', thumbErr);
-                        }
+
+                    if (thumbnailFile && thumbnailFile.size > 0 && thumbnailFile.type.startsWith('image/')) {
+                        const versions = await ImageUtils.createThumbnailAndDisplayVersions(thumbnailFile);
+                        thumbnailBlob = versions.thumbnail;
+                        displayBlob = versions.display;
                     }
 
-                    const { error: updateError } = await API.updateSubmission(id, updateData);
+                    const { error: updateError } = await API.updateSubmission(id, updateData, thumbnailBlob, displayBlob);
 
-                    if (updateError) {
-                        UI.showToast(updateError.message || 'Update failed.', 'error');
-                    } else {
+                    if (updateError) UI.showToast(updateError.message || 'Update failed.', 'error');
+                    else {
                         UI.showToast('Changes saved successfully!', 'success');
                         window.location.hash = `detail/${id}`;
                     }
@@ -482,7 +414,6 @@ export const UploadPage = {
                     UI.showToast('Something went wrong.', 'error');
                 } finally {
                     UI.hideLoader();
-                    const submitBtn = form.querySelector('button[type="submit"]');
                     if (submitBtn) {
                         submitBtn.disabled = false;
                         submitBtn.textContent = '💾 Save Changes';
@@ -493,32 +424,8 @@ export const UploadPage = {
             UI.hideLoader();
         } catch (err) {
             console.error('initEdit error:', err);
-            UI.showToast('Failed to load submission for editing.', 'error');
+            UI.showToast('Failed to load for editing.', 'error');
             UI.hideLoader();
         }
-    },
-
-    // Convert an image File to a resized base64 data URL
-    fileToBase64(file, maxSize = 400) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let w = img.width, h = img.height;
-                    if (w > h) { if (w > maxSize) { h = h * maxSize / w; w = maxSize; } }
-                    else { if (h > maxSize) { w = w * maxSize / h; h = maxSize; } }
-                    canvas.width = w;
-                    canvas.height = h;
-                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                    resolve(canvas.toDataURL('image/jpeg', 0.7));
-                };
-                img.onerror = reject;
-                img.src = e.target.result;
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
     }
 };

@@ -23,8 +23,10 @@ export const API = {
                 category,
                 author_id,
                 thumbnail_path,
+                thumbnail_url,
                 status,
                 created_at,
+                updated_at,
                 profiles!author_id (display_name)
             `)
             .eq('status', 'approved');
@@ -68,102 +70,128 @@ export const API = {
 
 
 
-    async uploadSubmission(submissionData, file = null) {
+    async uploadSubmission(submissionData, file = null, thumbnailBlob = null, displayBlob = null) {
         console.log('[API] === UPLOAD START ===');
-        console.log('[API] Origin:', window.location.origin);
-        console.log('[API] Data:', JSON.stringify(submissionData, null, 2));
-
         try {
-            // Step 1: Insert with .select() to get the ID directly
-            console.log('[API] Step 1: Inserting into submissions table...');
-
-            const insertResult = await withTimeout(
-                supabase.from('submissions').insert([submissionData]).select(),
-                60000,
+            // Step 1: Insert to get the ID
+            const { data: sub, error: insertError } = await withTimeout(
+                supabase.from('submissions').insert([submissionData]).select().single(),
+                30000,
                 'Database INSERT'
             );
 
-            console.log('[API] Step 1 raw result:', insertResult);
+            if (insertError) throw insertError;
+            const subId = sub.id;
+            const updateObject = {};
 
-            if (insertResult.error) {
-                console.error('[API] ❌ INSERT FAILED:', insertResult.error);
-                return { error: insertResult.error };
+            // Step 2: Handle high-performance images
+            if (thumbnailBlob) {
+                const thumbPath = `thumbnails/${subId}.webp`;
+                console.log('[API] 📤 Uploading thumbnail...');
+                const { error: tErr } = await supabase.storage.from('approved_public').upload(thumbPath, thumbnailBlob, {
+                    contentType: 'image/webp', upsert: true
+                });
+                if (tErr) console.error('[API] ❌ Thumbnail storage error:', tErr);
+                else {
+                    const { data } = supabase.storage.from('approved_public').getPublicUrl(thumbPath);
+                    updateObject.thumbnail_url = data.publicUrl;
+                }
             }
 
-            console.log('[API] ✅ INSERT succeeded!');
+            if (displayBlob) {
+                const imgPath = `images/${subId}.webp`;
+                console.log('[API] 📤 Uploading display image...');
+                const { error: iErr } = await supabase.storage.from('approved_public').upload(imgPath, displayBlob, {
+                    contentType: 'image/webp', upsert: true
+                });
+                if (iErr) console.error('[API] ❌ Display storage error:', iErr);
+                else {
+                    const { data } = supabase.storage.from('approved_public').getPublicUrl(imgPath);
+                    updateObject.image_url = data.publicUrl;
+                }
+            }
 
-            // Step 2: Use the returned ID for file upload
+            // Step 3: Upload main file if present
             if (file) {
-                const sub = insertResult.data?.[0];
-                if (!sub) {
-                    console.warn('[API] Could not find inserted submission for file upload');
-                    return { data: { id: 'unknown' }, error: null };
-                }
-
-                console.log('[API] Step 3: Uploading file to storage...');
-                console.log('[API] File:', { name: file.name, type: file.type, size: file.size });
-
                 const fileExt = file.name.split('.').pop();
-                const filePath = `${submissionData.author_id}/${sub.id}.${fileExt}`;
-
-                const { error: uploadError } = await withTimeout(
-                    supabase.storage
-                        .from('submissions_private')
-                        .upload(filePath, file),
-                    30000,
-                    'File upload to storage'
-                );
-
-                if (uploadError) {
-                    console.error('[API] ❌ File upload failed:', uploadError);
-                    await supabase.from('submissions').delete().eq('id', sub.id);
-                    return { error: uploadError };
+                const filePath = `${submissionData.author_id}/${subId}.${fileExt}`;
+                const { error: fErr } = await supabase.storage.from('submissions_private').upload(filePath, file);
+                if (!fErr) {
+                    updateObject.file_path = filePath;
+                    updateObject.file_type = file.type;
+                    updateObject.file_size = file.size;
                 }
+            }
 
-                console.log('[API] Step 4: Updating file path...');
-                await withTimeout(
-                    supabase
-                        .from('submissions')
-                        .update({ file_path: filePath, file_type: file.type })
-                        .eq('id', sub.id),
-                    10000,
-                    'Update file path'
-                );
+            // Step 4: Final DB sync
+            if (Object.keys(updateObject).length > 0) {
+                await supabase.from('submissions').update(updateObject).eq('id', subId);
             }
 
             console.log('[API] === UPLOAD COMPLETE ✅ ===');
-            return { data: { id: 'success' }, error: null };
-
+            return { data: sub, error: null };
         } catch (err) {
-            console.error('[API] ❌ UNEXPECTED ERROR:', err);
-            return { error: { message: err.message || 'Upload failed unexpectedly' } };
+            console.error('[API] ❌ Upload failed:', err);
+            return { error: err };
         }
     },
 
-    async updateSubmission(id, updateData) {
-        console.log('[API] === UPDATE START ===', id, updateData);
+    async updateSubmission(id, updateData, thumbnailBlob = null, displayBlob = null) {
+        console.log('[API] === UPDATE START ===', id);
         try {
-            // Remove .select() to speed up and avoid potential RLS/returning issues
-            // Increase timeout to 30s for larger payloads
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) console.warn('[API] No session found.');
+
+            delete updateData.thumbnail_path;
+
+            if (thumbnailBlob) {
+                const thumbPath = `thumbnails/${id}.webp`;
+                console.log('[API] 📤 Uploading thumbnail to Storage...');
+                const { error: tErr } = await supabase.storage.from('approved_public').upload(thumbPath, thumbnailBlob, {
+                    contentType: 'image/webp', upsert: true
+                });
+                if (tErr) {
+                    console.error('[API] ❌ Thumbnail Storage Error:', tErr);
+                    // Do not update the URL if upload failed
+                } else {
+                    const { data } = supabase.storage.from('approved_public').getPublicUrl(thumbPath);
+                    updateData.thumbnail_url = data.publicUrl;
+                    console.log('[API] ✅ Thumbnail stored:', data.publicUrl);
+                }
+            }
+
+            if (displayBlob) {
+                const imgPath = `images/${id}.webp`;
+                console.log('[API] 📤 Uploading display image to Storage...');
+                const { error: iErr } = await supabase.storage.from('approved_public').upload(imgPath, displayBlob, {
+                    contentType: 'image/webp', upsert: true
+                });
+                if (iErr) {
+                    console.error('[API] ❌ Display Storage Error:', iErr);
+                } else {
+                    const { data } = supabase.storage.from('approved_public').getPublicUrl(imgPath);
+                    updateData.image_url = data.publicUrl;
+                    console.log('[API] ✅ Display image stored:', data.publicUrl);
+                }
+            }
+
+            console.log('[API] 💾 Updating database record...');
             const { data, error } = await withTimeout(
-                supabase
-                    .from('submissions')
-                    .update(updateData)
-                    .eq('id', id),
-                20000, // Reduced from 30s to be more aggressive in timing out
+                supabase.from('submissions').update(updateData).eq('id', id).select(),
+                30000,
                 'Database UPDATE'
             );
 
             if (error) {
-                console.error('[API] ❌ UPDATE FAILED:', error);
-                return { error };
+                console.error('[API] ❌ DB Update Error:', error);
+                throw error;
             }
 
-            console.log('[API] ✅ UPDATE succeeded!');
+            console.log('[API] 🎊 Update succeeded!');
             return { data, error: null };
         } catch (err) {
-            console.error('[API] ❌ UNEXPECTED UPDATE ERROR:', err);
-            return { error: { message: err.message || 'Update failed unexpectedly' } };
+            console.error('[API] ❌ Error in updateSubmission:', err);
+            return { error: err };
         }
     }
 };

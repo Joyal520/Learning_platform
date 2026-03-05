@@ -911,13 +911,34 @@ body.explore-view .btn-outline:hover {
     border-color: var(--primary);
 }
 
-.content-card::before,
-.content-card::after {
-    display: none;
+.card-thumbnail-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background: var(--clay-background);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.content-card:hover {
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+.card-thumbnail-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.content-card:hover .card-thumbnail-img {
+    transform: scale(1.05);
+}
+
+.card-thumb-gradient {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
 }
 
 
@@ -1092,19 +1113,27 @@ body.explore-view .btn-outline:hover {
     border-color: var(--primary);
 }
 
-/* ========== Card Thumbnails ========== */
+/* ========== Card Thumbnails (Legacy Overwrite) ========== */
 .card-thumbnail {
-    width: 100%;
-    height: 180px;
-    background-size: cover;
-    background-position: center;
-    position: relative;
+    display: none;
+    /* Replaced by card-thumbnail-container */
 }
 
-.card-thumb-gradient {
+.image-presentation-container {
+    width: 100%;
+    max-height: 80vh;
+    overflow: hidden;
     display: flex;
-    align-items: center;
     justify-content: center;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+}
+
+.image-presentation-container img {
+    max-width: 100%;
+    max-height: 80vh;
+    object-fit: contain;
 }
 
 .thumb-emoji {

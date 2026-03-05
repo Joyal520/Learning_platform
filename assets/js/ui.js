@@ -292,6 +292,9 @@ export const UI = {
     },
 
     renderContentPreview(sub) {
+        // High-performance display image priority
+        const displayUrl = sub.image_url || sub.public_url || sub.thumbnail_url || sub.thumbnail_path;
+
         if (sub.file_type === 'text/html' && sub.content_text) {
             const wrappedCode = this.wrapCodeForPreview(sub.content_text);
             return `<div class="code-preview-container" id="previewContainer">
@@ -306,7 +309,17 @@ export const UI = {
                     </div>`;
         }
         if (sub.content_text) return `<div class="text-presentation">${sub.content_text}</div>`;
-        if (sub.file_type?.startsWith('image/')) return `<img src="${sub.public_url}" class="preview-img" alt="${sub.title}">`;
+
+        if (sub.file_type?.startsWith('image/') && displayUrl) {
+            return `<div class="image-presentation-container">
+                        <img src="${displayUrl}" 
+                             class="preview-img" 
+                             alt="${sub.title}" 
+                             decoding="async" 
+                             fetchpriority="high">
+                    </div>`;
+        }
+
         if (sub.file_type?.startsWith('audio/')) return `<audio controls class="preview-audio"><source src="${sub.public_url}" type="${sub.file_type}"></audio>`;
         return `<div class="file-placeholder">📄 This content is a ${sub.file_type || 'file'} and can be downloaded below.</div>`;
     },
@@ -325,25 +338,39 @@ export const UI = {
             conversations: '#06b6d4', poems: '#a855f7', images: '#22c55e', songs: '#f97316'
         };
         const color = categoryColors[sub.category] || '#6366f1';
-        let thumbnailUrl = sub.thumbnail_url || null;
-        if (!thumbnailUrl && sub.thumbnail_path) {
-            if (sub.thumbnail_path.startsWith('data:')) {
-                thumbnailUrl = sub.thumbnail_path;
-            } else {
-                const { data } = supabase.storage
-                    .from('approved_public')
-                    .getPublicUrl(sub.thumbnail_path);
-                thumbnailUrl = data?.publicUrl || null;
-            }
+
+        let thumbnailUrl = sub.thumbnail_url || sub.thumbnail_path;
+        if (thumbnailUrl && !thumbnailUrl.startsWith('data:') && !thumbnailUrl.startsWith('http')) {
+            const { data } = supabase.storage.from('approved_public').getPublicUrl(thumbnailUrl);
+            thumbnailUrl = data.publicUrl;
         }
-        const thumbnail = thumbnailUrl
-            ? `<div class="card-thumbnail" style="background-image:url('${thumbnailUrl}')"></div>`
-            : `<div class="card-thumbnail card-thumb-gradient" style="background:linear-gradient(135deg, ${color}22, ${color}44)">
-                <span class="thumb-emoji">${UI.categoryEmoji(sub.category)}</span>
+
+        // Add cache busting if it's a storage URL
+        if (thumbnailUrl && thumbnailUrl.includes('supabase.co')) {
+            thumbnailUrl += `?t=${new Date(sub.updated_at || sub.created_at).getTime()}`;
+        }
+
+        const thumbnailHtml = thumbnailUrl
+            ? `<div class="card-thumbnail-container">
+                 <img src="${thumbnailUrl}" 
+                      class="card-thumbnail-img" 
+                      loading="lazy" 
+                      decoding="async" 
+                      alt="${sub.title}"
+                      onerror="this.style.opacity='0'; this.parentElement.querySelector('.card-thumb-gradient').style.display='flex';">
+                 <div class="card-thumbnail card-thumb-gradient" style="display:none; background:linear-gradient(135deg, ${color}22, ${color}44); position:absolute; top:0; left:0;">
+                    <span class="thumb-emoji">${this.categoryEmoji(sub.category)}</span>
+                 </div>
+               </div>`
+            : `<div class="card-thumbnail-container">
+                <div class="card-thumbnail card-thumb-gradient" style="background:linear-gradient(135deg, ${color}22, ${color}44)">
+                    <span class="thumb-emoji">${this.categoryEmoji(sub.category)}</span>
+                </div>
                </div>`;
+
         return `
             <div class="content-card clay-card animate-fade-in" data-id="${sub.id}">
-                ${thumbnail}
+                ${thumbnailHtml}
                 <div class="card-body">
                     <span class="badge badge-category" style="--cat-color:${color}">${sub.category.replace('_', ' ')}</span>
                     <h3 class="card-title">${sub.title}</h3>
@@ -361,7 +388,6 @@ export const UI = {
                 </div>
             </div>
         `;
-
     },
 
     categoryEmoji(cat) {
