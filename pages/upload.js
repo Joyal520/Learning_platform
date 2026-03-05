@@ -69,6 +69,12 @@ export const UploadPage = {
             e.preventDefault();
 
             try {
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = '⏳ Submitting...';
+                }
+
                 const formData = new FormData(form);
                 const contentMode = formData.get('content_mode');
                 const file = formData.get('file');
@@ -155,6 +161,11 @@ export const UploadPage = {
                 UI.showToast('Something went wrong. Check the console for details.', 'error');
             } finally {
                 UI.hideLoader();
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit for Review';
+                }
             }
         });
     },
@@ -399,6 +410,13 @@ export const UploadPage = {
             // Override form submit for edit
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
+
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = '⏳ Saving...';
+                }
+
                 UI.showLoader();
 
                 try {
@@ -417,7 +435,10 @@ export const UploadPage = {
                         category: formData.get('category'),
                         description: formData.get('description') || '',
                         themes: this.getSelectedThemes(),
-                        audience_level: formData.get('audience_level') || 'General'
+                        audience_level: formData.get('audience_level') || 'General',
+                        status: 'pending', // Reset status to pending for re-review
+                        review_note: null,   // Clear previous rejection notes
+                        approved_by: null    // Clear previous approver
                     };
 
                     // Only update content fields if they changed
@@ -450,6 +471,11 @@ export const UploadPage = {
                     UI.showToast('Something went wrong.', 'error');
                 } finally {
                     UI.hideLoader();
+                    const submitBtn = form.querySelector('button[type="submit"]');
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = '💾 Save Changes';
+                    }
                 }
             });
 

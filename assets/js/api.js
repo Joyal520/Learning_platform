@@ -115,9 +115,8 @@ export const API = {
                 console.log('[API] Step 3: Uploading file to storage...');
                 console.log('[API] File:', { name: file.name, type: file.type, size: file.size });
 
-                const { data: { user } } = await supabase.auth.getUser();
                 const fileExt = file.name.split('.').pop();
-                const filePath = `${user.id}/${sub.id}.${fileExt}`;
+                const filePath = `${submissionData.author_id}/${sub.id}.${fileExt}`;
 
                 const { error: uploadError } = await withTimeout(
                     supabase.storage
