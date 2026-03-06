@@ -191,7 +191,7 @@ export const DetailPage = {
             submission_id: subId, user_id: user.id
         }).maybeSingle();
 
-        if (data) btn.classList.add('liked');
+        if (data) likeBtn.classList.add('liked');
     },
 
     // Re-attach star click listeners after re-rendering stars
