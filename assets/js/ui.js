@@ -414,6 +414,124 @@ export const UI = {
         }, 3000);
     },
 
+    // --- Compression Workflow UI ---
+    initCompressionUI() {
+        if (document.getElementById('compression-overlay')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'compression-overlay';
+        overlay.className = 'compression-overlay';
+        overlay.innerHTML = `
+            <div class="compression-modal">
+                <div id="compression-prompt-state">
+                    <span class="compression-icon">⚖️</span>
+                    <h3 class="compression-title">Optimize Image?</h3>
+                    <p class="compression-text">Your image is large. Would you like to compress it to save space and load faster? (Recommended)</p>
+                    <div class="compression-actions">
+                        <button class="btn btn-outline" id="compression-deny-btn">No, keep original</button>
+                        <button class="btn btn-primary" id="compression-allow-btn">Yes, compress it</button>
+                    </div>
+                </div>
+
+                <div id="compression-progress-state" style="display: none;">
+                    <span class="compression-icon">⚡</span>
+                    <h3 class="compression-title">Compressing...</h3>
+                    <div class="compression-progress-container" style="display: block;">
+                        <div class="compression-progress-bar">
+                            <div class="compression-progress-fill" id="compression-bar-fill"></div>
+                        </div>
+                        <div class="compression-progress-text" id="compression-bar-text">Preparing...</div>
+                    </div>
+                </div>
+
+                <div id="compression-success-state" style="display: none;">
+                    <span class="compression-icon">✅</span>
+                    <h3 class="compression-title">Compressed!</h3>
+                    <div class="compression-success-data" style="display: block;">
+                        <div class="success-stat">
+                            <span>Before:</span>
+                            <span id="comp-size-before">0 KB</span>
+                        </div>
+                        <div class="success-stat">
+                            <span>After:</span>
+                            <span id="comp-size-after">0 KB</span>
+                        </div>
+                        <div class="success-stat">
+                            <span>Saved:</span>
+                            <span id="comp-savings">0%</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary w-100" id="compression-finish-btn">Great, let's go!</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+    },
+
+    async showCompressionModal(originalSizeKB) {
+        this.initCompressionUI();
+        const overlay = document.getElementById('compression-overlay');
+        const promptState = document.getElementById('compression-prompt-state');
+        const progressState = document.getElementById('compression-progress-state');
+        const successState = document.getElementById('compression-success-state');
+
+        promptState.style.display = 'block';
+        progressState.style.display = 'none';
+        successState.style.display = 'none';
+        overlay.classList.add('active');
+
+        return new Promise((resolve) => {
+            const allowBtn = document.getElementById('compression-allow-btn');
+            const denyBtn = document.getElementById('compression-deny-btn');
+
+            const handleChoice = (allowed) => {
+                if (allowed) {
+                    promptState.style.display = 'none';
+                    progressState.style.display = 'block';
+                } else {
+                    overlay.classList.remove('active');
+                }
+                resolve(allowed);
+            };
+
+            allowBtn.onclick = () => handleChoice(true);
+            denyBtn.onclick = () => handleChoice(false);
+        });
+    },
+
+    updateCompressionProgress(percent, statusText) {
+        const fill = document.getElementById('compression-bar-fill');
+        const text = document.getElementById('compression-bar-text');
+        if (fill) fill.style.width = `${percent}%`;
+        if (text) text.textContent = statusText || `${Math.round(percent)}% compressed...`;
+    },
+
+    showCompressionSuccess(beforeKB, afterKB) {
+        const progressState = document.getElementById('compression-progress-state');
+        const successState = document.getElementById('compression-success-state');
+        const beforeEl = document.getElementById('comp-size-before');
+        const afterEl = document.getElementById('comp-size-after');
+        const savingsEl = document.getElementById('comp-savings');
+        const finishBtn = document.getElementById('compression-finish-btn');
+        const overlay = document.getElementById('compression-overlay');
+
+        const savings = Math.max(0, Math.round(((beforeKB - afterKB) / beforeKB) * 100));
+
+        beforeEl.textContent = `${beforeKB.toFixed(1)} KB`;
+        afterEl.textContent = `${afterKB.toFixed(1)} KB`;
+        savingsEl.textContent = `${savings}% smaller`;
+
+        progressState.style.display = 'none';
+        successState.style.display = 'block';
+
+        return new Promise((resolve) => {
+            finishBtn.onclick = () => {
+                overlay.classList.remove('active');
+                resolve();
+            };
+        });
+    },
+
     pages: {
         home: (currentUser) => `
             <section class="hero">

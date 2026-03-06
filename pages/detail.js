@@ -10,6 +10,7 @@ export const DetailPage = {
         UI.showLoader();
 
         try {
+            // Step 1: Fetch submission data
             const { data: sub, error } = await supabase
                 .from('submissions')
                 .select(`
@@ -19,8 +20,6 @@ export const DetailPage = {
                 .eq('id', id)
                 .maybeSingle();
 
-            console.log('[DETAIL] Query result:', { sub, error });
-
             if (error || !sub) {
                 console.error('[DETAIL] Failed:', error?.message || 'No data');
                 UI.showToast('Submission not found', 'error');
@@ -28,6 +27,7 @@ export const DetailPage = {
                 return;
             }
 
+            // Step 2: Handle file path/URL
             if (sub.file_path) {
                 const { data } = supabase.storage
                     .from(sub.status === 'approved' ? 'approved_public' : 'submissions_private')
@@ -35,19 +35,28 @@ export const DetailPage = {
                 sub.public_url = data.publicUrl;
             }
 
+            // Step 3: Initial Render (Show content immediately)
             const currentUser = App.user;
             const userRole = App.profile?.role;
             main.innerHTML = UI.pages.detail(sub, currentUser, userRole);
-            this._currentSub = sub; // Store reference for refreshStats
-            this.setupInteractions(sub);
+            this._currentSub = sub;
 
+            // Step 4: Parallelize secondary data (Stats + Like Status)
+            console.log('[DETAIL] Fetching secondary stats in parallel...');
+            const statsPromise = this.refreshStats(sub.id);
+            const likeStatusPromise = this.checkIfLiked(sub.id);
+
+            // Setup static UI elements
+            this.setupInteractions(sub);
             this.setupEditButton(sub);
             this.setupFullscreenFab();
             this.setupPreviewFullscreen();
-            // Load fresh like/rate counts from DB
-            this.refreshStats(sub.id);
+
+            // Wait for non-critical data
+            await Promise.all([statsPromise, likeStatusPromise]);
+
             UI.hideLoader();
-            console.log('[DETAIL] ✅ Loaded');
+            console.log('[DETAIL] ✅ Fully Loaded');
 
             // Clean up fullscreen state on navigation
             window.addEventListener('hashchange', () => {
@@ -111,7 +120,7 @@ export const DetailPage = {
         this.checkIfLiked(sub.id, likeBtn);
 
         likeBtn?.addEventListener('click', async () => {
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = App.user;
             if (!user) return UI.showToast('Please login to like', 'error');
 
             UI.showLoader();
@@ -140,7 +149,7 @@ export const DetailPage = {
         starContainer?.querySelectorAll('.star').forEach(star => {
             star.addEventListener('click', async () => {
                 const rating = star.dataset.value;
-                const { data: { user } } = await supabase.auth.getUser();
+                const user = App.user;
                 if (!user) return UI.showToast('Please login to rate', 'error');
 
                 UI.showLoader();
@@ -163,7 +172,7 @@ export const DetailPage = {
         });
 
         downloadBtn?.addEventListener('click', async () => {
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = App.user;
             await supabase.from('downloads').insert({
                 submission_id: sub.id, user_id: user?.id || null
             });
@@ -171,9 +180,11 @@ export const DetailPage = {
         });
     },
 
-    async checkIfLiked(subId, btn) {
-        if (!btn) return;
-        const { data: { user } } = await supabase.auth.getUser();
+    async checkIfLiked(subId) {
+        const likeBtn = document.getElementById('like-btn');
+        if (!likeBtn) return;
+
+        const user = App.user;
         if (!user) return;
 
         const { data } = await supabase.from('likes').select('id').match({
@@ -188,7 +199,7 @@ export const DetailPage = {
         container?.querySelectorAll('.star').forEach(star => {
             star.addEventListener('click', async () => {
                 const rating = star.dataset.value;
-                const { data: { user } } = await supabase.auth.getUser();
+                const user = App.user;
                 if (!user) return UI.showToast('Please login to rate', 'error');
 
                 UI.showLoader();

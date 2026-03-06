@@ -11,9 +11,11 @@ export const ImageUtils = {
      * @param {number} maxWidth 
      * @returns {Promise<Blob>}
      */
-    async compressToTarget(file, targetKB, maxWidth, label = 'Image') {
+    async compressToTarget(file, targetKB, maxWidth, label = 'Image', onProgress = null) {
         return new Promise((resolve, reject) => {
             console.log(`[ImageUtils] 🌀 Starting compression for ${label}: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
+            if (onProgress) onProgress(5, `Loading ${label}...`);
+
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = (event) => {
@@ -42,21 +44,32 @@ export const ImageUtils = {
                     // Iterative quality reduction to hit target size
                     let quality = 0.9;
                     const minQuality = 0.1;
-                    const step = 0.1; // Faster steps for smoother UX
+                    const step = 0.1;
+                    const totalSteps = Math.ceil((quality - minQuality) / step);
+                    let currentStep = 0;
 
                     const attemptToSaturate = () => {
                         canvas.toBlob((blob) => {
                             if (!blob) return reject(new Error('Canvas toBlob failed'));
 
                             const currentKB = blob.size / 1024;
+                            currentStep++;
+
+                            if (onProgress) {
+                                const progress = 10 + (Math.min(currentStep / totalSteps, 1) * 85);
+                                onProgress(progress, `Optimizing ${label}: ${currentKB.toFixed(0)}KB...`);
+                            }
+
                             console.log(`[ImageUtils] ${label} - Quality: ${quality.toFixed(1)}, Size: ${currentKB.toFixed(1)}KB`);
 
                             if (currentKB <= targetKB || quality <= minQuality) {
                                 console.log(`[ImageUtils] ✅ ${label} compressed to ${currentKB.toFixed(1)}KB`);
+                                if (onProgress) onProgress(100, `${label} optimized!`);
                                 resolve(blob);
                             } else {
                                 quality -= step;
-                                attemptToSaturate();
+                                // Add a small delay for visual smooth progress
+                                setTimeout(attemptToSaturate, 50);
                             }
                         }, 'image/webp', quality);
                     };

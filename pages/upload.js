@@ -42,7 +42,7 @@ export const UploadPage = {
         // ========== Theme Multi-Select ==========
         this.setupThemeSelector();
 
-        // Thumbnail preview
+        // Thumbnail preview & Compression prompt
         thumbnailInput?.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file && file.type.startsWith('image/')) {
@@ -61,6 +61,35 @@ export const UploadPage = {
                     const placeholder = await ImageUtils.generatePlaceholder(file);
                     thumbnailPreview.innerHTML = `<img src="${placeholder}" alt="Thumbnail preview" style="filter: blur(4px)">`;
                     thumbnailPreview.classList.add('has-image');
+
+                    // --- NEW: Compression Permission Flow ---
+                    const sizeKB = file.size / 1024;
+                    if (sizeKB > 300) { // Only prompt for images > 300KB
+                        const allowed = await UI.showCompressionModal(sizeKB);
+                        if (allowed) {
+                            const compressedBlob = await ImageUtils.compressToTarget(
+                                file,
+                                150,
+                                640,
+                                'Thumbnail',
+                                (p, txt) => UI.updateCompressionProgress(p, txt)
+                            );
+
+                            await UI.showCompressionSuccess(sizeKB, compressedBlob.size / 1024);
+
+                            // Replace preview with compressed version
+                            const compressedUrl = URL.createObjectURL(compressedBlob);
+                            thumbnailPreview.innerHTML = `<img src="${compressedUrl}" alt="Compressed Thumbnail preview">`;
+
+                            // Store the compressed blob on the input for form submission
+                            // We can use a custom property since we can't easily replace the File in the input
+                            thumbnailInput._compressedBlob = compressedBlob;
+                        } else {
+                            // User denied, clear any previous compressed blob
+                            thumbnailInput._compressedBlob = null;
+                            // Show original (blurred placeholder already shown)
+                        }
+                    }
                 } catch (err) {
                     console.error('Preview error:', err);
                 }
@@ -157,9 +186,17 @@ export const UploadPage = {
 
                     console.log('[Upload] Starting image compression pipeline...');
                     try {
-                        const versions = await ImageUtils.createThumbnailAndDisplayVersions(thumbnailFile);
-                        thumbnailBlob = versions.thumbnail;
-                        displayBlob = versions.display;
+                        // Use pre-compressed blob if available from the prompt flow
+                        if (thumbnailInput._compressedBlob) {
+                            console.log('[Upload] Using pre-compressed thumbnail blob');
+                            thumbnailBlob = thumbnailInput._compressedBlob;
+                            // Still need display version (larger)
+                            displayBlob = await ImageUtils.compressToTarget(thumbnailFile, 500, 1400, 'Display');
+                        } else {
+                            const versions = await ImageUtils.createThumbnailAndDisplayVersions(thumbnailFile);
+                            thumbnailBlob = versions.thumbnail;
+                            displayBlob = versions.display;
+                        }
                     } catch (imgErr) {
                         console.error('[Upload] Image pipeline failed:', imgErr);
                     }
@@ -359,6 +396,27 @@ export const UploadPage = {
                     try {
                         const placeholder = await ImageUtils.generatePlaceholder(file);
                         thumbnailPreview.innerHTML = `<img src="${placeholder}" alt="Preview" style="filter:blur(4px)">`;
+
+                        // --- NEW: Compression Permission Flow (Edit Mode) ---
+                        const sizeKB = file.size / 1024;
+                        if (sizeKB > 300) {
+                            const allowed = await UI.showCompressionModal(sizeKB);
+                            if (allowed) {
+                                const compressedBlob = await ImageUtils.compressToTarget(
+                                    file,
+                                    150,
+                                    640,
+                                    'Thumbnail',
+                                    (p, txt) => UI.updateCompressionProgress(p, txt)
+                                );
+                                await UI.showCompressionSuccess(sizeKB, compressedBlob.size / 1024);
+                                const compressedUrl = URL.createObjectURL(compressedBlob);
+                                thumbnailPreview.innerHTML = `<img src="${compressedUrl}" alt="Compressed Preview">`;
+                                thumbnailInput._compressedBlob = compressedBlob;
+                            } else {
+                                thumbnailInput._compressedBlob = null;
+                            }
+                        }
                     } catch (err) { console.error(err); }
                 }
             });
@@ -397,9 +455,14 @@ export const UploadPage = {
                     const thumbnailFile = formData.get('thumbnail');
 
                     if (thumbnailFile && thumbnailFile.size > 0 && thumbnailFile.type.startsWith('image/')) {
-                        const versions = await ImageUtils.createThumbnailAndDisplayVersions(thumbnailFile);
-                        thumbnailBlob = versions.thumbnail;
-                        displayBlob = versions.display;
+                        if (thumbnailInput._compressedBlob) {
+                            thumbnailBlob = thumbnailInput._compressedBlob;
+                            displayBlob = await ImageUtils.compressToTarget(thumbnailFile, 500, 1400, 'Display');
+                        } else {
+                            const versions = await ImageUtils.createThumbnailAndDisplayVersions(thumbnailFile);
+                            thumbnailBlob = versions.thumbnail;
+                            displayBlob = versions.display;
+                        }
                     }
 
                     const { error: updateError } = await API.updateSubmission(id, updateData, thumbnailBlob, displayBlob);
