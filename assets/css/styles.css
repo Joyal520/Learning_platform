@@ -34,6 +34,8 @@
 html {
     overflow-x: hidden;
     width: 100%;
+    scrollbar-gutter: stable;
+    /* Prevent horizontal shifts from scrollbars */
 }
 
 body {
@@ -94,12 +96,13 @@ body::after {
     position: relative;
     width: 100vw;
     margin-left: calc(-50vw + 50%);
-    min-height: 100vh;
-    min-height: 100svh;
-    /* mobile safe viewport */
+    min-height: calc(100vh - var(--nav-height));
+    /* Account for navbar */
+    min-height: calc(100svh - var(--nav-height));
     overflow: hidden;
-    display: grid;
-    place-items: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 
@@ -131,13 +134,13 @@ body::after {
     position: relative;
     z-index: 2;
     width: 100%;
-    min-height: 100vh;
-    min-height: 100svh;
-    display: grid;
-    place-items: center;
-    padding: 20px;
+    min-height: calc(100vh - var(--nav-height));
+    min-height: calc(100svh - var(--nav-height));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(1rem, 5vw, 2rem);
     pointer-events: none;
-    /* Let clicks pass through to interactive elements */
 }
 
 .hero-content>* {
