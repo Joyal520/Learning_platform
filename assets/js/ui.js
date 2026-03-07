@@ -334,9 +334,10 @@ export const UI = {
         const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0 };
         const categoryColors = {
             short_stories: '#6366f1', long_stories: '#8b5cf6', comics: '#ec4899',
-            essays: '#14b8a6', articles: '#f59e0b', weird_facts: '#ef4444',
-            conversations: '#06b6d4', poems: '#a855f7', images: '#22c55e', songs: '#f97316',
-            presentations: '#8b5cf6', flashcards: '#f59e0b'
+            essays: '#14b8a6', articles: '#f59e0b', classroom_play: '#fb7185',
+            speech: '#38bdf8', conversations: '#06b6d4', poems: '#a855f7',
+            images: '#22c55e', songs: '#f97316', presentations: '#8b5cf6',
+            flashcards: '#f59e0b'
         };
         const color = categoryColors[sub.category] || '#6366f1';
 
@@ -394,8 +395,9 @@ export const UI = {
     categoryEmoji(cat) {
         const map = {
             short_stories: '📖', long_stories: '📚', comics: '🦸', essays: '✍️',
-            articles: '📰', weird_facts: '🤯', conversations: '💬', poems: '🌸',
-            images: '🖼️', songs: '🎵', presentations: '📊', flashcards: '🎴'
+            articles: '📰', classroom_play: '🎭', speech: '🎤', conversations: '💬',
+            poems: '🌸', images: '🖼️', songs: '🎵', presentations: '📊',
+            flashcards: '🎴'
         };
         return map[cat] || '📄';
     },
@@ -689,7 +691,8 @@ export const UI = {
                                 <option value="essays">Essay</option>
                                 <option value="articles">Article</option>
                                 <option value="conversations">Conversation</option>
-                                <option value="comics">Comic</option>
+                                <option value="classroom_play">Classroom Play</option>
+                                <option value="speech">Speech</option>
                                 <option value="images">Image</option>
                                 <option value="presentations">Presentations</option>
                                 <option value="flashcards">Flashcards</option>
@@ -814,8 +817,9 @@ export const UI = {
                             <button class="clay-btn category-clay-item btn-snake" data-category="comics"><span></span><span></span><span></span><span></span>Comics</button>
                             <button class="clay-btn category-clay-item btn-snake" data-category="essays"><span></span><span></span><span></span><span></span>Essays</button>
                             <button class="clay-btn category-clay-item btn-snake" data-category="articles"><span></span><span></span><span></span><span></span>Articles</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="weird_facts"><span></span><span></span><span></span><span></span>Weird Facts</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="conversations"><span></span><span></span><span></span><span></span>Conversations</button>
+                             <button class="clay-btn category-clay-item btn-snake" data-category="classroom_play"><span></span><span></span><span></span><span></span>Classroom Play</button>
+                             <button class="clay-btn category-clay-item btn-snake" data-category="speech"><span></span><span></span><span></span><span></span>Speech</button>
+                             <button class="clay-btn category-clay-item btn-snake" data-category="conversations"><span></span><span></span><span></span><span></span>Conversations</button>
                             <button class="clay-btn category-clay-item btn-snake" data-category="poems"><span></span><span></span><span></span><span></span>Poems</button>
                             <button class="clay-btn category-clay-item btn-snake" data-category="images"><span></span><span></span><span></span><span></span>Images</button>
                             <button class="clay-btn category-clay-item btn-snake" data-category="songs"><span></span><span></span><span></span><span></span>Songs</button>
