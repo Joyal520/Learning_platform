@@ -19,17 +19,6 @@ export const ExplorePage = {
         const loadSubmissions = async () => {
             if (this._isLoading) return;
             this._isLoading = true;
-            if (this._fallbackTimer) clearTimeout(this._fallbackTimer);
-
-            // --- Auto-Refresh Fallback Hack ---
-            this._fallbackTimer = setTimeout(() => {
-                if (this._isLoading) {
-                    UI.showToast('Connection slow. Tap anywhere to reload.');
-                    const reloadHandler = () => window.location.reload();
-                    window.addEventListener('click', reloadHandler, { once: true });
-                    window.addEventListener('touchstart', reloadHandler, { once: true });
-                }
-            }, 3000);
 
             if (gridTrending) gridTrending.innerHTML = this.renderSkeletons(3);
             if (gridNew) gridNew.innerHTML = this.renderSkeletons(3);
