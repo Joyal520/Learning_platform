@@ -16,6 +16,16 @@ const App = {
     async init() {
         UI.showLoader();
         let initialLoad = true;
+        console.log('App: Initializing...');
+
+        // Safety Timeout: Force-hide loader after 6 seconds to prevent mobile hangs
+        setTimeout(() => {
+            if (initialLoad) {
+                console.warn('App: Loader safety timeout triggered. Forcing hide...');
+                UI.hideLoader();
+                initialLoad = false;
+            }
+        }, 6000);
 
         // Handle auth errors in URL (Search params or Fragments)
         const params = new URLSearchParams(window.location.search);
