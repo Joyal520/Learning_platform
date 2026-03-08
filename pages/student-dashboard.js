@@ -384,7 +384,7 @@ export const StudentDashboardPage = {
         try {
             const { data: allSubs, error } = await supabase
                 .from('submissions')
-                .select('id, author_id, profiles!author_id(display_name)')
+                .select('id, author_id, profiles!author_id(display_name, avatar_url)')
                 .eq('status', 'approved')
                 .limit(200);
 
@@ -415,10 +415,11 @@ export const StudentDashboardPage = {
             allSubs.forEach(sub => {
                 const authorId = sub.author_id;
                 const name = sub.profiles?.display_name || 'Anonymous';
+                const avatar = sub.profiles?.avatar_url || null;
                 const likes = likesMap[sub.id] || 0;
 
                 if (!authorMap[authorId]) {
-                    authorMap[authorId] = { name, points: 0 };
+                    authorMap[authorId] = { name, avatar, points: 0 };
                 }
                 authorMap[authorId].points += likes;
             });
@@ -469,11 +470,15 @@ export const StudentDashboardPage = {
             const isFirst = config.rank === 1;
             const crownHtml = isFirst ? `<div class="sd-podium-crown">👑</div>` : '';
 
+            const avatarHtml = creator.avatar
+                ? `<img src="${creator.avatar}" alt="${creator.name}" style="width: 100%; height: 100%; object-fit: cover; object-position: center;">`
+                : `${initials}`;
+
             return `
                 <div class="sd-podium-item ${config.class} ${creator.placeholder ? 'placeholder' : ''}">
                     <div class="sd-podium-avatar-wrapper">
                         ${crownHtml}
-                        <div class="sd-podium-avatar">${initials}</div>
+                        <div class="sd-podium-avatar" style="overflow: hidden;">${avatarHtml}</div>
                         <div class="sd-podium-rank-badge">${config.rank}</div>
                     </div>
                     <div class="sd-podium-base">
@@ -495,10 +500,15 @@ export const StudentDashboardPage = {
             runners.innerHTML = rest.length > 0 ? rest.map((creator, i) => {
                 const rank = i + 4;
                 const initials = creator.name.charAt(0).toUpperCase();
+
+                const avatarHtml = creator.avatar
+                    ? `<img src="${creator.avatar}" alt="${creator.name}" style="width: 100%; height: 100%; object-fit: cover; object-position: center;">`
+                    : `${initials}`;
+
                 return `
                     <div class="sd-runner-item" style="--i: ${i}">
                         <span class="sd-runner-rank">${rank}</span>
-                        <div class="sd-runner-avatar">${initials}</div>
+                        <div class="sd-runner-avatar" style="overflow: hidden;">${avatarHtml}</div>
                         <span class="sd-runner-name">${creator.name}</span>
                         <span class="sd-runner-points">${creator.points} pts</span>
                     </div>

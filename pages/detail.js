@@ -49,7 +49,6 @@ export const DetailPage = {
             // Setup static UI elements
             this.setupInteractions(sub);
             this.setupEditButton(sub);
-            this.setupFullscreenFab();
             this.setupPreviewFullscreen();
             this.setupBookmark(sub);
 
@@ -61,6 +60,31 @@ export const DetailPage = {
 
             UI.hideLoader();
             console.log('[DETAIL] ✅ Fully Loaded');
+
+            // --- Auto-Fullscreen Trigger ---
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('fullscreen') === 'true') {
+                setTimeout(() => {
+                    if (typeof DetailPage._currentToggleFullscreen === 'function') {
+                        const container = document.getElementById('previewContainer');
+                        // Prevent multi-triggering
+                        if (container && !container.classList.contains('fullscreen-active')) {
+                            DetailPage._currentToggleFullscreen();
+                        }
+                    } else {
+                        // Fallback
+                        const container = document.getElementById('previewContainer');
+                        if (container) {
+                            container.classList.add('fullscreen-active');
+                            document.body.classList.add('body-no-scroll');
+                        }
+                    }
+                }, 100);
+
+                // Clean the URL snippet so it doesn't get stuck in the user's history
+                const cleanUrl = window.location.origin + window.location.pathname + window.location.hash;
+                window.history.replaceState({}, document.title, cleanUrl);
+            }
 
             // Clean up fullscreen state on navigation
             window.addEventListener('hashchange', () => {
@@ -78,30 +102,55 @@ export const DetailPage = {
     },
 
     setupPreviewFullscreen() {
-        const btn = document.getElementById('previewFullscreenBtn');
+        const enterBtn = document.getElementById('previewFullscreenBtn');
+        const closeBtn = document.getElementById('previewCloseBtn');
         const container = document.getElementById('previewContainer');
-        if (!btn || !container) return;
+        if (!container || (!enterBtn && !closeBtn)) return;
 
         const toggleFullscreen = () => {
             const isFullscreen = container.classList.toggle('fullscreen-active');
             document.body.classList.toggle('body-no-scroll', isFullscreen);
 
-            // Update button UI
-            btn.innerHTML = isFullscreen
-                ? '<span>✕ Close</span>'
-                : '<span>⛶ Fullscreen</span>';
-
             if (isFullscreen) {
                 UI.showToast('Immersive mode active (ESC to exit)');
-                // Focus the button so ESC works even if the user clicks inside the container
-                btn.focus();
+                if (closeBtn) closeBtn.focus();
+
+                // Show initially just in case the content is short and doesn't fire a scroll
+                if (closeBtn) {
+                    closeBtn.classList.add('show-close');
+                }
+            } else {
+                if (enterBtn) enterBtn.focus();
             }
         };
 
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleFullscreen();
+        if (enterBtn) {
+            enterBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleFullscreen();
+            });
+        }
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleFullscreen();
+            });
+        }
+
+        // Listen for scroll events from inside the iframe to show/hide close button
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'PREVIEW_SCROLL' && closeBtn) {
+                if (e.data.isBoundary) {
+                    closeBtn.classList.add('show-close');
+                } else {
+                    closeBtn.classList.remove('show-close');
+                }
+            }
         });
+
+        // Expose toggleFullscreen so auto-trigger can use it flawlessly
+        this._currentToggleFullscreen = toggleFullscreen;
 
         // ESC key to exit
         const escHandler = (e) => {
@@ -385,29 +434,6 @@ export const DetailPage = {
                     UI.showToast('Could not save. Run create_bookmarks.sql first.', 'error');
                 }
             }
-        });
-    },
-
-    // ==========================================
-    // FULLSCREEN FAB — Same system as Edectra Tech Live Quiz
-    // Uses document.documentElement.requestFullscreen()
-    // ==========================================
-    setupFullscreenFab() {
-        const fab = document.getElementById('fullscreenFab');
-        if (!fab) return;
-
-        fab.addEventListener('click', () => {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(() => { });
-                fab.textContent = '\u2715';
-            } else {
-                document.exitFullscreen().catch(() => { });
-                fab.textContent = '\u26F6';
-            }
-        });
-
-        document.addEventListener('fullscreenchange', () => {
-            fab.textContent = document.fullscreenElement ? '\u2715' : '\u26F6';
         });
     }
 };

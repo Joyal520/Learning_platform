@@ -5,6 +5,8 @@ import { ImageUtils } from '../assets/js/image-utils.js';
 import App from '../assets/js/app.js';
 
 export const UploadPage = {
+    _abortController: null,
+
     init() {
         const form = document.querySelector('#upload-form');
         const fileGroup = document.querySelector('#file-input-group');
@@ -13,6 +15,17 @@ export const UploadPage = {
         const modeRadios = document.querySelectorAll('input[name="content_mode"]');
         const thumbnailInput = document.getElementById('thumbnail-input');
         const thumbnailPreview = document.getElementById('thumbnail-preview');
+
+        // Clean up previous listeners
+        if (this._abortController) this._abortController.abort();
+        this._abortController = new AbortController();
+        const signal = this._abortController.signal;
+
+        // Reset the form visibly when entering
+        form.reset();
+        thumbnailPreview.innerHTML = '';
+        thumbnailPreview.classList.remove('has-image');
+        document.querySelectorAll('.theme-tag').forEach(t => t.remove());
 
         // Toggle file/text/code inputs
         modeRadios.forEach(radio => {
@@ -36,11 +49,11 @@ export const UploadPage = {
                     codeGroup.classList.remove('hidden');
                     codeGroup.querySelector('textarea').required = true;
                 }
-            });
+            }, { signal });
         });
 
         // ========== Theme Multi-Select ==========
-        this.setupThemeSelector();
+        this.setupThemeSelector(signal);
 
         // Thumbnail preview & Compression prompt
         thumbnailInput?.addEventListener('change', async (e) => {
@@ -94,7 +107,7 @@ export const UploadPage = {
                     console.error('Preview error:', err);
                 }
             }
-        });
+        }, { signal });
 
         // Live Code Preview
         const codeTextarea = document.getElementById('code-textarea');
@@ -105,7 +118,7 @@ export const UploadPage = {
             debounceTimer = setTimeout(() => {
                 this.updateCodePreview(codeTextarea.value, codePreviewFrame);
             }, 500);
-        });
+        }, { signal });
 
         // Form submit
         form.addEventListener('submit', async (e) => {
@@ -226,7 +239,7 @@ export const UploadPage = {
                     submitBtn.textContent = 'Submit for Review';
                 }
             }
-        });
+        }, { signal });
     },
 
     updateCodePreview(code, iframe) {
@@ -234,7 +247,7 @@ export const UploadPage = {
         iframe.srcdoc = UI.wrapCodeForPreview(code);
     },
 
-    setupThemeSelector() {
+    setupThemeSelector(signal) {
         const checkboxes = document.querySelectorAll('input[name="themes"]');
         const tagsContainer = document.getElementById('theme-tags');
         const validationMsg = document.getElementById('theme-msg');
@@ -257,7 +270,7 @@ export const UploadPage = {
                 });
 
                 this.renderThemeTags(tagsContainer, checkboxes);
-            });
+            }, signal ? { signal } : undefined);
         });
     },
 
@@ -291,8 +304,13 @@ export const UploadPage = {
         const form = document.querySelector('#upload-form');
         if (!form) return;
 
+        // Clean up previous listeners
+        if (this._abortController) this._abortController.abort();
+        this._abortController = new AbortController();
+        const signal = this._abortController.signal;
+
         UI.showLoader();
-        this.setupThemeSelector();
+        this.setupThemeSelector(signal);
 
         try {
             const { data: sub, error } = await supabase
@@ -417,9 +435,9 @@ export const UploadPage = {
                                 thumbnailInput._compressedBlob = null;
                             }
                         }
-                    } catch (err) { console.error(err); }
+                    } catch (err) { console.error('Preview error:', err); }
                 }
-            });
+            }, { signal });
 
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -482,7 +500,7 @@ export const UploadPage = {
                         submitBtn.textContent = '💾 Save Changes';
                     }
                 }
-            });
+            }, { signal });
 
             UI.hideLoader();
         } catch (err) {
