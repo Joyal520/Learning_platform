@@ -538,33 +538,33 @@ export const UI = {
 
     pages: {
         home: (currentUser) => `
-            <section class="hero">
+            <section class="hero w-full overflow-x-hidden">
                 <div class="hero-bg"></div>
                 <div class="particles"></div>
-
-                <div class="hero-content">
-                    <div class="glass-card-hero">
-                        <h1 class="hero-title">EdTechra Creative Lab</h1>
-                        <p class="hero-subtitle">Showcase your creativity in the digital world. Inspire. Evolve.</p>
-
+ 
+                <div class="hero-content container mx-auto px-4">
+                    <div class="glass-card-hero max-w-full">
+                        <h1 class="hero-title text-3xl sm:text-4xl md:text-6xl">EdTechra Creative Lab</h1>
+                        <p class="hero-subtitle text-lg sm:text-xl md:text-2xl">Showcase your creativity in the digital world. Inspire. Evolve.</p>
+ 
                         <!-- Cycling Subtitle — phrases and timing adjustable below -->
                         <div class="cycling-subtitle-container" aria-live="polite">
                             <span class="cycling-subtitle" id="cycling-subtitle">Where Stories Live</span>
                         </div>
-
-                        <p class="hero-welcome">${currentUser?.display_name ? `Welcome back, ${currentUser.display_name}!` : 'Welcome back!'}</p>
-
-                        <div class="hero-actions">
-                            <a href="#explore" class="hero-btn hero-btn-primary" data-link="explore">
+ 
+                        <p class="hero-welcome text-base sm:text-lg">${currentUser?.display_name ? `Welcome back, ${currentUser.display_name}!` : 'Welcome back!'}</p>
+ 
+                        <div class="hero-actions flex flex-col sm:flex-row items-center justify-center gap-4 mt-8 w-full">
+                            <a href="#explore" class="hero-btn hero-btn-primary w-full sm:w-auto text-center" data-link="explore">
                                 Explore Work
                             </a>
-                            <a href="#upload" class="hero-btn hero-btn-secondary" data-link="upload">
+                            <a href="#upload" class="hero-btn hero-btn-secondary w-full sm:w-auto text-center" data-link="upload">
                                 Upload Yours
                             </a>
                         </div>
                     </div>
                 </div>
-
+ 
                 <button class="hero-fullscreen-btn" title="Toggle Fullscreen">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
@@ -578,7 +578,7 @@ export const UI = {
                     <h2 style="font-size: 1.6rem; font-weight: 700; color: var(--text-main, #1a1a2e);">🔥 Trending Works</h2>
                     <a href="#explore" class="sd-view-all" data-link="explore" style="color: var(--accent, #6366f1); font-weight: 600;">View All →</a>
                 </div>
-                <div class="grid" id="trending-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px;">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" id="trending-grid">
                     <div class="sd-loading-placeholder glass-card" style="padding: 40px; text-align: center; grid-column: 1/-1;"><div class="spinner"></div></div>
                 </div>
             </section>
@@ -613,12 +613,12 @@ export const UI = {
                             <input type="text" class="form-control" value="${user.role || 'student'}" readonly style="opacity: 0.6">
                         </div>
                         
-                        <div class="profile-form-actions">
-                            <button type="submit" class="btn btn-primary btn-lg btn-snake">
+                        <div class="profile-form-actions flex flex-col sm:flex-row gap-4 mt-8">
+                            <button type="submit" class="btn btn-primary btn-lg btn-snake w-full">
                                 <span></span><span></span><span></span><span></span>
                                 Save Changes
                             </button>
-                            <button type="button" class="btn btn-outline btn-lg btn-snake" id="logout-btn-profile">
+                            <button type="button" class="btn btn-outline btn-lg btn-snake w-full" id="logout-btn-profile">
                                 <span></span><span></span><span></span><span></span>
                                 Logout
                             </button>
@@ -653,33 +653,33 @@ export const UI = {
                             <p>${sub.description || 'No description provided.'}</p>
                         </div>
 
-                        <div class="detail-actions">
-                            <div class="interaction-group">
-                                <button class="interaction-btn" id="like-btn" title="Like this work">
+                        <div class="detail-actions flex flex-wrap items-center justify-between gap-4 mt-8 py-4 border-t border-white/10">
+                            <div class="interaction-group flex items-center gap-4">
+                                <button class="interaction-btn flex items-center gap-2" id="like-btn" title="Like this work">
                                     <svg class="heart-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
                                         <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
                                     </svg>
-                                    <span id="like-count">${stats.like_count}</span>
+                                    <span id="like-count" class="font-bold">${stats.like_count}</span>
                                 </button>
-
-                                <button class="interaction-btn bookmark-btn" id="bookmark-btn" title="Save this work">
+ 
+                                <button class="interaction-btn bookmark-btn flex items-center gap-2" id="bookmark-btn" title="Save this work">
                                     <svg class="bookmark-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
                                         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
                                     </svg>
-                                    <span>Save</span>
+                                    <span class="font-semibold">Save</span>
                                 </button>
-
-                                <div class="rating-group">
-                                    <div class="rating-stars" id="rating-stars">
+ 
+                                <div class="rating-group flex items-center gap-2">
+                                    <div class="rating-stars" id="rating-stars text-xl">
                                         ${UI.renderStars(stats.avg_rating)}
                                     </div>
                                     <span class="text-xs text-muted" id="avg-rating">(${Number(stats.avg_rating).toFixed(1)})</span>
                                 </div>
                             </div>
-
-                            <div class="main-actions">
-                                ${sub.file_path ? `<button class="btn btn-outline btn-snake" id="download-btn"><span></span><span></span><span></span><span></span>Download File</button>` : ''}
-                                ${isOwner || isAdmin ? `<button class="btn btn-edit btn-snake" id="edit-btn"><span></span><span></span><span></span><span></span>Edit Submission</button>` : ''}
+ 
+                            <div class="main-actions flex flex-wrap gap-2">
+                                ${sub.file_path ? `<button class="btn btn-outline btn-snake w-full sm:w-auto" id="download-btn"><span></span><span></span><span></span><span></span>Download File</button>` : ''}
+                                ${isOwner || isAdmin ? `<button class="btn btn-edit btn-snake w-full sm:w-auto" id="edit-btn"><span></span><span></span><span></span><span></span>Edit Submission</button>` : ''}
                             </div>
                         </div>
                     </div>
@@ -863,7 +863,7 @@ export const UI = {
                         <img src="assets/images/clay-hero.png" alt="Clay Illustration" class="explore-hero-image" loading="lazy">
                     </div>
 
-                    <div class="grid" id="explore-grid">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" id="explore-grid">
                         <!-- Explored items injected here -->
                     </div>
                     

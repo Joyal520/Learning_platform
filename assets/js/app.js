@@ -224,9 +224,9 @@ const App = {
         if (this.user) {
             nav.classList.add('user-logged-in');
             navAuth.innerHTML = `
-                <div class="user-menu">
-                    <span class="user-name" data-link="profile" style="cursor:pointer">${this.profile?.display_name || this.user.email}</span>
-                    <button class="btn btn-outline btn-sm" id="logout-btn">Logout</button>
+                <div class="user-menu flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+                    <span class="user-name text-center sm:text-left" data-link="profile" style="cursor:pointer">${this.profile?.display_name || this.user.email}</span>
+                    <button class="btn btn-outline btn-sm w-full sm:w-auto" id="logout-btn">Logout</button>
                 </div>
             `;
             document.getElementById('logout-btn')?.addEventListener('click', async () => {
@@ -237,21 +237,28 @@ const App = {
             });
 
             navLinks.innerHTML = `
-                <a href="#" class="nav-link" data-link="home">Home</a>
-                <a href="#" class="nav-link" data-link="explore">Explore</a>
-                <a href="#" class="nav-link" data-link="student-dashboard">Dashboard</a>
+                <div class="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                    <a href="#" class="nav-link w-full sm:w-auto text-center" data-link="home">Home</a>
+                    <a href="#" class="nav-link w-full sm:w-auto text-center" data-link="explore">Explore</a>
+                    <a href="#" class="nav-link w-full sm:w-auto text-center" data-link="student-dashboard">Dashboard</a>
+                </div>
             `;
 
             if (this.profile?.role === 'admin') {
-                navLinks.innerHTML += `<a href="#" class="nav-link" data-link="admin-dashboard">Admin Panel</a>`;
+                const linkGroup = navLinks.querySelector('.flex');
+                if (linkGroup) {
+                    linkGroup.insertAdjacentHTML('beforeend', `<a href="#" class="nav-link w-full sm:w-auto text-center" data-link="admin-dashboard">Admin Panel</a>`);
+                }
             }
         } else {
             nav.classList.remove('user-logged-in');
             navAuth.innerHTML = `
-                <a href="#" class="btn btn-outline" data-link="login">Login</a>
-                <a href="#" class="btn btn-primary" data-link="signup">Sign Up</a>
+                <div class="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                    <a href="#" class="btn btn-outline w-full sm:w-auto text-center" data-link="login">Login</a>
+                    <a href="#" class="btn btn-primary w-full sm:w-auto text-center" data-link="signup">Sign Up</a>
+                </div>
             `;
-            navLinks.innerHTML = `<a href="#" class="nav-link" data-link="home">Home</a>`;
+            navLinks.innerHTML = `<div class="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto"><a href="#" class="nav-link w-full sm:w-auto text-center" data-link="home">Home</a></div>`;
         }
 
         // Close mobile menu when a nav link is clicked
