@@ -419,8 +419,8 @@ export const UI = {
                     <p class="card-author">By ${sub.profiles?.display_name || 'Anonymous'}</p>
                     <div class="card-footer">
                         <div class="card-stats">
-                            <span>★ ${Number(stats.avg_rating).toFixed(1)}</span>
-                            <span>❤ ${stats.like_count}</span>
+                            <span><span style="color:#fbbf24">★</span> ${Number(stats.avg_rating).toFixed(1)}</span>
+                            <span><span style="color:#ef4444">❤</span> ${stats.like_count}</span>
                             <span>👁 ${stats.view_count || 0}</span>
                         </div>
                         <div style="display: flex; gap: 8px;">
