@@ -213,14 +213,15 @@ body::after {
 
 @media (max-width: 768px) {
     .glass-card-hero {
-        backdrop-filter: blur(4px);
-        /* Reduced from 8px for older chips */
-        -webkit-backdrop-filter: blur(4px);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
         background: rgba(15, 15, 35, 0.85);
-        /* Slightly more opaque */
         transform: none !important;
         perspective: none !important;
-        contain: strict;
+        contain: layout paint;
+        padding: 40px 24px;
+        width: 90%;
+        margin: 0 auto;
     }
 }
 
@@ -580,9 +581,12 @@ h3,
 
 .nav-link {
     text-decoration: none;
-    color: var(--text-muted);
+    color: var(--text-main);
+    /* Brighter for mobile menu */
     font-weight: 500;
     transition: color 0.2s;
+    font-size: 1.1rem;
+    /* Slightly larger for touch targets */
 }
 
 .nav-link:hover,
@@ -842,13 +846,6 @@ body.explore-view .btn-outline:hover {
 }
 
 @media (max-width: 768px) {
-    .glass-card-hero {
-        padding: 28px 20px;
-        width: 95vw;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-    }
-
     .hero-title {
         font-size: 28px;
     }

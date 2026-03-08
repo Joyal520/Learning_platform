@@ -21,7 +21,9 @@ const App = {
         // Safety Timeout: Force-hide loader after 6 seconds to prevent mobile hangs
         setTimeout(() => {
             if (initialLoad) {
-                console.warn('App: Loader safety timeout triggered. Forcing hide...');
+                console.warn('App: Loader safety timeout triggered. Forcing render and hide...');
+                this.renderNav();
+                this.route();
                 UI.hideLoader();
                 initialLoad = false;
             }
