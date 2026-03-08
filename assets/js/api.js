@@ -35,11 +35,9 @@ export const API = {
             query = query.eq('category', category);
         }
 
-        const { data, error } = await withTimeout(
-            query.order(sort, { ascending: false }).range(offset, offset + limit - 1),
-            30000,
-            'Fetch Submissions'
-        );
+        const { data, error } = await query
+            .order(sort, { ascending: false })
+            .range(offset, offset + limit - 1);
 
         return { data, error };
     },

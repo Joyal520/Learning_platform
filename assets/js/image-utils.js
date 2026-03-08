@@ -101,54 +101,6 @@ export const ImageUtils = {
     },
 
     /**
-     * Dedicated Profile Picture Compressor.
-     * Enforces a square aspect ratio and strict < 50KB threshold.
-     */
-    async encodeProfileAvatar(file, onProgress = null) {
-        return new Promise((resolve, reject) => {
-            if (onProgress) onProgress(10, 'Preparing profile picture...');
-
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (e) => {
-                const img = new Image();
-                img.src = e.target.result;
-                img.onload = async () => {
-                    const canvas = document.createElement('canvas');
-                    const SIZE = 256; // Fixed small square size
-                    canvas.width = SIZE;
-                    canvas.height = SIZE;
-                    const ctx = canvas.getContext('2d');
-
-                    // Calculate crop for square
-                    const size = Math.min(img.width, img.height);
-                    const sx = (img.width - size) / 2;
-                    const sy = (img.height - size) / 2;
-
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.fillRect(0, 0, SIZE, SIZE);
-
-                    // Draw centered square crop
-                    ctx.drawImage(img, sx, sy, size, size, 0, 0, SIZE, SIZE);
-
-                    // Compress to exactly 50KB or below using the same logic
-                    try {
-                        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 1.0));
-                        const tempFile = new File([blob], 'avatar.jpg', { type: 'image/jpeg' });
-                        // target 45KB to be safe under 50
-                        const finalBlob = await this.compressToTarget(tempFile, 45, SIZE, 'Avatar', onProgress);
-                        resolve(finalBlob);
-                    } catch (err) {
-                        reject(err);
-                    }
-                };
-                img.onerror = () => reject(new Error('Failed to render profile image'));
-            };
-            reader.onerror = () => reject(new Error('Failed to read profile file'));
-        });
-    },
-
-    /**
      * Generate a very tiny blurred base64 placeholder (LQIP)
      */
     async generatePlaceholder(file) {

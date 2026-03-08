@@ -15,7 +15,6 @@ const App = {
 
     async init() {
         UI.showLoader();
-        let initialLoad = true;
 
         // Handle auth errors in URL (Search params or Fragments)
         const params = new URLSearchParams(window.location.search);
@@ -53,13 +52,14 @@ const App = {
                 if (this.profile && pendingName && (!this.profile.display_name || this.profile.display_name === this.user.email)) {
                     await Auth.updateProfile(this.user.id, { display_name: pendingName });
                     this.profile.display_name = pendingName;
-                    localStorage.removeItem('edtechra_role');
+                    localStorage.removeItem('edtechra_display_name');
                     profileUpdated = true;
                 }
 
                 if (profileUpdated) {
                     UI.showToast(`Account setup complete! Welcome, ${this.profile.display_name}!`, 'success');
                 }
+
 
                 // Auto-promote 'joel' accounts to admin
                 if (this.profile && this.profile.role !== 'admin') {
@@ -75,26 +75,23 @@ const App = {
                 this.profile = null;
             }
 
-            // Update UI with authenticated state
             this.renderNav();
+            this.route();
+        });
 
-            // Only re-route if this is a real event AFTER the first load
-            if (!initialLoad) {
-                this.route();
-            }
-
-            if (initialLoad) {
-                UI.hideLoader();
-                initialLoad = false;
+        // Handle navigation clicks
+        document.addEventListener('click', (e) => {
+            const link = e.target.closest('[data-link]');
+            if (link) {
+                e.preventDefault();
+                const page = link.getAttribute('data-link');
+                this.navigate(page);
             }
         });
 
-        // Immediate Render: Show site instantly as Guest while auth check runs in background
-        this.renderNav();
-        this.route();
-
         // Initialize UI
         UI.init();
+        UI.hideLoader();
 
         // Listen for hash changes to route correctly
         window.addEventListener('hashchange', () => this.route());
@@ -125,9 +122,6 @@ const App = {
         document.body.classList.toggle('explore-view', this.currentPage === 'explore');
         document.body.classList.toggle('light-dashboard', this.currentPage === 'student-dashboard' || this.currentPage === 'admin-dashboard');
 
-        // Add data-page attribute for targeted CSS
-        document.body.setAttribute('data-page', this.currentPage);
-
         // Force onboarding for first-time unauth visitors
         const hasRole = localStorage.getItem('edtechra_role');
         if (!this.user && !hasRole && page !== 'login' && page !== 'onboarding' && page !== 'explore') {
@@ -145,6 +139,7 @@ const App = {
             case 'home':
                 main.innerHTML = UI.pages.home(this.profile);
                 UI.initHeroAnimations();
+                this.renderTrending();
                 break;
             case 'profile':
                 if (!this.user) return this.navigate('login');
@@ -229,15 +224,9 @@ const App = {
         if (this.user) {
             nav.classList.add('user-logged-in');
             navAuth.innerHTML = `
-                <div class="user-menu" style="display: flex; align-items: center; gap: 8px;">
-                    <div data-link="profile" style="cursor:pointer; width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; overflow: hidden; border: 2px solid rgba(255,255,255,0.1);">
-                        ${this.profile?.avatar_url
-                    ? `<img src="${this.profile.avatar_url}" alt="Profile" style="width: 100%; height: 100%; object-fit: cover; object-position: center;">`
-                    : `<span>${(this.profile?.display_name || this.user.email).charAt(0).toUpperCase()}</span>`
-                }
-                    </div>
+                <div class="user-menu">
                     <span class="user-name" data-link="profile" style="cursor:pointer">${this.profile?.display_name || this.user.email}</span>
-                    <button class="btn btn-outline btn-sm" id="logout-btn" style="margin-left: 8px;">Logout</button>
+                    <button class="btn btn-outline btn-sm" id="logout-btn">Logout</button>
                 </div>
             `;
             document.getElementById('logout-btn')?.addEventListener('click', async () => {
