@@ -35,12 +35,16 @@ export const ExplorePage = {
 
             if (error) {
                 console.warn('[Explore] Load error:', error);
+
+                // Graceful delay for mobile connection spikes
+                await new Promise(r => setTimeout(r, 800));
+
                 const errorHtml = `
-                    <div class="sd-empty-state" style="grid-column: 1/-1; text-align: center; padding: 40px;">
-                        <span style="font-size: 2rem;">⚠️</span>
-                        <h3>Connection issue</h3>
-                        <p class="text-muted">Could not load submissions. Please try again.</p>
-                        <button class="btn btn-primary explore-retry-btn" style="margin-top: 16px;">Retry</button>
+                    <div class="sd-empty-state" style="grid-column: 1/-1; text-align: center; padding: 60px 20px;">
+                        <span style="font-size: 3rem;">🌐</span>
+                        <h3 style="margin-top: 15px;">Connection is being shy...</h3>
+                        <p class="text-muted">We couldn't reach the lab. Check your data and try again.</p>
+                        <button class="btn btn-primary explore-retry-btn" style="margin-top: 24px; padding: 12px 32px;">Retry Now</button>
                     </div>`;
                 if (gridTrending) gridTrending.innerHTML = errorHtml;
                 if (gridNew) gridNew.innerHTML = errorHtml;

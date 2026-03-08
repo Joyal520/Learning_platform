@@ -53,14 +53,13 @@ const App = {
                 if (this.profile && pendingName && (!this.profile.display_name || this.profile.display_name === this.user.email)) {
                     await Auth.updateProfile(this.user.id, { display_name: pendingName });
                     this.profile.display_name = pendingName;
-                    localStorage.removeItem('edtechra_display_name');
+                    localStorage.removeItem('edtechra_role');
                     profileUpdated = true;
                 }
 
                 if (profileUpdated) {
                     UI.showToast(`Account setup complete! Welcome, ${this.profile.display_name}!`, 'success');
                 }
-
 
                 // Auto-promote 'joel' accounts to admin
                 if (this.profile && this.profile.role !== 'admin') {
@@ -76,8 +75,13 @@ const App = {
                 this.profile = null;
             }
 
+            // Update UI with authenticated state
             this.renderNav();
-            this.route();
+
+            // Only re-route if this is a real event AFTER the first load
+            if (!initialLoad) {
+                this.route();
+            }
 
             if (initialLoad) {
                 UI.hideLoader();
@@ -85,15 +89,9 @@ const App = {
             }
         });
 
-        // Handle navigation clicks
-        document.addEventListener('click', (e) => {
-            const link = e.target.closest('[data-link]');
-            if (link) {
-                e.preventDefault();
-                const page = link.getAttribute('data-link');
-                this.navigate(page);
-            }
-        });
+        // Immediate Render: Show site instantly as Guest while auth check runs in background
+        this.renderNav();
+        this.route();
 
         // Initialize UI
         UI.init();
