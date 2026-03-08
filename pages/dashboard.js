@@ -23,7 +23,8 @@ export const DashboardPage = {
     setupTabs() {
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelector('.tab-btn.active').classList.remove('active');
+                const active = document.querySelector('.tab-btn.active');
+                if (active) active.classList.remove('active');
                 btn.classList.add('active');
                 this.currentTab = btn.dataset.tab;
                 this.loadTabContent();
@@ -65,7 +66,7 @@ export const DashboardPage = {
     },
 
     async loadTabContent() {
-        const content = document.getElementById('dashboard-content');
+        const content = document.getElementById('tab-content');
         content.innerHTML = `<div class="loader-inline"><div class="spinner"></div></div>`;
 
         if (this.currentTab === 'users') {
@@ -130,6 +131,78 @@ export const DashboardPage = {
             btn.addEventListener('click', () => {
                 window.location.hash = `detail/${btn.dataset.id}`;
             });
+        });
+
+        // Edit action — navigate to edit page
+        document.querySelectorAll('.action-edit').forEach(btn => {
+            btn.addEventListener('click', () => {
+                window.location.hash = `edit/${btn.dataset.id}`;
+            });
+        });
+
+        // Delete action — show confirmation modal
+        document.querySelectorAll('.action-delete').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                const title = btn.closest('.submission-item')?.querySelector('h3')?.textContent || 'this submission';
+                this.showDeleteConfirmation(id, title);
+            });
+        });
+    },
+
+    showDeleteConfirmation(submissionId, title) {
+        // Remove any existing modal
+        document.querySelector('.delete-modal-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'delete-modal-overlay';
+        overlay.innerHTML = `
+            <div class="delete-modal">
+                <h3>⚠️ Delete Submission</h3>
+                <p>Are you sure you want to permanently delete <strong>"${title}"</strong>? This action cannot be undone. All associated likes, ratings, views, and bookmarks will also be removed.</p>
+                <div class="delete-modal-actions">
+                    <button class="btn btn-cancel" id="delete-cancel">Cancel</button>
+                    <button class="btn btn-confirm-delete" id="delete-confirm">Yes, Delete</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        // Cancel
+        document.getElementById('delete-cancel').addEventListener('click', () => {
+            overlay.remove();
+        });
+
+        // Click outside to close
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
+        });
+
+        // Confirm delete
+        document.getElementById('delete-confirm').addEventListener('click', async () => {
+            const confirmBtn = document.getElementById('delete-confirm');
+            confirmBtn.textContent = 'Deleting...';
+            confirmBtn.disabled = true;
+
+            try {
+                const { error } = await supabase
+                    .from('submissions')
+                    .delete()
+                    .eq('id', submissionId);
+
+                if (error) {
+                    UI.showToast(`Delete failed: ${error.message}`, 'error');
+                } else {
+                    UI.showToast('Submission deleted permanently', 'success');
+                    this.loadTabContent();
+                    this.loadStats();
+                }
+            } catch (err) {
+                UI.showToast('Delete failed: ' + err.message, 'error');
+            }
+
+            overlay.remove();
         });
     },
 

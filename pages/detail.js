@@ -51,6 +51,10 @@ export const DetailPage = {
             this.setupEditButton(sub);
             this.setupFullscreenFab();
             this.setupPreviewFullscreen();
+            this.setupBookmark(sub);
+
+            // Record a view (non-blocking)
+            this.recordView(sub.id);
 
             // Wait for non-critical data
             await Promise.all([statsPromise, likeStatusPromise]);
@@ -224,6 +228,7 @@ export const DetailPage = {
         try {
             let likeCount = 0;
             let avgRating = 0;
+            let viewCount = 0;
 
             // Count likes directly
             const { count: lCount, error: likeErr } = await supabase
@@ -246,6 +251,16 @@ export const DetailPage = {
                 avgRating = sum / ratings.length;
             }
 
+            // Count views
+            const { count: vCount, error: viewErr } = await supabase
+                .from('views')
+                .select('id', { count: 'exact', head: true })
+                .eq('submission_id', subId);
+
+            if (!viewErr && vCount !== null) {
+                viewCount = vCount;
+            }
+
             // Update like count in UI
             const likeCountSpan = document.getElementById('like-count');
             if (likeCountSpan) likeCountSpan.textContent = likeCount;
@@ -254,11 +269,14 @@ export const DetailPage = {
             const avgRatingSpan = document.getElementById('avg-rating');
             if (avgRatingSpan) avgRatingSpan.textContent = `(${avgRating.toFixed(1)})`;
 
+            // Update view count display
+            const viewCountSpan = document.getElementById('view-count');
+            if (viewCountSpan) viewCountSpan.textContent = viewCount;
+
             // Update star visual AND re-attach listeners
             const starContainer = document.getElementById('rating-stars');
             if (starContainer && avgRating > 0) {
                 starContainer.innerHTML = UI.renderStars(Math.round(avgRating));
-                // Re-attach click listeners so ratings keep working
                 if (this._currentSub) {
                     this.attachStarListeners(starContainer, this._currentSub);
                 }
@@ -269,10 +287,104 @@ export const DetailPage = {
     },
 
 
+    async recordView(subId) {
+        try {
+            const viewerId = App.user ? App.user.id : null;
+
+            // Insert view record
+            const { error } = await supabase
+                .from('views')
+                .insert({
+                    submission_id: subId,
+                    viewer_id: viewerId
+                });
+
+            if (error) {
+                console.warn('[DETAIL] Failed to record view:', error);
+            } else {
+                console.log('[DETAIL] View recorded successfully');
+            }
+        } catch (err) {
+            console.error('[DETAIL] recordView error:', err);
+        }
+    },
+
     setupEditButton(sub) {
         const editBtn = document.getElementById('edit-btn');
         editBtn?.addEventListener('click', () => {
             window.location.hash = `edit/${sub.id}`;
+        });
+    },
+
+    // ==========================================
+    // BOOKMARK / SAVE FEATURE
+    // ==========================================
+    async setupBookmark(sub) {
+        const bookmarkBtn = document.getElementById('bookmark-btn');
+        if (!bookmarkBtn) return;
+
+        const user = App.user;
+        if (!user) {
+            bookmarkBtn.addEventListener('click', () => {
+                UI.showToast('Please login to save works', 'error');
+            });
+            return;
+        }
+
+        // Check if already bookmarked
+        let isBookmarked = false;
+        try {
+            const { data } = await supabase
+                .from('bookmarks')
+                .select('id')
+                .match({ submission_id: sub.id, user_id: user.id })
+                .maybeSingle();
+
+            if (data) {
+                isBookmarked = true;
+                bookmarkBtn.classList.add('bookmarked');
+                bookmarkBtn.querySelector('span:last-child').textContent = 'Saved';
+            }
+        } catch (err) {
+            console.warn('[DETAIL] Bookmark check error:', err);
+        }
+
+        bookmarkBtn.addEventListener('click', async () => {
+            if (isBookmarked) {
+                // Remove bookmark
+                const { error } = await supabase
+                    .from('bookmarks')
+                    .delete()
+                    .match({ submission_id: sub.id, user_id: user.id });
+
+                if (!error) {
+                    isBookmarked = false;
+                    bookmarkBtn.classList.remove('bookmarked');
+                    bookmarkBtn.querySelector('span:last-child').textContent = 'Save';
+                    UI.showToast('Removed from saved', 'info');
+                } else {
+                    UI.showToast('Could not remove bookmark', 'error');
+                }
+            } else {
+                // Add bookmark
+                const { error } = await supabase
+                    .from('bookmarks')
+                    .insert({ submission_id: sub.id, user_id: user.id });
+
+                if (!error) {
+                    isBookmarked = true;
+                    bookmarkBtn.classList.add('bookmarked');
+                    bookmarkBtn.querySelector('span:last-child').textContent = 'Saved';
+                    UI.showToast('Saved to your collection!', 'success');
+                } else if (error.code === '23505') {
+                    // Already bookmarked (unique constraint)
+                    isBookmarked = true;
+                    bookmarkBtn.classList.add('bookmarked');
+                    bookmarkBtn.querySelector('span:last-child').textContent = 'Saved';
+                } else {
+                    UI.showToast('Could not save. Run create_bookmarks.sql first.', 'error');
+                }
+            }
         });
     },
 

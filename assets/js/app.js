@@ -5,6 +5,7 @@ import { MyUploadsPage } from '../../pages/my-uploads.js';
 import { ExplorePage } from '../../pages/explore.js';
 import { DetailPage } from '../../pages/detail.js';
 import { DashboardPage } from '../../pages/dashboard.js';
+import { StudentDashboardPage } from '../../pages/student-dashboard.js';
 import { API } from './api.js';
 
 const App = {
@@ -119,6 +120,7 @@ const App = {
 
         // Toggle light theme class on body for specific pages
         document.body.classList.toggle('explore-view', this.currentPage === 'explore');
+        document.body.classList.toggle('light-dashboard', this.currentPage === 'student-dashboard' || this.currentPage === 'admin-dashboard');
 
         // Force onboarding for first-time unauth visitors
         const hasRole = localStorage.getItem('edtechra_role');
@@ -137,6 +139,7 @@ const App = {
             case 'home':
                 main.innerHTML = UI.pages.home(this.profile);
                 UI.initHeroAnimations();
+                this.renderTrending();
                 break;
             case 'profile':
                 if (!this.user) return this.navigate('login');
@@ -167,7 +170,11 @@ const App = {
                 main.innerHTML = UI.pages.myUploads();
                 MyUploadsPage.init();
                 break;
-            case 'dashboard':
+            case 'student-dashboard':
+                if (!this.user) return this.navigate('login');
+                StudentDashboardPage.init();
+                break;
+            case 'admin-dashboard':
                 if (!this.user) return this.navigate('login');
                 DashboardPage.init();
                 break;
@@ -232,13 +239,11 @@ const App = {
             navLinks.innerHTML = `
                 <a href="#" class="nav-link" data-link="home">Home</a>
                 <a href="#" class="nav-link" data-link="explore">Explore</a>
-                <a href="#" class="nav-link" data-link="profile">Profile</a>
-                <a href="#" class="nav-link" data-link="upload">Upload</a>
-                <a href="#" class="nav-link" data-link="my-uploads">My Uploads</a>
+                <a href="#" class="nav-link" data-link="student-dashboard">Dashboard</a>
             `;
 
             if (this.profile?.role === 'admin') {
-                navLinks.innerHTML += `<a href="#" class="nav-link" data-link="dashboard">Dashboard</a>`;
+                navLinks.innerHTML += `<a href="#" class="nav-link" data-link="admin-dashboard">Admin Panel</a>`;
             }
         } else {
             nav.classList.remove('user-logged-in');

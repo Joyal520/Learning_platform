@@ -299,7 +299,8 @@ export const UI = {
             const wrappedCode = this.wrapCodeForPreview(sub.content_text);
             return `<div class="code-preview-container" id="previewContainer">
                         <div class="preview-header">
-                            <p class="preview-label">Web Preview</p>
+                            <div class="preview-dots"><span></span><span></span><span></span></div>
+                            <div class="preview-label">CONTENT PREVIEW</div>
                             <button class="preview-fullscreen-btn btn-snake" id="previewFullscreenBtn" title="Toggle Fullscreen Mode">
                                 <span></span><span></span><span></span><span></span>
                                 ⛶ Fullscreen
@@ -381,10 +382,11 @@ export const UI = {
                         <div class="card-stats">
                             <span>★ ${Number(stats.avg_rating).toFixed(1)}</span>
                             <span>❤ ${stats.like_count}</span>
+                            <span>👁 ${stats.view_count || 0}</span>
                         </div>
-                        <a href="#detail/${sub.id}" class="btn clay-btn btn-sm btn-snake" data-link="detail/${sub.id}">
+                        <a href="#detail/${sub.id}" class="btn clay-btn btn-sm btn-snake btn-round btn-icon" data-link="detail/${sub.id}" title="View Details">
                             <span></span><span></span><span></span><span></span>
-                            View
+                            👁
                         </a>
                     </div>
                 </div>
@@ -569,6 +571,17 @@ export const UI = {
                     </svg>
                 </button>
             </section>
+
+            <!-- Trending / Recent Works Section -->
+            <section class="trending-section" style="max-width: 1200px; margin: 60px auto; padding: 0 24px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+                    <h2 style="font-size: 1.6rem; font-weight: 700; color: var(--text-main, #1a1a2e);">🔥 Trending Works</h2>
+                    <a href="#explore" class="sd-view-all" data-link="explore" style="color: var(--accent, #6366f1); font-weight: 600;">View All →</a>
+                </div>
+                <div class="grid" id="trending-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px;">
+                    <div class="sd-loading-placeholder glass-card" style="padding: 40px; text-align: center; grid-column: 1/-1;"><div class="spinner"></div></div>
+                </div>
+            </section>
         `,
 
 
@@ -625,7 +638,10 @@ export const UI = {
                     <div class="detail-header">
                         <a href="#explore" class="back-link" data-link="explore">← Back to Explore</a>
                         <h1 class="detail-title">${sub.title}</h1>
-                        <p class="detail-author">By ${sub.profiles?.display_name || 'Anonymous'} • ${new Date(sub.created_at).toLocaleDateString()}</p>
+                        <p class="detail-author">
+                            By ${sub.profiles?.display_name || 'Anonymous'} • ${new Date(sub.created_at).toLocaleDateString()}
+                            <span class="detail-views"> • 👁 <span id="view-count">${stats.view_count || 0}</span> views</span>
+                        </p>
                     </div>
 
                     <div class="detail-card glass-card">
@@ -644,6 +660,13 @@ export const UI = {
                                         <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
                                     </svg>
                                     <span id="like-count">${stats.like_count}</span>
+                                </button>
+
+                                <button class="interaction-btn bookmark-btn" id="bookmark-btn" title="Save this work">
+                                    <svg class="bookmark-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                    <span>Save</span>
                                 </button>
 
                                 <div class="rating-group">
@@ -843,6 +866,15 @@ export const UI = {
                     <div class="grid" id="explore-grid">
                         <!-- Explored items injected here -->
                     </div>
+                    
+                    <div id="explore-load-more" class="load-more-container mt-40">
+                        <button id="btn-load-more" class="btn btn-primary btn-lg btn-snake hidden">
+                            <span></span><span></span><span></span><span></span>
+                            Load More Works
+                        </button>
+                        <p id="no-more-msg" class="text-muted text-center hidden">✨ You've reached the end of the gallery. No more works to display.</p>
+                    </div>
+
                     <div id="explore-loader" class="loader-inline hidden"><div class="spinner"></div></div>
                 </main>
             </div>
@@ -962,47 +994,197 @@ export const UI = {
         `,
 
         dashboard: (role) => `
-            <div class="dashboard-container">
-                <div class="page-header">
-                    <h1>${role === 'admin' ? 'Admin Control Center' : 'Teacher Dashboard'}</h1>
-                    <p class="text-muted">Manage the creative works and users on EdTechra.</p>
+            <div class="dashboard-container premium-admin-view">
+                <div class="page-header-admin">
+                    <div class="ph-content">
+                        <h1>${role === 'admin' ? 'Platform Control Center' : 'Teacher Dashboard'}</h1>
+                        <p class="text-muted">High-level overview and management of EdTechra's ecosystem.</p>
+                    </div>
                 </div>
 
                 ${role === 'admin' ? `
-                <div class="grid-4 mb-40">
-                    <div class="glass-card stat-card">
-                        <p class="text-muted text-sm">Total Creators</p>
-                        <div class="stat-val" id="stat-users">0</div>
-                    </div>
-                    <div class="glass-card stat-card">
-                        <p class="text-muted text-sm">Pending Approval</p>
-                        <div class="stat-val" id="stat-pending">0</div>
-                    </div>
-                    <div class="glass-card stat-card">
-                        <p class="text-muted text-sm">Total Live Works</p>
-                        <div class="stat-val" id="stat-approved">0</div>
-                    </div>
-                    <div class="glass-card stat-card storage-card">
-                        <p class="text-muted text-sm">Storage Usage</p>
-                        <div class="storage-stats">
-                            <span class="stat-val" id="stat-storage">0 MB</span>
-                            <span class="text-muted text-xs">/ 1 GB</span>
+                <div class="grid-4 stat-section mb-40">
+                    <div class="glass-card stat-card admin-stat">
+                        <div class="stat-icon-small">👥</div>
+                        <div class="stat-data">
+                            <p class="text-muted text-xs uppercase letter-spacing">Total Creators</p>
+                            <div class="stat-val-small" id="stat-users">0</div>
                         </div>
-                        <div class="storage-bar-container">
-                            <div class="storage-bar" id="storage-bar" style="width: 0%"></div>
+                    </div>
+                    <div class="glass-card stat-card admin-stat">
+                        <div class="stat-icon-small">⏳</div>
+                        <div class="stat-data">
+                            <p class="text-muted text-xs uppercase letter-spacing">Pending Review</p>
+                            <div class="stat-val-small" id="stat-pending">0</div>
+                        </div>
+                    </div>
+                    <div class="glass-card stat-card admin-stat">
+                        <div class="stat-icon-small">✅</div>
+                        <div class="stat-data">
+                            <p class="text-muted text-xs uppercase letter-spacing">Live Works</p>
+                            <div class="stat-val-small" id="stat-approved">0</div>
+                        </div>
+                    </div>
+                    <div class="glass-card stat-card storage-card admin-stat">
+                        <div class="stat-icon-small">💾</div>
+                        <div class="stat-data">
+                            <p class="text-muted text-xs uppercase letter-spacing">Cloud Storage</p>
+                            <div class="storage-stats">
+                                <span class="stat-val-small" id="stat-storage">0 MB</span>
+                                <span class="text-muted text-xs">/ 1 GB</span>
+                            </div>
+                            <div class="storage-bar-container">
+                                <div class="storage-bar" id="storage-bar" style="width: 0%"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 ` : ''}
 
-                <div class="tabs">
-                    <button class="tab-btn btn-snake active" data-tab="pending"><span></span><span></span><span></span><span></span>Pending Review</button>
-                    <button class="tab-btn btn-snake" data-tab="approved"><span></span><span></span><span></span><span></span>Live Works</button>
-                    ${role === 'admin' ? '<button class="tab-btn btn-snake" data-tab="users"><span></span><span></span><span></span><span></span>Users & Roles</button>' : ''}
+                <div class="dashboard-tabs mb-30">
+                    <button class="tab-btn active" data-tab="pending">Moderation Queue</button>
+                    <button class="tab-btn" data-tab="approved">Live Content</button>
+                    ${role === 'admin' ? '<button class="tab-btn" data-tab="users">User Management</button>' : ''}
                 </div>
 
-                <div id="dashboard-content" class="dashboard-list">
-                    <!-- Dynamic content -->
+                <div id="tab-content" class="tab-content animate-fade-in">
+                    <!-- Tab content injected here -->
+                </div>
+            </div>
+        `,
+
+        studentDashboard: (profile) => `
+            <div class="student-dashboard animate-fade-in">
+                <!-- Welcome Section -->
+                <div class="sd-welcome glass-card animate-slide-up stagger-1">
+                    <div class="sd-welcome-info">
+                        <h1 class="sd-welcome-title">Welcome back, ${profile?.display_name || 'Creator'} 👋</h1>
+                        <p class="sd-welcome-subtitle">Showcase your creativity and explore what other students created.</p>
+                    </div>
+                    <div class="sd-welcome-avatar">
+                        ${(profile?.display_name || 'C').charAt(0).toUpperCase()}
+                    </div>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="sd-stats-grid animate-slide-up stagger-2">
+                    <div class="sd-stat-card glass-card">
+                        <div class="sd-stat-icon">📝</div>
+                        <div class="sd-stat-value sd-counter" id="sd-stat-works" data-target="0">0</div>
+                        <div class="sd-stat-label">Works Published</div>
+                    </div>
+                    <div class="sd-stat-card glass-card">
+                        <div class="sd-stat-icon">❤️</div>
+                        <div class="sd-stat-value sd-counter" id="sd-stat-likes" data-target="0">0</div>
+                        <div class="sd-stat-label">Total Likes</div>
+                    </div>
+                    <div class="sd-stat-card glass-card">
+                        <div class="sd-stat-icon">👁️</div>
+                        <div class="sd-stat-value sd-counter" id="sd-stat-views" data-target="0">0</div>
+                        <div class="sd-stat-label">Total Views</div>
+                    </div>
+                    <div class="sd-stat-card glass-card">
+                        <div class="sd-stat-icon">⭐</div>
+                        <div class="sd-stat-value sd-counter" id="sd-stat-rating" data-target="0">0.0</div>
+                        <div class="sd-stat-label">Avg Rating</div>
+                    </div>
+                    <div class="sd-stat-card glass-card">
+                        <div class="sd-stat-icon">🏆</div>
+                        <div class="sd-stat-value sd-counter" id="sd-stat-rank" data-target="0">#—</div>
+                        <div class="sd-stat-label">Creator Rank</div>
+                    </div>
+                </div>
+
+                <!-- Upload Button - Clean White -->
+                <div class="animate-slide-up stagger-3 sd-upload-wrapper">
+                    <a href="#upload" class="sd-upload-btn" data-link="upload">Upload your work</a>
+                </div>
+
+                <!-- My Recent Creations -->
+                <div class="sd-section animate-slide-up stagger-4">
+                    <div class="sd-section-header">
+                        <h2 class="sd-section-title">🎨 My Recent Creations</h2>
+                        <a href="#my-uploads" class="sd-view-all" data-link="my-uploads">View All Creations →</a>
+                    </div>
+                    <div class="grid sd-recent-grid" id="sd-recent-grid">
+                        <div class="sd-loading-placeholder glass-card"><div class="spinner"></div></div>
+                    </div>
+                </div>
+
+                <!-- Two-column layout: Challenge + Notifications -->
+                <div class="sd-two-col animate-slide-up stagger-5">
+                    <!-- Weekly Challenge -->
+                    <div class="sd-challenge-card glass-card">
+                        <div class="sd-challenge-badge">🔥 Weekly Creative Challenge</div>
+                        <h3 class="sd-challenge-title">Theme: Mystery Story</h3>
+                        <p class="sd-challenge-deadline">⏰ 4 Days Remaining</p>
+                        <p class="sd-challenge-desc">Write a short mystery story that keeps readers guessing until the very last line.</p>
+                        <a href="#upload" class="btn btn-primary sd-challenge-btn" data-link="upload">Submit Entry →</a>
+                    </div>
+
+                    <!-- Notifications Panel -->
+                    <div class="sd-notifications glass-card">
+                        <h3 class="sd-notif-title">🔔 Activity Feed</h3>
+                        <div class="sd-notif-list" id="sd-activity-feed">
+                            <div class="sd-loading-placeholder"><div class="spinner"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Two-column layout: Leaderboard + Saved -->
+                <div class="sd-two-col animate-slide-up stagger-5">
+                    <!-- Premium Leaderboard Section -->
+                    <div class="sd-leaderboard glass-card">
+                        <div class="sd-lb-header">
+                            <h3 class="sd-lb-title">🏆 Top Creators This Week</h3>
+                            <div class="sd-lb-meta">
+                                <span class="sd-lb-badge">Weekly Reset</span>
+                                <span class="sd-user-rank-lite" id="sd-user-rank-badge">#--</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Podium for Top 3 -->
+                        <div class="sd-lb-podium" id="sd-lb-podium">
+                            <div class="sd-loading-placeholder"><div class="spinner"></div></div>
+                        </div>
+                        
+                        <!-- Runners up list 4-10 -->
+                        <div class="sd-lb-runners" id="sd-lb-runners"></div>
+                        
+                        <div class="sd-lb-footer">
+                            <button class="sd-view-all-btn" id="sd-expand-leaderboard">View Full Rankings →</button>
+                            <p class="sd-lb-tip">Keep creating to climb the ranks! 🚀</p>
+                        </div>
+                    </div>
+
+                    <!-- Saved Creations - Premium Vertical Scroll Panel -->
+                    <div class="sd-saved glass-card">
+                        <div class="sd-saved-header">
+                            <h3 class="sd-saved-title">📌 Saved Creations</h3>
+                        </div>
+                        <div class="sd-saved-panel" id="sd-saved-panel">
+                            <div class="sd-saved-list" id="sd-saved-list">
+                                <div class="sd-loading-placeholder"><div class="spinner"></div></div>
+                            </div>
+                        </div>
+                        <a href="#explore" class="btn btn-outline sd-saved-explore" data-link="explore">Find More Inspiration →</a>
+                    </div>
+                </div>
+
+                <!-- Profile Settings Shortcut -->
+                <div class="sd-profile-shortcut glass-card">
+                    <div class="sd-ps-header">
+                        <div class="sd-ps-avatar">${(profile?.display_name || 'C').charAt(0).toUpperCase()}</div>
+                        <div class="sd-ps-info">
+                            <h3>${profile?.display_name || 'Your Profile'}</h3>
+                            <p class="text-muted">${profile?.role || 'student'} • Manage your account</p>
+                        </div>
+                    </div>
+                    <div class="sd-ps-actions">
+                        <a href="#profile" class="btn btn-primary btn-sm" data-link="profile">Edit Profile</a>
+                        <a href="#explore" class="btn btn-outline btn-sm" data-link="explore">View Public Portfolio</a>
+                        <a href="#profile" class="btn btn-outline btn-sm" data-link="profile">Account Settings</a>
+                    </div>
                 </div>
             </div>
         `,
@@ -1019,33 +1201,54 @@ export const UI = {
                     </div>
                 </div>
                 <div class="sub-actions">
-                    <button class="btn btn-primary btn-sm btn-snake action-preview" data-id="${sub.id}"><span></span><span></span><span></span><span></span>View</button>
+                    <button class="btn btn-primary btn-sm action-preview" data-id="${sub.id}">View</button>
+                    <button class="btn btn-outline btn-sm action-edit" data-id="${sub.id}">Edit</button>
+                    <button class="btn btn-danger btn-sm action-delete" data-id="${sub.id}">Delete</button>
                     ${sub.status === 'pending' ? `
-                        <button class="btn btn-success btn-sm btn-snake action-approve" data-id="${sub.id}"><span></span><span></span><span></span><span></span>Approve</button>
-                        <button class="btn btn-danger btn-sm btn-snake action-reject" data-id="${sub.id}"><span></span><span></span><span></span><span></span>Reject</button>
+                        <button class="btn btn-success btn-sm action-approve" data-id="${sub.id}">Approve</button>
+                        <button class="btn btn-warning btn-sm action-reject" data-id="${sub.id}">Reject</button>
                     ` : ''}
                 </div>
             </div>
         `,
 
-        userRow: (user) => `
-            <div class="submission-item glass-card mb-16">
-                <div class="sub-info">
-                    <h3>${user.display_name || 'Anonymous'}</h3>
-                    <div class="sub-meta">
-                        <span>${user.email}</span>
-                        <span>Joined: ${new Date(user.created_at).toLocaleDateString()}</span>
+        renderSavedCard: (sub) => {
+            const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
+            const thumbUrl = sub.thumbnail_url || 'assets/images/placeholder.png';
+            const category = (sub.category || 'Work').replace('_', ' ');
+
+            return `
+                <div class="sd-saved-card animate-fade-in" onclick="window.location.hash='#detail/${sub.id}'">
+                    <div class="sd-sc-thumb">
+                        <img src="${thumbUrl}" alt="${sub.title}" loading="lazy" onerror="this.src='assets/images/placeholder.png'">
+                        <span class="sd-sc-badge">${category}</span>
+                    </div>
+                    <div class="sd-sc-info">
+                        <h4 class="sd-sc-title" title="${sub.title}">${sub.title}</h4>
+                        <p class="sd-sc-author">by ${sub.profiles?.display_name || 'Anonymous'}</p>
+                    </div>
+                    <div class="sd-sc-metadata">
+                        <div class="sd-sc-stat">
+                            <span>❤️</span>
+                            <span>${stats.like_count || 0}</span>
+                        </div>
+                        <div class="sd-sc-stat">
+                            <span>👁️</span>
+                            <span>${stats.view_count || 0}</span>
+                        </div>
+                        <div class="sd-sc-stat">
+                            <span>⭐</span>
+                            <span>${Number(stats.avg_rating || 0).toFixed(1)}</span>
+                        </div>
+                    </div>
+                    <div class="sd-sc-action">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 18l6-6-6-6"/>
+                        </svg>
                     </div>
                 </div>
-                <div class="sub-actions">
-                    <select class="form-control role-select" data-id="${user.id}">
-                        <option value="student" ${user.role === 'student' ? 'selected' : ''}>Student</option>
-                        <option value="teacher" ${user.role === 'teacher' ? 'selected' : ''}>Teacher</option>
-                        <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
-                    </select>
-                </div>
-            </div>
-        `
+            `;
+        }
     },
 
     setupOnboarding() {

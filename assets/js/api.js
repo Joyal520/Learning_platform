@@ -13,7 +13,7 @@ function withTimeout(promise, ms, label) {
 
 export const API = {
     // Submissions
-    async getSubmissions(category = null, sort = 'created_at', limit = 20) {
+    async getSubmissions(category = null, sort = 'created_at', limit = 20, offset = 0) {
         // Optimized: only select fields needed for the card grid
         let query = supabase
             .from('submissions')
@@ -37,14 +37,7 @@ export const API = {
 
         const { data, error } = await query
             .order(sort, { ascending: false })
-            .limit(limit);
-
-        if (error || !data || data.length === 0) return { data, error };
-
-        // Initialize stats to 0 so UI renders immediately without waiting for the slow view query
-        data.forEach(sub => {
-            sub.submission_stats = [{ avg_rating: 0, like_count: 0 }];
-        });
+            .range(offset, offset + limit - 1);
 
         return { data, error };
     },
@@ -54,7 +47,7 @@ export const API = {
         try {
             const { data: statsData } = await supabase
                 .from('submission_stats')
-                .select('id, avg_rating, like_count')
+                .select('id, avg_rating, like_count, view_count')
                 .in('id', ids);
 
             const statsMap = {};
@@ -88,7 +81,7 @@ export const API = {
             console.log('[API] 📨 Sending insert request...');
             const { data: sub, error: insertError } = await withTimeout(
                 supabase.from('submissions').insert([submissionData]).select('id').single(),
-                90000,
+                120000,
                 'Database INSERT'
             );
 
