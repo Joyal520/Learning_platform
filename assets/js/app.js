@@ -12,6 +12,7 @@ const App = {
     user: null,
     profile: null,
     currentPage: 'home',
+    isFirstLoad: true,
 
     async init() {
         UI.showLoader();
@@ -76,7 +77,12 @@ const App = {
             }
 
             this.renderNav();
-            this.route();
+            await this.route();
+
+            if (this.isFirstLoad) {
+                UI.hideLoader();
+                this.isFirstLoad = false;
+            }
         });
 
         // Handle navigation clicks
@@ -91,7 +97,6 @@ const App = {
 
         // Initialize UI
         UI.init();
-        UI.hideLoader();
 
         // Listen for hash changes to route correctly
         window.addEventListener('hashchange', () => this.route());

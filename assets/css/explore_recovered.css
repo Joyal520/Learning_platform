@@ -355,8 +355,9 @@ body.explore-view .explore-row-title {
 
 /* Global Avatar Support */
 .nav-avatar,
-.sd-ps-avatar,
-.profile-avatar-img {
+.sd-ps-avatar-img,
+.profile-avatar-img,
+.sd-lb-avatar-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
