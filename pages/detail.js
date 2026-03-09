@@ -49,7 +49,6 @@ export const DetailPage = {
             // Setup static UI elements
             this.setupInteractions(sub);
             this.setupEditButton(sub);
-            this.setupFullscreenFab();
             this.setupPreviewFullscreen();
             this.setupBookmark(sub);
 
@@ -388,26 +387,4 @@ export const DetailPage = {
         });
     },
 
-    // ==========================================
-    // FULLSCREEN FAB — Same system as Edectra Tech Live Quiz
-    // Uses document.documentElement.requestFullscreen()
-    // ==========================================
-    setupFullscreenFab() {
-        const fab = document.getElementById('fullscreenFab');
-        if (!fab) return;
-
-        fab.addEventListener('click', () => {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(() => { });
-                fab.textContent = '\u2715';
-            } else {
-                document.exitFullscreen().catch(() => { });
-                fab.textContent = '\u26F6';
-            }
-        });
-
-        document.addEventListener('fullscreenchange', () => {
-            fab.textContent = document.fullscreenElement ? '\u2715' : '\u26F6';
-        });
-    }
 };

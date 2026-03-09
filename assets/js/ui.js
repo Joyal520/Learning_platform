@@ -706,11 +706,6 @@ export const UI = {
                             </div>
                         </div>
                     </div>
-
-                    <button class="fullscreen-fab btn-snake" id="fullscreenFab" title="Toggle Fullscreen Site">
-                        <span></span><span></span><span></span><span></span>
-                        ⛶
-                    </button>
                 </div>
             `;
         },
