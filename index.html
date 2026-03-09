@@ -14,13 +14,36 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
         rel="stylesheet">
+    <!-- Croppie for Avatar Uploads -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.js"></script>
+
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="assets/css/styles.css">
+    <link rel="stylesheet" href="assets/css/explore_recovered.css">
 
 </head>
 
 <body>
+    <!-- Auto-fullscreen on first interaction -->
+    <script>
+        (function () {
+            function tryAutoFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => console.log('Fullscreen requires user interaction'));
+                }
+                document.removeEventListener('click', tryAutoFullscreen, true);
+                document.removeEventListener('keydown', tryAutoFullscreen, true);
+            }
+            document.addEventListener('click', tryAutoFullscreen, { once: true, capture: true });
+            document.addEventListener('keydown', tryAutoFullscreen, { once: true, capture: true });
+
+            document.addEventListener('fullscreenchange', () => {
+                document.body.classList.toggle('is-fullscreen', !!document.fullscreenElement);
+            });
+        })();
+    </script>
     <div id="app">
         <!-- Navigation -->
         <nav class="main-nav">

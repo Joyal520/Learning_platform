@@ -1,6 +1,7 @@
 // assets/js/ui.js
 import { Auth } from './auth.js';
 import { supabase } from './supabase.js';
+import { AvatarLibrary } from './avatars.js';
 
 export const UI = {
     init() {
@@ -331,8 +332,8 @@ export const UI = {
         `).join('');
     },
 
-    renderCard(sub) {
-        const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0 };
+    renderCard(sub, badgeObj = null) {
+        const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
         const categoryColors = {
             short_stories: '#6366f1', long_stories: '#8b5cf6', comics: '#ec4899',
             essays: '#14b8a6', articles: '#f59e0b', classroom_play: '#fb7185',
@@ -371,8 +372,15 @@ export const UI = {
                 </div>
                </div>`;
 
+        const badgeHtml = badgeObj ? `
+            <div class="corner-badge ${badgeObj.className}">
+                ${badgeObj.text}
+            </div>
+        ` : '';
+
         return `
             <div class="content-card clay-card animate-fade-in" data-id="${sub.id}">
+                ${badgeHtml}
                 ${thumbnailHtml}
                 <div class="card-body">
                     <span class="badge badge-category" style="--cat-color:${color}">${sub.category.replace('_', ' ')}</span>
@@ -380,18 +388,33 @@ export const UI = {
                     <p class="card-author">By ${sub.profiles?.display_name || 'Anonymous'}</p>
                     <div class="card-footer">
                         <div class="card-stats">
-                            <span>★ ${Number(stats.avg_rating).toFixed(1)}</span>
-                            <span>❤ ${stats.like_count}</span>
-                            <span>👁 ${stats.view_count || 0}</span>
+                            <span><span style="color:#fbbf24">★</span> ${Number(stats.avg_rating).toFixed(1)}</span>
+                            <span><span style="color:#ef4444">❤️</span> ${stats.like_count}</span>
+                            <span>👁️ ${stats.view_count || 0}</span>
                         </div>
-                        <a href="#detail/${sub.id}" class="btn clay-btn btn-sm btn-snake btn-round btn-icon" data-link="detail/${sub.id}" title="View Details">
-                            <span></span><span></span><span></span><span></span>
-                            👁
-                        </a>
+                        <div style="display: flex; gap: 8px;">
+                            <a href="${this.createWhatsAppShareUrl(sub.title, sub.id)}" target="_blank" rel="noopener noreferrer" class="btn clay-btn btn-sm btn-snake btn-round btn-icon" style="background:#25D366; border-color:#25D366; color:white;" title="Share on WhatsApp">
+                                <span></span><span></span><span></span><span></span>
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="position: relative; z-index: 5;">
+                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.888-.788-1.489-1.761-1.663-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
+                                </svg>
+                            </a>
+                            <a href="#detail/${sub.id}" class="btn clay-btn btn-sm btn-snake btn-round btn-icon" data-link="detail/${sub.id}" title="View Details">
+                                <span></span><span></span><span></span><span></span>
+                                <span style="position: relative; z-index: 5;">👁️</span>
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
+    },
+
+    createWhatsAppShareUrl(title, workId) {
+        // Build the public absolute URL
+        const baseUrl = window.location.origin + window.location.pathname;
+        const workUrl = `${baseUrl}?fullscreen=true#detail/${workId}`;
+        return `https://wa.me/?text=${encodeURIComponent(workUrl)}`;
     },
 
     categoryEmoji(cat) {
@@ -590,8 +613,14 @@ export const UI = {
             <div class="profile-container animate-fade-in">
                 <div class="glass-card profile-card">
                     <div class="profile-header">
-                        <div class="profile-avatar-large">
-                            ${(user.display_name || 'U').charAt(0).toUpperCase()}
+                        <div class="profile-avatar-large" id="profile-avatar-display" style="cursor: pointer; position: relative;">
+                            ${user.avatar_url
+                ? `<img src="${user.avatar_url}" alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`
+                : `<span style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 2.5rem; font-weight: 700; color: white;">${(user.display_name || 'U').charAt(0).toUpperCase()}</span>`
+            }
+                            <div class="avatar-edit-overlay">
+                                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                            </div>
                         </div>
                         <div class="profile-titles">
                             <h2>Profile Settings</h2>
@@ -863,16 +892,21 @@ export const UI = {
                         <img src="assets/images/clay-hero.png" alt="Clay Illustration" class="explore-hero-image" loading="lazy">
                     </div>
 
-                    <div class="grid" id="explore-grid">
-                        <!-- Explored items injected here -->
-                    </div>
-                    
-                    <div id="explore-load-more" class="load-more-container mt-40">
-                        <button id="btn-load-more" class="btn btn-primary btn-lg btn-snake hidden">
-                            <span></span><span></span><span></span><span></span>
-                            Load More Works
-                        </button>
-                        <p id="no-more-msg" class="text-muted text-center hidden">✨ You've reached the end of the gallery. No more works to display.</p>
+                    <div class="explore-sections-container">
+                        <section class="explore-row-section">
+                            <h2 class="explore-row-title">🔥 Trending Creations</h2>
+                            <div class="explore-row-grid" id="grid-trending"></div>
+                        </section>
+
+                        <section class="explore-row-section">
+                            <h2 class="explore-row-title">✨ Newly Submitted</h2>
+                            <div class="explore-row-grid" id="grid-new"></div>
+                        </section>
+
+                        <section class="explore-row-section">
+                            <h2 class="explore-row-title">⭐ Top Rated Creations</h2>
+                            <div class="explore-row-grid" id="grid-top"></div>
+                        </section>
                     </div>
 
                     <div id="explore-loader" class="loader-inline hidden"><div class="spinner"></div></div>
@@ -1278,6 +1312,11 @@ export const UI = {
     setupProfileEdit(user) {
         const form = document.getElementById('profile-form');
         const logoutBtn = document.getElementById('logout-btn-profile');
+        const avatarDisplay = document.getElementById('profile-avatar-display');
+
+        avatarDisplay?.addEventListener('click', () => {
+            UI.showAvatarEditorModal(user);
+        });
 
         logoutBtn?.addEventListener('click', async () => {
             UI.showLoader();
@@ -1312,6 +1351,267 @@ export const UI = {
                 // Also update the name input to reflect the saved value
                 const nameInput = form.querySelector('[name="display_name"]');
                 if (nameInput) nameInput.value = newName;
+            }
+        });
+    },
+
+    /**
+     * Shows the Avatar Editor Modal for Profile Pictures
+     */
+    showAvatarEditorModal(user) {
+        // Remove existing if any
+        document.querySelector('.avatar-modal-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'avatar-modal-overlay animate-fade-in';
+
+        let customUploadFile = null;
+        let selectedAvatarUrl = null;
+        let croppieInstance = null; // Store croppie instance globally within the modal
+
+        const destroyCroppie = () => {
+            if (croppieInstance) {
+                croppieInstance.destroy();
+                croppieInstance = null;
+            }
+        };
+
+        const renderPickerGrid = (categoryId) => {
+            const cat = AvatarLibrary.categories.find(c => c.id === categoryId);
+            if (!cat) return '';
+            return cat.avatars.map(url => `
+                <div class="avatar-grid-item" data-url="${url}">
+                    <img src="${url}" loading="lazy" alt="Avatar option">
+                </div>
+            `).join('');
+        };
+
+        const categoriesHtml = AvatarLibrary.categories.map(c =>
+            `<button class="avatar-cat-btn ${c.id === 'boys' ? 'active' : ''}" data-id="${c.id}">${c.name}</button>`
+        ).join('');
+
+        overlay.innerHTML = `
+            <div class="avatar-modal glass-card">
+                <div class="avatar-modal-header">
+                    <h3>Edit Profile Picture</h3>
+                    <button class="close-modal-btn">&times;</button>
+                </div>
+                
+                <div class="avatar-modal-body">
+                    <div class="avatar-preview-section">
+                        <div class="preview-circle" id="avatar-live-preview">
+                            ${user.avatar_url
+                ? `<img src="${user.avatar_url}" alt="Preview">`
+                : `<span>${(user.display_name || 'U').charAt(0).toUpperCase()}</span>`
+            }
+                        </div>
+                        <div class="preview-actions">
+                            <label class="btn btn-outline" style="cursor: pointer; margin-bottom: 0;">
+                                📁 Upload Custom
+                                <input type="file" id="custom-avatar-upload" accept="image/jpeg, image/png, image/webp" hidden>
+                            </label>
+                            ${user.avatar_url ? `<button class="btn btn-danger-text" id="remove-avatar-btn">Remove Photo</button>` : ''}
+                        </div>
+                        <p class="text-muted text-xs mx-auto text-center" style="margin-top:0.5rem">Uploads must be < 50KB.</p>
+                    </div>
+
+                    <div class="avatar-selection-section">
+                        <h4>Or Choose an Avatar</h4>
+                        <div class="avatar-categories">
+                            ${categoriesHtml}
+                        </div>
+                        <div class="avatar-picker-grid" id="avatar-picker-grid">
+                            ${renderPickerGrid('boys')}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="avatar-modal-footer">
+                    <button class="btn btn-cancel" id="cancel-avatar-btn">Cancel</button>
+                    <button class="btn btn-primary" id="save-avatar-btn">Save Changes</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        // -- Event Listeners --
+
+        const close = () => {
+            destroyCroppie();
+            overlay.classList.remove('animate-fade-in');
+            overlay.classList.add('animate-fade-out');
+            setTimeout(() => overlay.remove(), 250);
+        };
+
+        overlay.querySelector('.close-modal-btn').onclick = close;
+        overlay.querySelector('#cancel-avatar-btn').onclick = close;
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+        // Category Switcher
+        overlay.querySelectorAll('.avatar-cat-btn').forEach(btn => {
+            btn.onclick = () => {
+                overlay.querySelector('.avatar-cat-btn.active')?.classList.remove('active');
+                btn.classList.add('active');
+                const catId = btn.dataset.id;
+                document.getElementById('avatar-picker-grid').innerHTML = renderPickerGrid(catId);
+                bindGridClicks();
+            };
+        });
+
+        const livePreview = document.getElementById('avatar-live-preview');
+
+        // Grid Click (Select Built-in)
+        const bindGridClicks = () => {
+            overlay.querySelectorAll('.avatar-grid-item').forEach(item => {
+                item.onclick = () => {
+                    destroyCroppie();
+                    overlay.querySelector('.avatar-grid-item.selected')?.classList.remove('selected');
+                    item.classList.add('selected');
+                    selectedAvatarUrl = item.dataset.url;
+                    customUploadFile = null; // Clear custom upload if any
+                    livePreview.innerHTML = `<img src="${selectedAvatarUrl}" alt="Preview">`;
+                    // Remove Croppie overrides if they lingered
+                    livePreview.classList.remove('croppie-active');
+                };
+            });
+        };
+        bindGridClicks();
+
+        // Custom Upload
+        document.getElementById('custom-avatar-upload').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Optional front-end pre-flight check
+            if (file.size > 10 * 1024 * 1024) {
+                return UI.showToast('File is too large (max 10MB before compression)', 'error');
+            }
+
+            customUploadFile = file;
+            selectedAvatarUrl = null;
+            destroyCroppie();
+            overlay.querySelector('.avatar-grid-item.selected')?.classList.remove('selected');
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                // Clear the preview content and setup Croppie container
+                livePreview.innerHTML = '';
+                // Soften structural constraints via CSS class so Croppie can set up its boundary freely.
+                livePreview.classList.add('croppie-active');
+
+                // Check if Croppie is available
+                if (typeof Croppie === 'undefined') {
+                    UI.showToast('Croppie library not loaded', 'error');
+                    return;
+                }
+
+                croppieInstance = new Croppie(livePreview, {
+                    viewport: { width: 150, height: 150, type: 'circle' },
+                    boundary: { width: 220, height: 220 },
+                    showZoomer: true,
+                    enableOrientation: true
+                });
+
+                croppieInstance.bind({
+                    url: event.target.result
+                });
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Remove Avatar
+        document.getElementById('remove-avatar-btn')?.addEventListener('click', () => {
+            destroyCroppie();
+            selectedAvatarUrl = 'REMOVE';
+            customUploadFile = null;
+            livePreview.classList.remove('croppie-active');
+            livePreview.innerHTML = `<span>${(user.display_name || 'U').charAt(0).toUpperCase()}</span>`;
+            overlay.querySelector('.avatar-grid-item.selected')?.classList.remove('selected');
+        });
+
+        // Save Changes
+        document.getElementById('save-avatar-btn').addEventListener('click', async () => {
+            if (!customUploadFile && !selectedAvatarUrl) {
+                return close(); // Nothing changed
+            }
+
+            const saveBtn = document.getElementById('save-avatar-btn');
+            saveBtn.textContent = 'Saving...';
+            saveBtn.disabled = true;
+
+            try {
+                let finalUrl = null;
+
+                if (selectedAvatarUrl === 'REMOVE') {
+                    finalUrl = null; // Removed
+                }
+                else if (selectedAvatarUrl) {
+                    finalUrl = selectedAvatarUrl; // Built-in DiceBear logic
+                }
+                else if (customUploadFile) {
+                    let rawFileOrBlob = customUploadFile;
+
+                    if (croppieInstance) {
+                        // Extract perfectly squared crop directly from Croppie
+                        rawFileOrBlob = await croppieInstance.result({
+                            type: 'blob',
+                            size: { width: 256, height: 256 },
+                            format: 'jpeg',
+                            circle: false // we want the square bounding box for storage
+                        });
+                        rawFileOrBlob.name = 'cropped.jpg'; // mock file props
+                    }
+
+                    // Import ImageUtils dynamically or assume it is available
+                    const { ImageUtils } = await import('./image-utils.js');
+
+                    // Compress and Upload via ImageUtils & Supabase
+                    const compressedBlob = await ImageUtils.encodeProfileAvatar(rawFileOrBlob);
+                    const path = `avatars/${user.id}-${Date.now()}.webp`;
+
+                    const { error: uploadErr } = await supabase.storage.from('approved_public').upload(path, compressedBlob, {
+                        contentType: 'image/webp', upsert: true
+                    });
+
+                    if (uploadErr) throw uploadErr;
+
+                    const { data } = supabase.storage.from('approved_public').getPublicUrl(path);
+                    finalUrl = data.publicUrl;
+                }
+
+                // Append to DB
+                // Import Auth dynamically or assume it is available
+                const { Auth } = await import('./auth.js');
+                const { error: dbErr } = await Auth.updateProfile(user.id, { avatar_url: finalUrl });
+                if (dbErr) throw dbErr;
+
+                UI.showToast('Profile picture updated!', 'success');
+
+                // Update local state and aggressively reload visual elements
+                if (window.App && window.App.profile) {
+                    window.App.profile.avatar_url = finalUrl;
+                    window.App.renderNav(); // Force header refresh
+                    const mainDisplay = document.getElementById('profile-avatar-display');
+                    if (mainDisplay) {
+                        mainDisplay.innerHTML = finalUrl
+                            ? `<img src="${finalUrl}" alt="Profile" style="width: 100%; height: 100%; object-fit: cover; object-position: center; border-radius: 50%;">
+                               <div class="avatar-edit-overlay">
+                                  <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                               </div>`
+                            : `<span style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 2.5rem; font-weight: 700; color: white;">${(user.display_name || 'U').charAt(0).toUpperCase()}</span>
+                               <div class="avatar-edit-overlay">
+                                  <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                               </div>`;
+                    }
+                }
+
+                close();
+            } catch (err) {
+                console.error(err);
+                UI.showToast('Failed to save profile picture.', 'error');
+                saveBtn.textContent = 'Save Changes';
+                saveBtn.disabled = false;
             }
         });
     },
