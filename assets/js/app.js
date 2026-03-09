@@ -136,7 +136,11 @@ const App = {
 
         // Handle cases like #/home or #explore
         const cleanHash = rawHash.startsWith('/') ? rawHash.substring(1) : rawHash;
-        const [page, id] = cleanHash.split('/');
+
+        // Strip out any trailing query parameters appended by sharing apps (like WhatsApp)
+        const hashWithoutQuery = cleanHash.split('?')[0];
+        const [page, id] = hashWithoutQuery.split('/');
+
         this.currentPage = page || 'home';
 
         // Toggle light theme class on body for specific pages

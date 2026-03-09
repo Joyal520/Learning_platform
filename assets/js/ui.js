@@ -417,7 +417,8 @@ export const UI = {
         // Build the public absolute URL
         const baseUrl = window.location.origin + window.location.pathname;
         const workUrl = `${baseUrl}?fullscreen=true#detail/${workId}`;
-        return `https://wa.me/?text=${encodeURIComponent(workUrl)}`;
+        const text = `Check out "${title}" on EDTECHRA!\n\n${workUrl}`;
+        return `https://wa.me/?text=${encodeURIComponent(text)}`;
     },
 
     categoryEmoji(cat) {
