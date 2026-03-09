@@ -38,14 +38,13 @@ export const DashboardPage = {
         const { count: approved } = await supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'approved');
 
         // Calculate Storage Usage (Estimate)
-        const { data: subs } = await supabase.from('submissions').select('content_text, thumbnail_path');
+        // Calculate Storage Usage (Estimate)
+        // Optimized: Fetching file_size directly instead of downloading all content texts
+        const { data: subs } = await supabase.from('submissions').select('file_size');
         let totalBytes = 0;
         subs?.forEach(s => {
-            if (s.content_text) totalBytes += s.content_text.length;
-            if (s.thumbnail_path?.startsWith('data:')) {
-                // Estimate size of base64 data URL (approx 75% of string length)
-                totalBytes += Math.round(s.thumbnail_path.length * 0.75);
-            }
+            if (s.file_size) totalBytes += s.file_size;
+            // Omitted content_text and large data-URI thumbnail_paths to reduce query pressure
         });
 
         const limitBytes = 1024 * 1024 * 1024; // 1 GB
@@ -75,7 +74,10 @@ export const DashboardPage = {
             content.innerHTML = data.map(u => UI.pages.userRow(u)).join('');
             this.setupUserActions();
         } else {
-            let query = supabase.from('submissions').select('*, profiles!author_id(display_name)').order('created_at', { ascending: false });
+            // Optimized: Select only required fields, avoiding massive content_text downloads
+            let query = supabase.from('submissions')
+                .select('id, title, category, status, created_at, author_id, review_note, thumbnail_path, thumbnail_url, profiles!author_id(display_name)')
+                .order('created_at', { ascending: false });
             if (this.currentTab === 'pending') query = query.eq('status', 'pending');
 
             const { data, error } = await query;

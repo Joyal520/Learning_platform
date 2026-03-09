@@ -18,7 +18,7 @@ const App = {
         UI.showLoader();
 
         // 🚨 FAILSAFE TIMER: If mobile data hangs, drop the loader after 3 seconds to prevent an endless spinner.
-        setTimeout(() => {
+        this._failsafeTimer = setTimeout(() => {
             if (this.isFirstLoad) {
                 console.warn("Failsafe triggered: Hiding loader. Auth or network may have timed out.");
                 UI.hideLoader();
@@ -44,6 +44,19 @@ const App = {
         // Listen for auth changes
         Auth.onAuthStateChange(async (event, session) => {
             console.log('Auth event:', event);
+            if (this._failsafeTimer) {
+                clearTimeout(this._failsafeTimer);
+                this._failsafeTimer = null;
+            }
+
+            if (event === 'TOKEN_REFRESHED') return;
+
+            const newUserId = session?.user?.id || null;
+            if (!this.isFirstLoad && this._lastUserId === newUserId && event !== 'USER_UPDATED') {
+                return; // Prevent unnecessary rerenders
+            }
+            this._lastUserId = newUserId;
+
             try {
                 this.user = session?.user || null;
 
@@ -113,9 +126,6 @@ const App = {
 
         // Initialize UI
         UI.init();
-
-        // Listen for hash changes to route correctly
-        window.addEventListener('hashchange', () => this.route());
     },
 
     navigate(page) {

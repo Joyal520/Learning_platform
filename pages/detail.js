@@ -106,34 +106,37 @@ export const DetailPage = {
         floatingClose?.addEventListener('click', clickHandler);
 
         // Listen for scroll messages from iframe
-        window.addEventListener('message', (e) => {
-            if (!container.classList.contains('fullscreen-active')) return;
-            const closeBtn = document.getElementById('floatingCloseBtn');
-            if (!closeBtn) return;
+        if (!this._windowListenersAttached) {
+            window.addEventListener('message', (e) => {
+                const container = document.getElementById('previewContainer');
+                if (!container || !container.classList.contains('fullscreen-active')) return;
+                const closeBtn = document.getElementById('floatingCloseBtn');
+                if (!closeBtn) return;
 
-            if (e.data?.type === 'SHOW_CLOSE_BTN') closeBtn.classList.add('visible');
-            if (e.data?.type === 'HIDE_CLOSE_BTN') closeBtn.classList.remove('visible');
-        });
+                if (e.data?.type === 'SHOW_CLOSE_BTN') closeBtn.classList.add('visible');
+                if (e.data?.type === 'HIDE_CLOSE_BTN') closeBtn.classList.remove('visible');
+            });
 
-        // ESC key to exit
-        const escHandler = (e) => {
-            if (e.key === 'Escape' && container.classList.contains('fullscreen-active')) {
-                toggleFullscreen();
-            }
-        };
-
-        // Use window listener for broader coverage
-        window.addEventListener('keydown', escHandler);
+            // ESC key to exit
+            window.addEventListener('keydown', (e) => {
+                const container = document.getElementById('previewContainer');
+                if (e.key === 'Escape' && container?.classList.contains('fullscreen-active')) {
+                    const isFullscreen = container.classList.toggle('fullscreen-active');
+                    document.body.classList.toggle('body-no-scroll', isFullscreen);
+                    const btn = document.getElementById('previewFullscreenBtn');
+                    if (btn) {
+                        btn.innerHTML = '<span>⛶ Fullscreen</span>';
+                    }
+                }
+            });
+            this._windowListenersAttached = true;
+        }
     },
 
     setupInteractions(sub) {
         const likeBtn = document.getElementById('like-btn');
         const starContainer = document.getElementById('rating-stars');
         const downloadBtn = document.getElementById('download-btn');
-        const likeCountSpan = document.getElementById('like-count');
-
-        // Check if already liked and update UI
-        this.checkIfLiked(sub.id, likeBtn);
 
         likeBtn?.addEventListener('click', async () => {
             const user = App.user;
@@ -144,21 +147,23 @@ export const DetailPage = {
                 submission_id: sub.id, user_id: user.id
             });
 
+            const likeCountSpan = document.getElementById('like-count');
+
             if (error) {
                 if (error.code === '23505') { // Unique constraint violation (already liked)
                     await supabase.from('likes').delete().match({ submission_id: sub.id, user_id: user.id });
                     likeBtn.classList.remove('liked');
                     UI.showToast('Unliked');
+                    if (likeCountSpan) likeCountSpan.textContent = Math.max(0, parseInt(likeCountSpan.textContent || 0) - 1);
                 } else {
                     UI.showToast(error.message, 'error');
                 }
             } else {
                 likeBtn.classList.add('liked');
                 UI.showToast('Liked!', 'success');
+                if (likeCountSpan) likeCountSpan.textContent = parseInt(likeCountSpan.textContent || 0) + 1;
             }
 
-            // Refresh counts
-            this.refreshStats(sub.id);
             UI.hideLoader();
         });
 
@@ -177,11 +182,17 @@ export const DetailPage = {
                     UI.showToast(error.message, 'error');
                 } else {
                     UI.showToast('Rated!', 'success');
-                    // Update star display and re-attach listeners
-                    starContainer.innerHTML = UI.renderStars(rating);
-                    this.attachStarListeners(starContainer, sub);
-                    // Refresh stats from DB
-                    this.refreshStats(sub.id);
+
+                    // Optimistically fetch ONLY ratings to avoid querying views/likes again
+                    const { data: ratings } = await supabase.from('ratings').select('rating').eq('submission_id', sub.id);
+                    if (ratings && ratings.length > 0) {
+                        const sum = ratings.reduce((acc, r) => acc + r.rating, 0);
+                        const avgRating = sum / ratings.length;
+                        const avgSpan = document.getElementById('avg-rating');
+                        if (avgSpan) avgSpan.textContent = `(${avgRating.toFixed(1)})`;
+                        starContainer.innerHTML = UI.renderStars(Math.round(avgRating));
+                        this.attachStarListeners(starContainer, sub);
+                    }
                 }
                 UI.hideLoader();
             });
@@ -227,9 +238,16 @@ export const DetailPage = {
                     UI.showToast(error.message, 'error');
                 } else {
                     UI.showToast('Rated!', 'success');
-                    container.innerHTML = UI.renderStars(rating);
-                    this.attachStarListeners(container, sub);
-                    this.refreshStats(sub.id);
+
+                    const { data: ratings } = await supabase.from('ratings').select('rating').eq('submission_id', sub.id);
+                    if (ratings && ratings.length > 0) {
+                        const sum = ratings.reduce((acc, r) => acc + r.rating, 0);
+                        const avgRating = sum / ratings.length;
+                        const avgSpan = document.getElementById('avg-rating');
+                        if (avgSpan) avgSpan.textContent = `(${avgRating.toFixed(1)})`;
+                        container.innerHTML = UI.renderStars(Math.round(avgRating));
+                        this.attachStarListeners(container, sub);
+                    }
                 }
                 UI.hideLoader();
             });

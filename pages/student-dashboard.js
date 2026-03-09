@@ -56,39 +56,26 @@ export const StudentDashboardPage = {
             if (userSubs && userSubs.length > 0) {
                 const subIds = userSubs.map(s => s.id);
 
-                // Fetch likes directly from likes table
                 try {
-                    const { count: likeCount } = await supabase
-                        .from('likes')
-                        .select('id', { count: 'exact', head: true })
-                        .in('submission_id', subIds);
-                    totalLikes = likeCount || 0;
-                } catch (e) { console.warn('Likes count error:', e); }
+                    const { data: statsData } = await supabase
+                        .from('submission_stats')
+                        .select('like_count, avg_rating, view_count')
+                        .in('id', subIds);
 
-                // Fetch ratings directly from ratings table
-                try {
-                    const { data: ratingsData } = await supabase
-                        .from('ratings')
-                        .select('rating')
-                        .in('submission_id', subIds);
-                    if (ratingsData && ratingsData.length > 0) {
-                        const sum = ratingsData.reduce((acc, r) => acc + r.rating, 0);
-                        totalRating = sum / ratingsData.length;
-                        ratedCount = ratingsData.length;
+                    if (statsData) {
+                        statsData.forEach(s => {
+                            totalLikes += (s.like_count || 0);
+                            totalViews += (s.view_count || 0);
+                            if (s.avg_rating > 0) {
+                                totalRating += Number(s.avg_rating);
+                                ratedCount++;
+                            }
+                        });
                     }
-                } catch (e) { console.warn('Ratings count error:', e); }
-
-                // Fetch views directly from views table
-                try {
-                    const { count: viewCount } = await supabase
-                        .from('views')
-                        .select('id', { count: 'exact', head: true })
-                        .in('submission_id', subIds);
-                    totalViews = viewCount || 0;
-                } catch (e) { console.warn('Views count error:', e); }
+                } catch (e) { console.warn('Stats lookup error:', e); }
             }
 
-            const avgRating = ratedCount > 0 ? totalRating.toFixed(1) : '0.0';
+            const avgRating = ratedCount > 0 ? (totalRating / ratedCount).toFixed(1) : '0.0';
 
             // Calculate rank
             const { data: allProfiles } = await supabase.from('profiles').select('id');
@@ -396,17 +383,17 @@ export const StudentDashboardPage = {
                 return;
             }
 
-            // Get like counts
+            // Get like counts from stats table instead of loading all likes
             const subIds = allSubs.map(s => s.id);
             let likesMap = {};
-            const { data: likesData } = await supabase
-                .from('likes')
-                .select('submission_id')
-                .in('submission_id', subIds);
+            const { data: statsData } = await supabase
+                .from('submission_stats')
+                .select('id, like_count')
+                .in('id', subIds);
 
-            if (likesData) {
-                likesData.forEach(l => {
-                    likesMap[l.submission_id] = (likesMap[l.submission_id] || 0) + 1;
+            if (statsData) {
+                statsData.forEach(s => {
+                    likesMap[s.id] = s.like_count || 0;
                 });
             }
 
