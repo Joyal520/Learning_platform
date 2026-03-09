@@ -31,57 +31,60 @@ const App = {
         // Listen for auth changes
         Auth.onAuthStateChange(async (event, session) => {
             console.log('Auth event:', event);
-            this.user = session?.user || null;
+            try {
+                this.user = session?.user || null;
 
-            if (this.user) {
-                const { data } = await Auth.getProfile(this.user.id);
-                this.profile = data;
+                if (this.user) {
+                    const { data } = await Auth.getProfile(this.user.id);
+                    this.profile = data;
 
-                // OAuth Sync Logic: Sync role and name from onboarding
-                const pendingRole = localStorage.getItem('edtechra_role');
-                const pendingName = localStorage.getItem('edtechra_display_name');
+                    // OAuth Sync Logic: Sync role and name from onboarding
+                    const pendingRole = localStorage.getItem('edtechra_role');
+                    const pendingName = localStorage.getItem('edtechra_display_name');
 
-                let profileUpdated = false;
+                    let profileUpdated = false;
 
-                if (this.profile && pendingRole && this.profile.role === 'student' && pendingRole !== 'student') {
-                    await Auth.updateProfileRole(this.user.id, pendingRole);
-                    this.profile.role = pendingRole;
-                    localStorage.removeItem('edtechra_role');
-                    profileUpdated = true;
-                }
-
-                if (this.profile && pendingName && (!this.profile.display_name || this.profile.display_name === this.user.email)) {
-                    await Auth.updateProfile(this.user.id, { display_name: pendingName });
-                    this.profile.display_name = pendingName;
-                    localStorage.removeItem('edtechra_display_name');
-                    profileUpdated = true;
-                }
-
-                if (profileUpdated) {
-                    UI.showToast(`Account setup complete! Welcome, ${this.profile.display_name}!`, 'success');
-                }
-
-
-                // Auto-promote 'joel' accounts to admin
-                if (this.profile && this.profile.role !== 'admin') {
-                    const email = this.user.email?.toLowerCase() || '';
-                    const name = this.profile.display_name?.toLowerCase() || '';
-                    if (email.includes('joel') || name === 'joel') {
-                        await Auth.updateProfileRole(this.user.id, 'admin');
-                        this.profile.role = 'admin';
-                        UI.showToast('Admin access granted!', 'success');
+                    if (this.profile && pendingRole && this.profile.role === 'student' && pendingRole !== 'student') {
+                        await Auth.updateProfileRole(this.user.id, pendingRole);
+                        this.profile.role = pendingRole;
+                        localStorage.removeItem('edtechra_role');
+                        profileUpdated = true;
                     }
+
+                    if (this.profile && pendingName && (!this.profile.display_name || this.profile.display_name === this.user.email)) {
+                        await Auth.updateProfile(this.user.id, { display_name: pendingName });
+                        this.profile.display_name = pendingName;
+                        localStorage.removeItem('edtechra_display_name');
+                        profileUpdated = true;
+                    }
+
+                    if (profileUpdated) {
+                        UI.showToast(`Account setup complete! Welcome, ${this.profile.display_name}!`, 'success');
+                    }
+
+                    // Auto-promote 'joel' accounts to admin
+                    if (this.profile && this.profile.role !== 'admin') {
+                        const email = this.user.email?.toLowerCase() || '';
+                        const name = this.profile.display_name?.toLowerCase() || '';
+                        if (email.includes('joel') || name === 'joel') {
+                            await Auth.updateProfileRole(this.user.id, 'admin');
+                            this.profile.role = 'admin';
+                            UI.showToast('Admin access granted!', 'success');
+                        }
+                    }
+                } else {
+                    this.profile = null;
                 }
-            } else {
-                this.profile = null;
-            }
 
-            this.renderNav();
-            await this.route();
-
-            if (this.isFirstLoad) {
-                UI.hideLoader();
-                this.isFirstLoad = false;
+                this.renderNav();
+                await this.route();
+            } catch (err) {
+                console.error("Auth/Routing Error during init:", err);
+            } finally {
+                if (this.isFirstLoad) {
+                    UI.hideLoader();
+                    this.isFirstLoad = false;
+                }
             }
         });
 
