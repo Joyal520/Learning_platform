@@ -22,6 +22,12 @@ export const ExplorePage = {
             const category = this._currentCategory === 'all' ? null : this._currentCategory;
             const search = searchInput?.value.toLowerCase();
 
+            // Provide immediate visual feedback (useful for retries)
+            const skeletonHTML = this.renderSkeletons(3);
+            if (gridTrending) gridTrending.innerHTML = skeletonHTML;
+            if (gridNew) gridNew.innerHTML = skeletonHTML;
+            if (gridTop) gridTop.innerHTML = skeletonHTML;
+
             // Fetch a batch to sort locally. Using 50 ensures enough data to pull distinct top metrics.
             const { data, error } = await API.getSubmissions(category, 'created_at', 50, 0);
 
