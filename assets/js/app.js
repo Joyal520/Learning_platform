@@ -139,7 +139,6 @@ const App = {
             case 'home':
                 main.innerHTML = UI.pages.home(this.profile);
                 UI.initHeroAnimations();
-                this.renderTrending();
                 break;
             case 'profile':
                 if (!this.user) return this.navigate('login');
@@ -198,23 +197,6 @@ const App = {
         this.updateNavActive();
     },
 
-    async renderTrending() {
-        const grid = document.getElementById('trending-grid');
-        if (!grid) return;
-
-        const { data, error } = await API.getSubmissions(null, 'created_at', 6);
-
-        if (error || !data || data.length === 0) {
-            grid.innerHTML = `<div class="trending-empty-state">
-                <h3>🚀 Be the first to trend!</h3>
-                <p class="text-muted">Upload your best work and start inspiring others.</p>
-                <a href="#upload" class="btn btn-primary" data-link="upload">Upload Now</a>
-            </div>`;
-            return;
-        }
-
-        grid.innerHTML = data.map(sub => UI.renderCard(sub)).join('');
-    },
 
     renderNav() {
         const nav = document.querySelector('.main-nav');
@@ -223,9 +205,15 @@ const App = {
 
         if (this.user) {
             nav.classList.add('user-logged-in');
+            const avatarUrl = this.profile?.avatar_url;
+            const initials = (this.profile?.display_name || this.user.email || 'U').charAt(0).toUpperCase();
+
             navAuth.innerHTML = `
-                <div class="user-menu">
-                    <span class="user-name" data-link="profile" style="cursor:pointer">${this.profile?.display_name || this.user.email}</span>
+                <div class="user-menu" id="nav-user-menu">
+                    <div class="nav-avatar-container" data-link="profile" title="View Profile">
+                        ${avatarUrl ? `<img src="${avatarUrl}" class="nav-avatar" alt="Profile">` : initials}
+                    </div>
+                    <span class="user-name" data-link="profile" style="cursor:pointer">${this.profile?.display_name || 'User'}</span>
                     <button class="btn btn-outline btn-sm" id="logout-btn">Logout</button>
                 </div>
             `;

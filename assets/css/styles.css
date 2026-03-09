@@ -198,10 +198,10 @@ body::after {
 
 @media (max-width: 768px) {
     .glass-card-hero {
-        backdrop-filter: blur(8px);
-        /* Extreme optimization for mobile */
-        -webkit-backdrop-filter: blur(8px);
-        background: rgba(15, 15, 35, 0.75);
+        backdrop-filter: blur(4px);
+        /* Further reduced for mobile performance */
+        -webkit-backdrop-filter: blur(4px);
+        background: rgba(15, 15, 35, 0.85);
         /* More opaque to compensate for lower blur */
     }
 }

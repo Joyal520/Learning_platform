@@ -120,6 +120,7 @@ body.explore-view .explore-row-title {
         box-shadow: 0 0 10px rgba(245, 175, 25, 0.4);
     }
 }
+
 /* --- Round Icon Buttons (Cards) --- */
 .btn-round.btn-icon {
     width: 38px;
@@ -132,9 +133,16 @@ body.explore-view .explore-row-title {
     min-width: 0 !important;
     font-size: 1.1rem;
     flex-shrink: 0;
-    border: none;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    /* Ensure visibility on light bg */
     aspect-ratio: 1/1;
     overflow: hidden;
+    background: white;
+}
+
+/* Specific styling for the WhatsApp button to keep its brand color */
+.btn-round.btn-icon[style*="#25D366"] {
+    border: none !important;
 }
 
 .card-footer {
@@ -183,8 +191,8 @@ body.explore-view .explore-row-title {
     display: flex;
     flex-direction: column;
     max-height: 90vh;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .avatar-modal-header {
@@ -343,4 +351,37 @@ body.explore-view .explore-row-title {
 
 #profile-avatar-display:hover .avatar-edit-overlay {
     opacity: 1;
+}
+
+/* Global Avatar Support */
+.nav-avatar,
+.sd-ps-avatar,
+.profile-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+    display: block;
+}
+
+.user-menu {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.nav-avatar-container {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: white;
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.2);
 }
