@@ -254,6 +254,25 @@ export const UI = {
         };
 
         try {
+            // Scroll tracking for fullscreen button
+            window.addEventListener('scroll', function(e) {
+                const target = e.target;
+                const scrollElem = target === document ? document.documentElement : target;
+                const isTop = scrollElem.scrollTop <= 50;
+                const isBottom = Math.abs(scrollElem.scrollHeight - scrollElem.scrollTop - scrollElem.clientHeight) <= 50;
+                if (isTop || isBottom) {
+                    window.parent.postMessage({ type: 'SHOW_CLOSE_BTN' }, '*');
+                } else {
+                    window.parent.postMessage({ type: 'HIDE_CLOSE_BTN' }, '*');
+                }
+            }, true);
+            // Mouse tracking fallback for desktop
+            window.addEventListener('mousemove', function(e) {
+                if (e.clientY <= 60) window.parent.postMessage({ type: 'SHOW_CLOSE_BTN' }, '*');
+            });
+            // Show initially just in case it doesn't scroll
+            setTimeout(() => window.parent.postMessage({ type: 'SHOW_CLOSE_BTN' }, '*'), 500);
+
             // --- User Code Start ---
             ${code}
             // --- User Code End ---
@@ -307,6 +326,7 @@ export const UI = {
                                 ⛶ Fullscreen
                             </button>
                         </div>
+                        <button class="fullscreen-close-btn" id="floatingCloseBtn" title="Exit Fullscreen">✕</button>
                         <iframe class="code-preview-frame" sandbox="allow-scripts" srcdoc="${wrappedCode.replace(/"/g, '&quot;')}"></iframe>
                     </div>`;
         }

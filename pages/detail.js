@@ -79,6 +79,7 @@ export const DetailPage = {
     setupPreviewFullscreen() {
         const btn = document.getElementById('previewFullscreenBtn');
         const container = document.getElementById('previewContainer');
+        const floatingClose = document.getElementById('floatingCloseBtn');
         if (!btn || !container) return;
 
         const toggleFullscreen = () => {
@@ -91,15 +92,27 @@ export const DetailPage = {
                 : '<span>⛶ Fullscreen</span>';
 
             if (isFullscreen) {
-                UI.showToast('Immersive mode active (ESC to exit)');
-                // Focus the button so ESC works even if the user clicks inside the container
+                UI.showToast('Immersive mode active. Scroll down to hide UI.');
                 btn.focus();
             }
         };
 
-        btn.addEventListener('click', (e) => {
+        const clickHandler = (e) => {
             e.stopPropagation();
             toggleFullscreen();
+        };
+
+        btn.addEventListener('click', clickHandler);
+        floatingClose?.addEventListener('click', clickHandler);
+
+        // Listen for scroll messages from iframe
+        window.addEventListener('message', (e) => {
+            if (!container.classList.contains('fullscreen-active')) return;
+            const closeBtn = document.getElementById('floatingCloseBtn');
+            if (!closeBtn) return;
+
+            if (e.data?.type === 'SHOW_CLOSE_BTN') closeBtn.classList.add('visible');
+            if (e.data?.type === 'HIDE_CLOSE_BTN') closeBtn.classList.remove('visible');
         });
 
         // ESC key to exit

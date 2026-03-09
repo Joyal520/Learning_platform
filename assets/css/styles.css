@@ -1416,9 +1416,46 @@ body.explore-view .btn-outline:hover {
 }
 
 .fullscreen-active .preview-header {
-    padding: 12px 24px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    z-index: 1000001;
+    display: none !important;
+}
+
+/* Dynamic Floating Close Button for Fullscreen */
+.fullscreen-close-btn {
+    display: none;
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 1000005;
+    background: rgba(0, 0, 0, 0.4);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(8px);
+    transition: opacity 0.3s ease, transform 0.3s ease, background 0.2s;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-10px);
+}
+
+.fullscreen-active .fullscreen-close-btn {
+    display: flex;
+}
+
+.fullscreen-active .fullscreen-close-btn.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.fullscreen-close-btn:hover {
+    background: rgba(239, 68, 68, 0.9);
 }
 
 .fullscreen-active .code-preview-frame {
