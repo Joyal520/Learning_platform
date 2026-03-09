@@ -17,6 +17,19 @@ const App = {
     async init() {
         UI.showLoader();
 
+        // 🚨 FAILSAFE TIMER: If mobile data hangs, drop the loader after 3 seconds to prevent an endless spinner.
+        setTimeout(() => {
+            if (this.isFirstLoad) {
+                console.warn("Failsafe triggered: Hiding loader. Auth or network may have timed out.");
+                UI.hideLoader();
+                this.isFirstLoad = false;
+                // If the screen is still blank, force a basic render
+                if (!document.getElementById('main-content').innerHTML.trim()) {
+                    this.route();
+                }
+            }
+        }, 3000);
+
         // Handle auth errors in URL (Search params or Fragments)
         const params = new URLSearchParams(window.location.search);
         const fragmentParams = new URLSearchParams(window.location.hash.substring(1));
