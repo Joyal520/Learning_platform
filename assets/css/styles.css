@@ -725,15 +725,30 @@ body.explore-view .btn-outline:hover {
 
 .hero-title {
     font-size: 52px;
-    /* Enlarged */
     font-weight: 850;
-    color: #ffffff;
-    text-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
     margin-bottom: 12px;
-    background: none;
     line-height: 1.1;
-    -webkit-text-fill-color: initial;
-    background-clip: initial;
+    background: linear-gradient(270deg, #a78bfa, #f472b6, #38bdf8, #818cf8);
+    background-size: 300% 300%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: titleGradientShift 8s ease infinite;
+    text-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+    /* Soft glow behind transparent text */
+}
+
+@keyframes titleGradientShift {
+    0% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+
+    100% {
+        background-position: 0% 50%;
+    }
 }
 
 
@@ -763,16 +778,16 @@ body.explore-view .btn-outline:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 18px 40px;
-    border-radius: 16px;
+    padding: 12px 28px;
+    border-radius: 30px;
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 1.2rem;
+    font-size: 1rem;
     font-weight: 700;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
     text-decoration: none;
     cursor: pointer;
     transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .hero-btn-primary {
@@ -5086,4 +5101,28 @@ body.light-dashboard .user-name {
         white-space: nowrap;
         width: auto;
     }
+}
+
+/* Fullscreen Header Overrides */
+body.is-fullscreen .main-nav {
+    background: rgba(255, 255, 255, 0.4) !important;
+    backdrop-filter: blur(25px) saturate(1.5) !important;
+    -webkit-backdrop-filter: blur(25px) saturate(1.5) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
+}
+
+body.is-fullscreen .main-nav .logo,
+body.is-fullscreen .main-nav .nav-link,
+body.is-fullscreen .main-nav .btn {
+    color: #0f172a !important;
+    text-shadow: none !important;
+}
+
+body.is-fullscreen .main-nav .btn-primary {
+    background: #0f172a !important;
+    color: #ffffff !important;
+}
+
+body.is-fullscreen .main-nav .mobile-menu-toggle span {
+    background-color: #0f172a !important;
 }

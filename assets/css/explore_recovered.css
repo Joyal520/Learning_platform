@@ -259,6 +259,24 @@ body.explore-view .explore-row-title {
     font-weight: 700;
 }
 
+.preview-circle.croppie-active {
+    width: 100%;
+    max-width: 280px;
+    height: auto;
+    min-height: 280px;
+    border-radius: 0;
+    overflow: visible;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    display: block;
+    margin: 0 auto;
+}
+
+.preview-circle.croppie-active .cr-slider-wrap {
+    margin-top: 15px;
+}
+
 .preview-actions {
     display: flex;
     gap: 1rem;
