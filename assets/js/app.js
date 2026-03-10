@@ -245,11 +245,13 @@ const App = {
 
             navAuth.innerHTML = `
                 <div class="user-menu" id="nav-user-menu">
-                    <div class="nav-avatar-container" data-link="profile" title="View Profile">
-                        ${avatarUrl ? `<img src="${avatarUrl}" class="nav-avatar" alt="Profile">` : initials}
+                    <div class="profile-pill" style="display:flex; align-items:center; gap:10px; padding: 4px 14px 4px 4px; cursor: pointer;" data-link="profile" title="View Profile">
+                        <div class="nav-avatar-container">
+                            ${avatarUrl ? `<img src="${avatarUrl}" class="nav-avatar" alt="Profile">` : initials}
+                        </div>
+                        <span class="user-name">${this.profile?.display_name || 'User'}</span>
                     </div>
-                    <span class="user-name" data-link="profile" style="cursor:pointer">${this.profile?.display_name || 'User'}</span>
-                    <button class="btn btn-outline btn-sm" id="logout-btn">Logout</button>
+                    <button class="btn btn-outline btn-sm logout-pill" id="logout-btn">Logout</button>
                 </div>
             `;
             document.getElementById('logout-btn')?.addEventListener('click', async () => {

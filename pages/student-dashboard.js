@@ -448,7 +448,18 @@ export const StudentDashboardPage = {
             top3[2] || { name: '---', points: 0, placeholder: true }
         ];
 
-        podium.innerHTML = reordered.map((creator, i) => {
+        // Generate Confetti HTML
+        let confettiHtml = '<div class="lb-confetti-container">';
+        for (let i = 0; i < 40; i++) {
+            const left = Math.random() * 100;
+            const delay = Math.random() * 4;
+            const duration = Math.random() * 2 + 3; // 3-5s
+            const color = ['#7c5cff', '#5aa7ff', '#FFD700', '#f97316', '#22c55e', '#ec4899'][Math.floor(Math.random() * 6)];
+            confettiHtml += `<div class="lb-confetti" style="left: ${left}%; animation-delay: -${delay}s; animation-duration: ${duration}s; background-color: ${color};"></div>`;
+        }
+        confettiHtml += '</div>';
+
+        podium.innerHTML = confettiHtml + '<div style="display: flex; justify-content: center; align-items: flex-end; width: 100%; gap: 12px;">' + reordered.map((creator, i) => {
             const config = podiumConfig[i];
             const initials = creator.name.charAt(0).toUpperCase();
             const avatarHtml = creator.avatar ? `<img src="${creator.avatar}" class="sd-lb-avatar-img">` : initials;
@@ -469,15 +480,13 @@ export const StudentDashboardPage = {
                         <div class="sd-podium-info">
                             <span class="sd-podium-name">${creator.name}</span>
                             <span class="sd-podium-badge">${config.badge}</span>
-                            <div class="sd-podium-stats">
-                                <span class="sd-podium-pts">${creator.points} pts</span>
-                                <div class="sd-podium-progress"><div class="sd-pp-inner" style="width: ${progress}%"></div></div>
-                            </div>
+                            <span class="sd-podium-pts">${creator.points} pts</span>
+                            <div class="sd-podium-progress"><div class="sd-pp-inner" style="width: ${progress}%"></div></div>
                         </div>
                     </div>
                 </div>
             `;
-        }).join('');
+        }).join('') + '</div>';
 
         // Render runners up (4-10)
         if (runners) {
@@ -485,12 +494,23 @@ export const StudentDashboardPage = {
                 const rank = i + 4;
                 const initials = creator.name.charAt(0).toUpperCase();
                 const avatarHtml = creator.avatar ? `<img src="${creator.avatar}" class="sd-lb-avatar-img">` : initials;
+
+                const topPoints = top3[0]?.points || 1;
+                const runnerProgress = Math.min(100, (creator.points / topPoints) * 100);
+
                 return `
                     <div class="sd-runner-item" style="--i: ${i}">
-                        <span class="sd-runner-rank">${rank}</span>
-                        <div class="sd-runner-avatar">${avatarHtml}</div>
-                        <span class="sd-runner-name">${creator.name}</span>
-                        <span class="sd-runner-points">${creator.points} pts</span>
+                        <div class="sd-runner-top">
+                            <span class="sd-runner-rank">${rank}</span>
+                            <div class="sd-runner-avatar">${avatarHtml}</div>
+                            <span class="sd-runner-name">${creator.name}</span>
+                            <span class="sd-runner-points">${creator.points} pts</span>
+                        </div>
+                        <div class="sd-runner-progress-wrapper">
+                            <div class="sd-runner-progress">
+                                <div class="sd-runner-fill" style="width: ${runnerProgress}%"></div>
+                            </div>
+                        </div>
                     </div>
                 `;
             }).join('') : '<p class="text-muted" style="text-align:center; font-size: 0.8rem; padding: 10px;">Climb higher to reach the top!</p>';
