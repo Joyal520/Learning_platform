@@ -10,17 +10,19 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/assets/images/dc8e6aed-ed39-4e4c-9412-c66626efcd6c.png",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/assets/images/dc8e6aed-ed39-4e4c-9412-c66626efcd6c.png",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/assets/images/dc8e6aed-ed39-4e4c-9412-c66626efcd6c.png",
+      "src": "/icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
