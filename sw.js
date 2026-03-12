@@ -1,12 +1,11 @@
-const CACHE_NAME = 'edtechra-v1';
+const CACHE_NAME = 'edtechra-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
   '/assets/css/styles.css',
   '/assets/css/explore_recovered.css',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/assets/images/dc8e6aed-ed39-4e4c-9412-c66626efcd6c.png'
 ];
 
 self.addEventListener('install', (event) => {
