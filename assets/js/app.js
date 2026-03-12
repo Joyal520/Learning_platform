@@ -17,6 +17,19 @@ const App = {
     async init() {
         UI.showLoader();
 
+        // PWA Setup
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW reg failed:', err));
+            });
+        }
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            window.deferredPrompt = e;
+            const installBtn = document.getElementById('pwa-install-btn');
+            if (installBtn) installBtn.style.display = 'inline-flex';
+        });
+
         // 🚨 FAILSAFE TIMER: If mobile data hangs, drop the loader after 3 seconds to prevent an endless spinner.
         this._failsafeTimer = setTimeout(() => {
             if (this.isFirstLoad) {
@@ -121,6 +134,18 @@ const App = {
                 e.preventDefault();
                 const page = link.getAttribute('data-link');
                 this.navigate(page);
+            }
+
+            // Handle PWA Install click
+            const installBtn = e.target.closest('#pwa-install-btn');
+            if (installBtn && window.deferredPrompt) {
+                window.deferredPrompt.prompt();
+                window.deferredPrompt.userChoice.then((choice) => {
+                    if (choice.outcome === 'accepted') {
+                        installBtn.style.display = 'none';
+                    }
+                    window.deferredPrompt = null;
+                });
             }
         });
 
