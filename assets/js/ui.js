@@ -17,6 +17,31 @@ export const UI = {
     initHeroAnimations() {
         this._initCyclingSubtitle();
         this._initHeroEffects();
+        this._initPWAInstallUI();
+    },
+
+    // Show iOS Safari install tip or re-show deferred prompt button after home re-render
+    _initPWAInstallUI() {
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+            || window.navigator.standalone === true;
+        if (isStandalone) return; // Already installed, hide everything
+
+        const iosTip = document.getElementById('pwa-ios-tip');
+        const installBtn = document.getElementById('pwa-install-btn');
+
+        // If deferred prompt already captured, show install button
+        if (window.deferredPrompt && installBtn) {
+            installBtn.style.display = 'inline-flex';
+            return;
+        }
+
+        // Detect iOS Safari (no beforeinstallprompt support)
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isSafari = /^((?!chrome|android|CriOS|FxiOS|EdgiOS).)*safari/i.test(navigator.userAgent);
+
+        if (isIOS && isSafari && iosTip) {
+            iosTip.style.display = 'block';
+        }
     },
 
     // =============================================
@@ -608,10 +633,13 @@ export const UI = {
                             <a href="#upload" class="hero-btn hero-btn-secondary" data-link="upload">
                                 Upload Yours
                             </a>
-                            <button id="pwa-install-btn" class="hero-btn" style="display: none; background: rgba(79, 70, 229, 0.85); color: white; gap: 8px; padding: 10px 20px; font-size: 0.9rem; border-radius: 100px; backdrop-filter: blur(4px);">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            <button id="pwa-install-btn" class="hero-btn hero-btn-primary" style="display: none; gap: 8px; font-size: 0.88rem;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                                 Install App
                             </button>
+                        </div>
+                        <div id="pwa-ios-tip" style="display: none; margin-top: 12px; padding: 8px 18px; background: rgba(255,255,255,0.12); border-radius: 12px; backdrop-filter: blur(6px); font-size: 0.78rem; color: rgba(255,255,255,0.85); text-align: center; line-height: 1.5;">
+                            📲 To install: tap <strong style="color: white;">Share</strong> <span style="font-size: 1rem;">⎋</span> then <strong style="color: white;">Add to Home Screen</strong>
                         </div>
                     </div>
                 </div>

@@ -17,18 +17,40 @@ const App = {
     async init() {
         UI.showLoader();
 
-        // PWA Setup
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW reg failed:', err));
+        // ─── PWA Install Logic ───
+        // Detect if already running as installed PWA (standalone)
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+            || window.navigator.standalone === true;
+
+        if (!isStandalone) {
+            // Register Service Worker
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW reg failed:', err));
+                });
+            }
+
+            // Intercept install prompt (Chrome, Edge, Android)
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                window.deferredPrompt = e;
+                // Show install button if it exists in the DOM
+                const installBtn = document.getElementById('pwa-install-btn');
+                if (installBtn) installBtn.style.display = 'inline-flex';
+                // Hide iOS tip if it was showing
+                const iosTip = document.getElementById('pwa-ios-tip');
+                if (iosTip) iosTip.style.display = 'none';
+            });
+
+            // Clean up after successful install
+            window.addEventListener('appinstalled', () => {
+                window.deferredPrompt = null;
+                const installBtn = document.getElementById('pwa-install-btn');
+                if (installBtn) installBtn.style.display = 'none';
+                const iosTip = document.getElementById('pwa-ios-tip');
+                if (iosTip) iosTip.style.display = 'none';
             });
         }
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            window.deferredPrompt = e;
-            const installBtn = document.getElementById('pwa-install-btn');
-            if (installBtn) installBtn.style.display = 'inline-flex';
-        });
 
         // 🚨 FAILSAFE TIMER: If mobile data hangs, drop the loader after 3 seconds to prevent an endless spinner.
         this._failsafeTimer = setTimeout(() => {
