@@ -17,10 +17,9 @@ export const Auth = {
     },
 
     async signInWithGoogle() {
-        // Hardcode the production redirect — GitHub Pages serves from a subdirectory
-        const redirectUrl = window.location.hostname === 'localhost'
-            ? window.location.origin
-            : 'https://joyal520.github.io/Learning_platform/';
+        // Dynamically build the redirect URL based on the current domain and path.
+        // This ensures it works on localhost, GitHub Pages, and Vercel without domain mismatch.
+        const redirectUrl = window.location.origin + window.location.pathname;
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
