@@ -242,11 +242,26 @@ export const ImageUtils = {
                             thumbCanvas.toBlob(res, 'image/webp', 0.7);
                         });
 
-                        if (originalSizeKB <= TARGET_KB) {
-                            // Small file — light WebP conversion only
+                        // For classroom clarity, if the image is under 5MB, upload the EXACT original file 
+                        // to prevent any loss of sharpness or text clarity from canvas re-encoding.
+                        const BYPASS_MB = 5;
+                        if (originalSizeKB <= BYPASS_MB * 1024) {
+                            if (onProgress) onProgress(80, 'Using original image...');
+                            
+                            const mainBlob = file; // Use the exact original file
+                            const result = {
+                                blob: mainBlob,
+                                thumbnail: thumbnailBlob,
+                                width: Math.round(width), // Keep original dimensions
+                                height: Math.round(height),
+                                originalSize: file.size
+                            };
+                            resolve(result);
+                        } else if (originalSizeKB <= TARGET_KB) {
+                            // Light progressive WebP for medium-large files
                             if (onProgress) onProgress(80, 'Converting...');
                             const mainBlob = await new Promise((res) => {
-                                canvas.toBlob(res, 'image/webp', 0.92);
+                                canvas.toBlob(res, 'image/webp', 0.95);
                             });
                             if (onProgress) onProgress(100, 'Done!');
                             resolve({

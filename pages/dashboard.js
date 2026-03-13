@@ -232,15 +232,17 @@ export const DashboardPage = {
                 console.log('[Dashboard] Cleaning up dependent records for ID:', submissionId);
                 
                 // 1. Delete dependent records first (to avoid foreign key constraint errors)
-                const [lErr, bErr, rErr] = await Promise.all([
+                const [lErr, bErr, rErr, cErr] = await Promise.all([
                     supabase.from('likes').delete().eq('submission_id', submissionId),
                     supabase.from('bookmarks').delete().eq('submission_id', submissionId),
-                    supabase.from('ratings').delete().eq('submission_id', submissionId)
+                    supabase.from('ratings').delete().eq('submission_id', submissionId),
+                    supabase.from('comments').delete().eq('submission_id', submissionId)
                 ]);
 
-                if (lErr.error) console.warn('[Dashboard] Could not clear likes:', lErr.error);
-                if (bErr.error) console.warn('[Dashboard] Could not clear bookmarks:', bErr.error);
-                if (rErr.error) console.warn('[Dashboard] Could not clear ratings:', rErr.error);
+                if (lErr?.error) console.warn('[Dashboard] Could not clear likes:', lErr.error);
+                if (bErr?.error) console.warn('[Dashboard] Could not clear bookmarks:', bErr.error);
+                if (rErr?.error) console.warn('[Dashboard] Could not clear ratings:', rErr.error);
+                if (cErr?.error) console.warn('[Dashboard] Could not clear comments:', cErr.error);
 
                 // 2. Delete the submission itself
                 console.log('[Dashboard] Deleting submission record:', submissionId);

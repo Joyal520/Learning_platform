@@ -229,7 +229,7 @@ export const API = {
                 console.log('[API] 📤 Uploading display image...');
                 const { error: iErr } = await supabase.storage
                     .from('approved_public')
-                    .upload(imgPath, imageBlob, { contentType: 'image/webp', upsert: true });
+                    .upload(imgPath, imageBlob, { contentType: imageBlob.type || 'image/webp', upsert: true });
 
                 if (iErr) {
                     console.error('[API] ❌ Image storage error:', iErr);
