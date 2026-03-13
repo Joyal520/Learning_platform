@@ -507,6 +507,23 @@ export const UI = {
                         <img src="${imageUrl}" class="masonry-img" loading="lazy" decoding="async" alt="${sub.title}">
                         <div class="masonry-overlay"></div>
                     </div>
+                    <div class="masonry-meta-slim">
+                        <div class="masonry-author-stub" onclick="window.location.hash='#detail/${sub.id}'">
+                            <div class="masonry-avatar-mini">
+                                ${avatarUrl ? `<img src="${avatarUrl}" alt="${sub.profiles.display_name}">` : initials}
+                            </div>
+                            <span class="masonry-author-name">${sub.profiles?.display_name || 'Anonymous'}</span>
+                        </div>
+                        <div class="masonry-actions-mini">
+                            <div class="action-mini btn-like interaction-btn ${stats.user_has_liked ? 'liked' : ''}" data-id="${sub.id}">
+                                <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                <span>${stats.like_count || 0}</span>
+                            </div>
+                            <div class="action-mini btn-save interaction-btn ${stats.user_has_bookmarked ? 'bookmarked' : ''}" data-id="${sub.id}">
+                                <svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;

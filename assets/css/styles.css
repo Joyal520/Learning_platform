@@ -5899,61 +5899,87 @@ body.light-dashboard .user-name {
     color: #ef4444;
 }
 
-/* Creator Info Below Image */
-.masonry-metadata {
-    padding: 8px 2px;
+/* Slim Metadata Row */
+.masonry-meta-slim {
+    padding: 10px 4px 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
-.masonry-creator {
+.masonry-author-stub {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 8px;
-}
-
-.masonry-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    overflow: hidden;
-    background: var(--secondary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.8rem;
-    font-weight: bold;
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.masonry-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.creator-text {
-    flex: 1;
+    gap: 8px;
+    cursor: pointer;
     min-width: 0;
 }
 
-.creator-name {
-    font-size: 0.9rem;
-    font-weight: 600;
+.masonry-avatar-mini {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--surface-glass);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: white;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.masonry-author-name {
+    font-size: 0.85rem;
+    font-weight: 500;
     color: var(--text-main);
-    display: block;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.creator-desc {
-    font-size: 0.8rem;
+.masonry-actions-mini {
+    display: flex;
+    gap: 12px;
+}
+
+.action-mini {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     color: var(--text-muted);
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.action-mini:hover {
+    color: var(--text-main);
+}
+
+.action-mini svg {
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2.5;
+}
+
+.action-mini:hover svg {
+    fill: currentColor;
+}
+
+.action-mini.liked {
+    color: #ef4444;
+}
+.action-mini.liked svg {
+    fill: #ef4444;
+}
+.action-mini.bookmarked {
+    color: #3b82f6;
+}
+.action-mini.bookmarked svg {
+    fill: #3b82f6;
 }
 
 /* Engagement Row */
