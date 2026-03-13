@@ -5809,6 +5809,25 @@ body.light-dashboard .user-name {
     width: 100%;
 }
 
+/* Responsive Masonry Columns */
+@media (max-width: 1200px) {
+    .masonry-grid {
+        column-count: 4;
+    }
+}
+@media (max-width: 992px) {
+    .masonry-grid {
+        column-count: 3;
+    }
+}
+@media (max-width: 576px) {
+    .masonry-grid {
+        column-count: 2;
+        column-gap: 8px; /* Tighter gap on strict mobile */
+    }
+}
+
+
 .masonry-item {
     display: inline-block;
     width: 100%;
@@ -6067,9 +6086,11 @@ body.light-dashboard .user-name {
 }
 
 .lightbox-img.presentation-mode {
-    width: auto;
-    height: auto;
-    min-width: 320px;
+    width: 100%;
+    height: 100%;
+    max-width: 95vw;
+    max-height: 85vh;
+    object-fit: contain;
 }
 
 .lightbox-close {
