@@ -37,15 +37,55 @@ export const DashboardPage = {
         const { count: pending } = await supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'pending');
         const { count: approved } = await supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'approved');
 
-        // Calculate Storage Usage (Estimate)
-        // Calculate Storage Usage (Estimate)
-        // Optimized: Fetching file_size directly instead of downloading all content texts
-        const { data: subs } = await supabase.from('submissions').select('file_size');
+        // Calculate Real Storage Usage from Supabase Storage buckets
         let totalBytes = 0;
-        subs?.forEach(s => {
-            if (s.file_size) totalBytes += s.file_size;
-            // Omitted content_text and large data-URI thumbnail_paths to reduce query pressure
-        });
+
+        try {
+            // 1. Scan approved_public bucket (folders: thumbnails, display, image-posts)
+            const publicFolders = ['thumbnails', 'display', 'image-posts'];
+            for (const folder of publicFolders) {
+                let offset = 0;
+                while (true) {
+                    const { data } = await supabase.storage.from('approved_public').list(folder, { limit: 1000, offset });
+                    if (!data || data.length === 0) break;
+                    data.forEach(item => {
+                        if (item.metadata && item.metadata.size) totalBytes += item.metadata.size;
+                    });
+                    if (data.length < 1000) break;
+                    offset += 1000;
+                }
+            }
+
+            // 2. Scan submissions_private bucket (folders: user IDs)
+            let privateOffset = 0;
+            while (true) {
+                const { data: rootItems } = await supabase.storage.from('submissions_private').list('', { limit: 1000, offset: privateOffset });
+                if (!rootItems || rootItems.length === 0) break;
+
+                for (const item of rootItems) {
+                    if (item.id === null) {
+                        // It's a folder, scan its contents
+                        let folderOffset = 0;
+                        while (true) {
+                            const { data: files } = await supabase.storage.from('submissions_private').list(item.name, { limit: 1000, offset: folderOffset });
+                            if (!files || files.length === 0) break;
+                            files.forEach(f => {
+                                if (f.metadata && f.metadata.size) totalBytes += f.metadata.size;
+                            });
+                            if (files.length < 1000) break;
+                            folderOffset += 1000;
+                        }
+                    } else if (item.metadata && item.metadata.size) {
+                        // Fast file in root
+                        totalBytes += item.metadata.size;
+                    }
+                }
+                if (rootItems.length < 1000) break;
+                privateOffset += 1000;
+            }
+        } catch (err) {
+            console.error('Storage scan error:', err);
+        }
 
         const limitBytes = 1024 * 1024 * 1024; // 1 GB
         const usedMB = (totalBytes / (1024 * 1024)).toFixed(1);
@@ -57,10 +97,10 @@ export const DashboardPage = {
         const elS = document.getElementById('stat-storage');
         const elB = document.getElementById('storage-bar');
 
-        if (elU) elU.textContent = users;
-        if (elP) elP.textContent = pending;
-        if (elA) elA.textContent = approved;
-        if (elS) elS.textContent = `${usedMB} MB`;
+        if (elU) elU.textContent = users || '0';
+        if (elP) elP.textContent = pending || '0';
+        if (elA) elA.textContent = approved || '0';
+        if (elS) elS.textContent = totalBytes === 0 && !percent ? 'Unavailable' : `${usedMB} MB`;
         if (elB) elB.style.width = `${percent}%`;
     },
 
@@ -184,23 +224,42 @@ export const DashboardPage = {
         // Confirm delete
         document.getElementById('delete-confirm').addEventListener('click', async () => {
             const confirmBtn = document.getElementById('delete-confirm');
+            console.log('[Dashboard] Delete confirmed for ID:', submissionId);
             confirmBtn.textContent = 'Deleting...';
             confirmBtn.disabled = true;
 
             try {
+                console.log('[Dashboard] Cleaning up dependent records for ID:', submissionId);
+                
+                // 1. Delete dependent records first (to avoid foreign key constraint errors)
+                const [lErr, bErr, rErr] = await Promise.all([
+                    supabase.from('likes').delete().eq('submission_id', submissionId),
+                    supabase.from('bookmarks').delete().eq('submission_id', submissionId),
+                    supabase.from('ratings').delete().eq('submission_id', submissionId)
+                ]);
+
+                if (lErr.error) console.warn('[Dashboard] Could not clear likes:', lErr.error);
+                if (bErr.error) console.warn('[Dashboard] Could not clear bookmarks:', bErr.error);
+                if (rErr.error) console.warn('[Dashboard] Could not clear ratings:', rErr.error);
+
+                // 2. Delete the submission itself
+                console.log('[Dashboard] Deleting submission record:', submissionId);
                 const { error } = await supabase
                     .from('submissions')
                     .delete()
                     .eq('id', submissionId);
 
                 if (error) {
+                    console.error('[Dashboard] Supabase delete error:', error);
                     UI.showToast(`Delete failed: ${error.message}`, 'error');
                 } else {
+                    console.log('[Dashboard] Delete successful');
                     UI.showToast('Submission deleted permanently', 'success');
                     this.loadTabContent();
                     this.loadStats();
                 }
             } catch (err) {
+                console.error('[Dashboard] Unexpected delete error:', err);
                 UI.showToast('Delete failed: ' + err.message, 'error');
             }
 

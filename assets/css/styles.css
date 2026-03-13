@@ -1415,31 +1415,39 @@ body.explore-view .btn-outline:hover {
 .fullscreen-close-btn {
     display: none;
     position: fixed;
-    top: 24px;
-    right: 24px;
+    top: 16px;
+    right: 16px;
     z-index: 1000005;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.55);
     color: white;
-    border: none;
-    border-radius: 50%;
-    width: 44px;
-    height: 44px;
-    font-size: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 24px;
+    padding: 8px 18px 8px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
     line-height: 1;
     cursor: pointer;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(8px);
+    gap: 6px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     transition: opacity 0.3s ease, transform 0.3s ease, background 0.2s;
     opacity: 0;
     pointer-events: none;
     transform: translateY(-10px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 .fullscreen-active .fullscreen-close-btn {
     display: flex;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
 }
 
+/* Keep .visible class working too, for backward compat */
 .fullscreen-active .fullscreen-close-btn.visible {
     opacity: 1;
     pointer-events: auto;
@@ -1448,6 +1456,8 @@ body.explore-view .btn-outline:hover {
 
 .fullscreen-close-btn:hover {
     background: rgba(239, 68, 68, 0.9);
+    border-color: rgba(239, 68, 68, 0.5);
+    transform: scale(1.05);
 }
 
 .fullscreen-active .code-preview-frame {
@@ -5604,3 +5614,584 @@ body.light-dashboard .user-name {
         width: auto;
     }
 }
+
+/* ====================================================================
+   IMAGE UPLOAD COMPONENT (Integrated)
+   ==================================================================== */
+
+/* Drop Zone */
+.image-drop-zone {
+    position: relative;
+    min-height: 240px;
+    border: 2px dashed rgba(255, 255, 255, 0.12);
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: rgba(255, 255, 255, 0.02);
+    overflow: hidden;
+}
+
+.image-drop-zone:hover {
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.04);
+}
+
+.image-drop-zone.drag-over {
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.08);
+    transform: scale(1.01);
+    box-shadow: 0 0 24px var(--primary-glow);
+}
+
+.image-drop-zone.has-file .drop-zone-content {
+    display: none;
+}
+
+.drop-zone-content {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.drop-zone-icon {
+    font-size: 3rem;
+    display: block;
+    margin-bottom: 12px;
+}
+
+.drop-zone-text {
+    font-size: 1rem;
+    color: var(--text-main);
+    margin: 0 0 8px;
+}
+
+.drop-zone-formats {
+    margin: 0;
+}
+
+/* File Preview (inside drop zone) */
+.image-upload-preview {
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px;
+}
+
+.image-preview-img {
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: 8px;
+    object-fit: contain;
+    transition: filter 0.3s ease;
+}
+
+.image-remove-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.8);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(4px);
+    z-index: 5;
+}
+
+.image-remove-btn:hover {
+    background: rgba(239, 68, 68, 1);
+    transform: scale(1.1);
+}
+
+.image-preview-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    font-size: 0.85rem;
+    color: var(--text-main);
+}
+
+.preview-filename {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+}
+
+.preview-size {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+/* Hidden native file input */
+.hidden-file-input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+.image-drop-zone.has-file .hidden-file-input {
+    display: none;
+}
+
+/* Compression Status */
+.image-compression-status {
+    margin-top: 12px;
+    font-size: 0.85rem;
+}
+
+.compression-bar-mini {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.compression-bar-fill-mini {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), #8b5cf6);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.compression-text-mini {
+    color: var(--text-muted);
+}
+
+.compression-done {
+    color: #22c55e;
+    font-weight: 600;
+}
+
+/* ====================================================================
+   RESPONSIVE — Image Upload
+   ==================================================================== */
+
+@media (max-width: 768px) {
+    .image-drop-zone {
+        min-height: 180px;
+    }
+
+    .image-preview-img {
+        max-height: 280px;
+    }
+}
+
+
+/* ==========================================================================
+/* ==========================================================================
+   PINTEREST-STYLE MASONRY IMAGE FEED
+   ========================================================================== */
+
+.masonry-grid {
+    column-count: 5;
+    column-gap: 16px;
+    width: 100%;
+}
+
+.masonry-item {
+    display: inline-block;
+    width: 100%;
+    margin-bottom: 24px;
+    break-inside: avoid;
+    animation: fadeIn 0.5s ease;
+}
+
+/* Pinterest Card Design */
+.masonry-card {
+    background: transparent;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+}
+
+.masonry-image-wrapper {
+    position: relative;
+    width: 100%;
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--surface-glass);
+    cursor: pointer;
+}
+
+.masonry-img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 12px;
+    transition: transform 0.6s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.masonry-card:hover .masonry-img {
+    transform: scale(1.03);
+}
+
+/* Hover Overlay Icons */
+.masonry-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-end;
+    padding: 12px;
+}
+
+.masonry-card:hover .masonry-overlay {
+    opacity: 1;
+}
+
+.overlay-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.overlay-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: white;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border: none;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.overlay-btn:hover {
+    transform: scale(1.1);
+    background: #f8f8f8;
+}
+
+.overlay-btn.btn-like:hover {
+    color: #ef4444;
+}
+
+/* Slim Metadata Row */
+.masonry-meta-slim {
+    padding: 10px 4px 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.masonry-author-stub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    min-width: 0;
+}
+
+.masonry-avatar-mini {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--surface-glass);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: white;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.masonry-author-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.masonry-actions-mini {
+    display: flex;
+    gap: 12px;
+}
+
+.action-mini {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.action-mini:hover {
+    color: var(--text-main);
+}
+
+.action-mini svg {
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2.5;
+}
+
+.action-mini:hover svg {
+    fill: currentColor;
+}
+
+.action-mini.liked {
+    color: #ef4444;
+}
+.action-mini.liked svg {
+    fill: #ef4444;
+}
+.action-mini.bookmarked {
+    color: #3b82f6;
+}
+.action-mini.bookmarked svg {
+    fill: #3b82f6;
+}
+
+/* Engagement Row */
+.masonry-engagement {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 4px;
+}
+
+.engagement-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: #888;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.engagement-item:hover {
+    color: var(--accent);
+}
+
+.engagement-item.liked {
+    color: #ef4444;
+}
+
+.engagement-item svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+}
+
+.engagement-item:hover svg {
+    fill: currentColor;
+}
+
+/* Media Queries for Masonry */
+@media (max-width: 1200px) {
+    .masonry-grid { column-count: 4; }
+}
+
+@media (max-width: 992px) {
+    .masonry-grid { column-count: 3; }
+}
+
+@media (max-width: 600px) {
+    .masonry-item { margin-bottom: 16px; }
+}
+
+/* Lightbox Utility */
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.98);
+    z-index: 999999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(12px);
+    cursor: zoom-out;
+    padding: 20px;
+}
+
+.lightbox-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.lightbox-img {
+    max-width: 95vw;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: 4px;
+    box-shadow: 0 10px 60px rgba(0,0,0,0.8);
+    animation: zoomIn 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.lightbox-img.presentation-mode {
+    width: auto;
+    height: auto;
+    min-width: 320px;
+}
+
+.lightbox-close {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    background: none;
+    border: none;
+    color: white;
+    font-size: 2.5rem;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.lightbox-caption {
+    margin-top: 20px;
+    color: white;
+    text-align: center;
+}
+
+/* Interaction Active States */
+.btn-like.liked {
+    color: #ef4444 !important;
+}
+.btn-like.liked svg {
+    fill: #ef4444;
+}
+
+.btn-save.bookmarked {
+    color: #3b82f6 !important;
+}
+.btn-save.bookmarked svg {
+    fill: #3b82f6;
+}
+
+.body-no-scroll {
+    overflow: hidden !important;
+}
+
+/* ====================================================================
+   ADMIN DASHBOARD DELETE MODAL
+   ==================================================================== */
+
+.delete-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: fadeIn 0.2s ease;
+}
+
+.delete-modal {
+    background: var(--surface-glass);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(16px);
+    padding: 30px;
+    border-radius: var(--radius);
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    animation: slideUpFade 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.delete-modal h3 {
+    color: #ef4444; /* red-500 */
+    margin-bottom: 16px;
+    font-size: 1.5rem;
+}
+
+.delete-modal p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.delete-modal strong {
+    color: var(--text-main);
+}
+
+.delete-modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.btn-cancel {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    padding: 10px 20px;
+}
+
+.btn-cancel:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-confirm-delete {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+}
+
+.btn-confirm-delete:hover {
+    background: #dc2626;
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+}
+
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

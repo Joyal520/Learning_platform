@@ -168,5 +168,129 @@ export const ImageUtils = {
                 };
             };
         });
+    },
+
+    /**
+     * Compress an image for the image-post upload flow.
+     * - If file size ≤ 100 KB: minimal WebP conversion (preserve quality)
+     * - If file size > 100 KB: progressive compression targeting ~100 KB
+     * - Always caps dimensions at 1920px max
+     * - Also generates a 320px thumbnail
+     * @returns {Promise<{blob: Blob, thumbnail: Blob, width: number, height: number, originalSize: number}>}
+     */
+    async compressForUpload(file, onProgress = null) {
+        const TARGET_KB = 800; // High quality target for classroom use
+        const MAX_DIM = 2560; // Support up to 2.5K resolution
+        const THUMB_DIM = 400; // Slightly larger thumbnails for high-DPI
+        const originalSizeKB = file.size / 1024;
+
+        return new Promise((resolve, reject) => {
+            if (onProgress) onProgress(5, 'Loading image...');
+
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onerror = () => reject(new Error('Failed to read image file'));
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onerror = () => reject(new Error('Failed to decode image'));
+                img.onload = async () => {
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Cap dimensions
+                    if (width > MAX_DIM || height > MAX_DIM) {
+                        if (width > height) {
+                            height = Math.round((height * MAX_DIM) / width);
+                            width = MAX_DIM;
+                        } else {
+                            width = Math.round((width * MAX_DIM) / height);
+                            height = MAX_DIM;
+                        }
+                    }
+
+                    // Main canvas
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    if (onProgress) onProgress(20, 'Processing...');
+
+                    // Thumbnail canvas
+                    let thumbW = THUMB_DIM;
+                    let thumbH = Math.round((height * THUMB_DIM) / width);
+                    if (thumbH > THUMB_DIM) {
+                        thumbW = Math.round((width * THUMB_DIM) / height);
+                        thumbH = THUMB_DIM;
+                    }
+
+                    const thumbCanvas = document.createElement('canvas');
+                    thumbCanvas.width = thumbW;
+                    thumbCanvas.height = thumbH;
+                    const thumbCtx = thumbCanvas.getContext('2d');
+                    thumbCtx.fillStyle = '#FFFFFF';
+                    thumbCtx.fillRect(0, 0, thumbW, thumbH);
+                    thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
+
+                    try {
+                        // Generate thumbnail (always compress to ~50KB)
+                        const thumbnailBlob = await new Promise((res) => {
+                            thumbCanvas.toBlob(res, 'image/webp', 0.7);
+                        });
+
+                        if (originalSizeKB <= TARGET_KB) {
+                            // Small file — light WebP conversion only
+                            if (onProgress) onProgress(80, 'Converting...');
+                            const mainBlob = await new Promise((res) => {
+                                canvas.toBlob(res, 'image/webp', 0.92);
+                            });
+                            if (onProgress) onProgress(100, 'Done!');
+                            resolve({
+                                blob: mainBlob,
+                                thumbnail: thumbnailBlob,
+                                width, height,
+                                originalSize: file.size
+                            });
+                        } else {
+                            // Progressive compression with higher quality floor
+                            let quality = 0.95; 
+                            const minQuality = 0.6; // Don't go below 0.6 to preserve classroom detail
+                            const step = 0.05;
+
+                            const compress = () => {
+                                canvas.toBlob((blob) => {
+                                    if (!blob) return reject(new Error('Compression failed'));
+
+                                    const currentKB = blob.size / 1024;
+                                    const progress = 20 + ((0.85 - quality) / (0.85 - minQuality)) * 75;
+                                    if (onProgress) onProgress(Math.min(progress, 95), `Optimizing: ${currentKB.toFixed(0)} KB...`);
+
+                                    if (currentKB <= TARGET_KB || quality <= minQuality) {
+                                        if (onProgress) onProgress(100, 'Compressed!');
+                                        resolve({
+                                            blob,
+                                            thumbnail: thumbnailBlob,
+                                            width, height,
+                                            originalSize: file.size
+                                        });
+                                    } else {
+                                        quality -= step;
+                                        setTimeout(compress, 30);
+                                    }
+                                }, 'image/webp', quality);
+                            };
+
+                            compress();
+                        }
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+            };
+        });
     }
 };

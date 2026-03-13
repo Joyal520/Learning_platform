@@ -1,17 +1,16 @@
-const CACHE_NAME = 'edtechra-v6';
+const CACHE_NAME = 'edtechra-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
   '/assets/css/styles.css',
   '/assets/css/explore_recovered.css',
-  '/public/icons/icon-192.png',
-  '/public/icons/icon-512.png',
-  '/public/icons/icon-512-maskable.png',
-  '/public/favicon.ico',
-  '/public/favicon-32x32.png',
-  '/public/favicon-16x16.png',
-  '/public/icons/apple-touch-icon.png'
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/public/favicon.ico?v=3',
+  '/public/favicon-32x32.png?v=3',
+  '/public/favicon-16x16.png?v=3',
+  '/public/icons/apple-touch-icon.png?v=3'
 ];
 
 self.addEventListener('install', (event) => {

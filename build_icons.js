@@ -2,7 +2,7 @@ const fs = require('fs');
 const sharp = require('sharp');
 const path = require('path');
 
-const srcIcon = 'assets/images/dc8e6aed-ed39-4e4c-9412-c66626efcd6c.png';
+const srcIcon = 'assets/images/Icon.png';
 const publicIconsDir = 'public/icons';
 const publicDir = 'public';
 

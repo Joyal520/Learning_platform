@@ -17,77 +17,73 @@ const App = {
     async init() {
         UI.showLoader();
 
-        // ─── PWA Install Logic ───
-        console.log('[PWA] Initializing PWA Install Logic...');
-        
-        // Detect if already running as installed PWA (standalone)
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-            || window.navigator.standalone === true;
+        // ─── Phase 3: Reliable PWA Install Logic ───
+        let deferredPrompt = null;
 
-        console.log(`[PWA] standalone mode detected: ${isStandalone}`);
+        // Step 2 & 6: Capture event and log
+        window.addEventListener("beforeinstallprompt", (e) => {
+            console.log("[PWA] beforeinstallprompt fired");
+            e.preventDefault();
+            deferredPrompt = e;
+            console.log("[PWA] deferredPrompt stored");
 
-        // Register Service Worker unconditionally to ensure updates even in standalone mode
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(reg => {
-                        console.log('[PWA] service worker registered:', reg.scope);
-                    })
-                    .catch(err => console.log('[PWA] SW reg failed:', err));
-            });
-        } else {
-            console.log('[PWA] unsupported browser (no SW)');
+            const btn = document.getElementById("installBtn");
+            if (btn) {
+                btn.style.display = "block";
+                console.log("[PWA] install button displayed");
+            }
+        });
+
+        // Step 3 & 6: Click handler with logging
+        // Using delegation to ensure dynamic hero content is handled
+        document.addEventListener('click', async (e) => {
+            const btn = e.target.closest('#installBtn');
+            if (btn) {
+                console.log("[PWA] install button clicked");
+                if (!deferredPrompt) return;
+                
+                console.log("[PWA] install prompt opened");
+                deferredPrompt.prompt();
+                const result = await deferredPrompt.userChoice;
+                console.log("[PWA] user choice:", result.outcome);
+                deferredPrompt = null;
+                btn.style.display = "none";
+            }
+        });
+
+        // Step 4 & 6: Handle successful install
+        window.addEventListener("appinstalled", () => {
+            console.log("[PWA] appinstalled fired");
+            console.log("[PWA] App installed");
+            const btn = document.getElementById("installBtn");
+            if (btn) btn.style.display = "none";
+        });
+
+        // Step 5: Detect already installed
+        if (window.matchMedia("(display-mode: standalone)").matches) {
+            console.log("[PWA] running in standalone mode");
+            const btn = document.getElementById("installBtn");
+            if (btn) btn.style.display = "none";
         }
 
-        // Test manifest and icon loading
-        fetch('/manifest.json').then(res => {
-            if (res.ok) console.log('[PWA] manifest loaded successfully');
-            else console.log('[PWA] manifest failed to load');
-        });
-        
-        const imgTest = new Image();
-        imgTest.onload = () => console.log('[PWA] icon loaded successfully');
-        imgTest.onerror = () => console.log('[PWA] icon fetch failed');
-        imgTest.src = '/public/icons/icon-192.png';
-
-        // Intercept install prompt (Chrome, Edge, Android)
-        window.addEventListener('beforeinstallprompt', (e) => {
-            console.log('[PWA] beforeinstallprompt fired');
-            e.preventDefault();
-            window.deferredPrompt = e;
-            console.log('[PWA] deferred prompt stored');
-            
-            // Show install button if it exists in the DOM
-            const installBtn = document.getElementById('pwa-install-btn');
-            if (installBtn) {
-                installBtn.style.display = 'inline-flex';
-                console.log('[PWA] install button shown');
-            } else {
-                console.log('[PWA] WARNING: pwa-install-btn not found in DOM yet. Will show when rendered.');
-            }
-            
-            // Hide iOS tip if it was showing
-            const iosTip = document.getElementById('pwa-ios-tip');
-            if (iosTip) iosTip.style.display = 'none';
+        // SW Registration & Manifest Tracking
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js?v=9').then(reg => {
+                    console.log('[PWA] service worker registered');
+                });
+            });
+        }
+        fetch('/manifest.json?v=3').then(res => {
+            if (res.ok) console.log('[PWA] manifest loaded');
         });
 
-        // Clean up after successful install
-        window.addEventListener('appinstalled', () => {
-            console.log('[PWA] appinstalled fired');
-            window.deferredPrompt = null;
-            const installBtn = document.getElementById('pwa-install-btn');
-            if (installBtn) installBtn.style.display = 'none';
-            const iosTip = document.getElementById('pwa-ios-tip');
-            if (iosTip) iosTip.style.display = 'none';
-        });
-
-        // 🚨 FAILSAFE TIMER: If mobile data hangs, drop the loader after 3 seconds to prevent an endless spinner.
+        // 🚨 FAILSAFE TIMER: If mobile data hangs, drop the loader after 3 seconds
         this._failsafeTimer = setTimeout(() => {
             if (this.isFirstLoad) {
                 console.warn("Failsafe triggered: Hiding loader. Auth or network may have timed out.");
                 UI.hideLoader();
                 this.isFirstLoad = false;
-                // If the screen is still blank, force a basic render
                 if (!document.getElementById('main-content').innerHTML.trim()) {
                     this.route();
                 }
@@ -187,18 +183,7 @@ const App = {
                 this.navigate(page);
             }
 
-            // Handle PWA Install click
-            const installBtn = e.target.closest('#pwa-install-btn');
-            if (installBtn && window.deferredPrompt) {
-                console.log('[PWA] install prompt opened');
-                window.deferredPrompt.prompt();
-                window.deferredPrompt.userChoice.then((choice) => {
-                    if (choice.outcome === 'accepted') {
-                        installBtn.style.display = 'none';
-                    }
-                    window.deferredPrompt = null;
-                });
-            }
+            // Navigation delegation continues below...
         });
 
         // Initialize UI

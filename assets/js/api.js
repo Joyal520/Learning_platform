@@ -24,6 +24,7 @@ export const API = {
                 author_id,
                 thumbnail_path,
                 thumbnail_url,
+                image_url,
                 status,
                 created_at,
                 updated_at,
@@ -197,6 +198,116 @@ export const API = {
             return { data, error: null };
         } catch (err) {
             console.error('[API] ❌ Error in updateSubmission:', err);
+            return { error: err };
+        }
+    },
+
+    async uploadImagePost(submissionData, imageBlob, thumbnailBlob = null) {
+        console.log('[API] === IMAGE POST UPLOAD START ===');
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                console.warn('[API] No active session for image upload.');
+            }
+
+            console.log('[API] 📨 Inserting image post record...');
+            const { data: sub, error: insertError } = await withTimeout(
+                supabase.from('submissions').insert([submissionData]).select('id').single(),
+                60000,
+                'Image Post INSERT'
+            );
+
+            if (insertError) throw insertError;
+            console.log('[API] ✅ Image post created, ID:', sub.id);
+
+            const subId = sub.id;
+            const updateObject = {};
+
+            // Upload display image
+            if (imageBlob) {
+                const imgPath = `image-posts/${subId}.webp`;
+                console.log('[API] 📤 Uploading display image...');
+                const { error: iErr } = await supabase.storage
+                    .from('approved_public')
+                    .upload(imgPath, imageBlob, { contentType: 'image/webp', upsert: true });
+
+                if (iErr) {
+                    console.error('[API] ❌ Image storage error:', iErr);
+                } else {
+                    const { data } = supabase.storage.from('approved_public').getPublicUrl(imgPath);
+                    updateObject.image_url = data.publicUrl;
+                    console.log('[API] ✅ Image stored:', data.publicUrl);
+                }
+            }
+
+            // Upload thumbnail
+            if (thumbnailBlob) {
+                const thumbPath = `thumbnails/${subId}.webp`;
+                console.log('[API] 📤 Uploading thumbnail...');
+                const { error: tErr } = await supabase.storage
+                    .from('approved_public')
+                    .upload(thumbPath, thumbnailBlob, { contentType: 'image/webp', upsert: true });
+
+                if (tErr) {
+                    console.error('[API] ❌ Thumbnail storage error:', tErr);
+                } else {
+                    const { data } = supabase.storage.from('approved_public').getPublicUrl(thumbPath);
+                    updateObject.thumbnail_url = data.publicUrl;
+                }
+            }
+
+            // Update row with URLs
+            if (Object.keys(updateObject).length > 0) {
+                await supabase.from('submissions').update(updateObject).eq('id', subId);
+            }
+
+            console.log('[API] === IMAGE POST UPLOAD COMPLETE ✅ ===');
+            return { data: sub, error: null };
+        } catch (err) {
+            console.error('[API] ❌ Image post upload failed:', err);
+            return { error: err };
+        }
+    },
+
+    async toggleLike(submissionId, userId) {
+        try {
+            const { data, error } = await supabase
+                .from('likes')
+                .insert({ submission_id: submissionId, user_id: userId });
+
+            if (error && error.code === '23505') { // Already liked
+                await supabase.from('likes').delete().match({ submission_id: submissionId, user_id: userId });
+                return { action: 'unliked', error: null };
+            }
+
+            if (error) throw error;
+            return { action: 'liked', error: null };
+        } catch (err) {
+            console.error('[API] Like error:', err);
+            return { error: err };
+        }
+    },
+
+    async toggleBookmark(submissionId, userId) {
+        try {
+            const { data, error } = await supabase
+                .from('bookmarks')
+                .select('id')
+                .match({ submission_id: submissionId, user_id: userId })
+                .maybeSingle();
+
+            if (data) {
+                await supabase.from('bookmarks').delete().match({ submission_id: submissionId, user_id: userId });
+                return { action: 'removed', error: null };
+            } else {
+                const { error: insErr } = await supabase
+                    .from('bookmarks')
+                    .insert({ submission_id: submissionId, user_id: userId });
+                if (insErr) throw insErr;
+                return { action: 'saved', error: null };
+            }
+        } catch (err) {
+            console.error('[API] Bookmark error:', err);
             return { error: err };
         }
     }
