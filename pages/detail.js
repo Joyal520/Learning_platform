@@ -52,6 +52,15 @@ export const DetailPage = {
             this.setupPreviewFullscreen();
             this.setupBookmark(sub);
 
+            // Check for ?fullscreen=true in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('fullscreen') === 'true') {
+                setTimeout(() => {
+                    const btn = document.getElementById('previewFullscreenBtn');
+                    if (btn) btn.click();
+                }, 500); // Small delay to ensure render is complete
+            }
+
             // Record a view (non-blocking)
             this.recordView(sub.id);
 
@@ -92,7 +101,7 @@ export const DetailPage = {
                 : '<span>⛶ Fullscreen</span>';
 
             if (isFullscreen) {
-                UI.showToast('Immersive mode active. Scroll down to hide UI.');
+                UI.showToast('Immersive mode — tap Cancel to exit.');
                 btn.focus();
             }
         };

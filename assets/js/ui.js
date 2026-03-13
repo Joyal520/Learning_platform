@@ -9,39 +9,26 @@ export const UI = {
         document.getElementById('menu-toggle')?.addEventListener('click', () => {
             document.querySelector('.main-nav').classList.toggle('mobile-open');
         });
+
+        // Hidden Debug Tool for PWA: long press the logo
+        const logo = document.getElementById('nav-home');
+        if (logo) {
+            let pressTimer;
+            logo.addEventListener('touchstart', () => {
+                pressTimer = setTimeout(() => {
+                    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+                    alert(`PWA State on Mobile:\n- pwaInstallReady: ${window.pwaInstallReady}\n- deferredPrompt: ${!!window.deferredPrompt}\n- isStandalone: ${isStandalone}\n- UA: ${navigator.userAgent.substring(0, 50)}...`);
+                }, 2000);
+            });
+            logo.addEventListener('touchend', () => clearTimeout(pressTimer));
+        }
     },
 
-    // =============================================
     // Hero Animations: Cycling Subtitle + Confetti Dots
     // =============================================
     initHeroAnimations() {
         this._initCyclingSubtitle();
         this._initHeroEffects();
-        this._initPWAInstallUI();
-    },
-
-    // Show iOS Safari install tip or re-show deferred prompt button after home re-render
-    _initPWAInstallUI() {
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-            || window.navigator.standalone === true;
-        if (isStandalone) return; // Already installed, hide everything
-
-        const iosTip = document.getElementById('pwa-ios-tip');
-        const installBtn = document.getElementById('pwa-install-btn');
-
-        // If deferred prompt already captured, show install button
-        if (window.deferredPrompt && installBtn) {
-            installBtn.style.display = 'inline-flex';
-            return;
-        }
-
-        // Detect iOS Safari (no beforeinstallprompt support)
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        const isSafari = /^((?!chrome|android|CriOS|FxiOS|EdgiOS).)*safari/i.test(navigator.userAgent);
-
-        if (isIOS && isSafari && iosTip) {
-            iosTip.style.display = 'block';
-        }
     },
 
     // =============================================
@@ -351,7 +338,7 @@ export const UI = {
                                 ⛶ Fullscreen
                             </button>
                         </div>
-                        <button class="fullscreen-close-btn" id="floatingCloseBtn" title="Exit Fullscreen">✕</button>
+                        <button class="fullscreen-close-btn" id="floatingCloseBtn" title="Exit Fullscreen">✕ Cancel</button>
                         <iframe class="code-preview-frame" sandbox="allow-scripts" srcdoc="${wrappedCode.replace(/"/g, '&quot;')}"></iframe>
                     </div>`;
         }
@@ -423,6 +410,55 @@ export const UI = {
             </div>
         ` : '';
 
+        // NEW: Image-First Feed Card for 'images' category
+        if (sub.category === 'images' || sub.content_type === 'image') {
+            const displayUrl = sub.public_url || thumbnailUrl;
+            return `
+                <div class="content-card clay-card image-feed-card animate-fade-in" data-id="${sub.id}">
+                    ${badgeHtml}
+                    <div class="card-thumbnail-container feed-image-container">
+                        <img src="${displayUrl}" 
+                             class="feed-img" 
+                             loading="lazy" 
+                             decoding="async" 
+                             alt="${sub.title}"
+                             onerror="this.src='${thumbnailUrl}';">
+                        <div class="image-overlay-category">
+                            <span class="badge badge-category" style="--cat-color:${color}">${this.categoryEmoji(sub.category)} ${sub.category.replace('_', ' ')}</span>
+                        </div>
+                    </div>
+                    <div class="card-body feed-body">
+                        <h3 class="card-title">${sub.title}</h3>
+                        ${sub.description ? `<p class="feed-description">${sub.description}</p>` : ''}
+                        
+                        <div class="feed-author-row">
+                             <div class="author-info">
+                                <div class="mini-avatar" style="background: linear-gradient(135deg, ${color}, var(--secondary))">
+                                    ${(sub.profiles?.display_name || 'U').charAt(0).toUpperCase()}
+                                </div>
+                                <span class="author-name">By ${sub.profiles?.display_name || 'Anonymous'}</span>
+                             </div>
+                             <div class="card-stats feed-stats">
+                                <span><span style="color:#fbbf24">★</span> ${Number(stats.avg_rating).toFixed(1)}</span>
+                                <span><span style="color:#ef4444">❤️</span> ${stats.like_count}</span>
+                             </div>
+                        </div>
+
+                        <div class="feed-actions">
+                            <a href="${this.createWhatsAppShareUrl(sub.title, sub.id)}" target="_blank" rel="noopener noreferrer" class="btn clay-btn btn-sm btn-snake btn-round btn-icon" style="background:#25D366; border-color:#25D366; color:white;" title="Share on WhatsApp">
+                                <span></span><span></span><span></span><span></span>
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.888-.788-1.489-1.761-1.663-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                            </a>
+                            <a href="#detail/${sub.id}" class="btn btn-primary btn-sm btn-snake btn-round btn-wide btn-preview" data-link="detail/${sub.id}">
+                                <span></span><span></span><span></span><span></span> 💡 View Post
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Standard Document Card
         return `
             <div class="content-card clay-card animate-fade-in" data-id="${sub.id}">
                 ${badgeHtml}
@@ -456,6 +492,60 @@ export const UI = {
                 </div>
             </div>
         `;
+    },
+
+    renderMasonryCard(sub) {
+        const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
+        const imageUrl = sub.image_url || sub.public_url || sub.thumbnail_url;
+        const avatarUrl = sub.profiles?.avatar_url;
+        const initials = (sub.profiles?.display_name || 'U').charAt(0).toUpperCase();
+
+        return `
+            <div class="masonry-item animate-fade-in" data-id="${sub.id}" data-full-url="${sub.image_url || sub.thumbnail_url}">
+                <div class="masonry-card">
+                    <div class="masonry-image-wrapper">
+                        <img src="${imageUrl}" class="masonry-img" loading="lazy" decoding="async" alt="${sub.title}">
+                        <div class="masonry-overlay"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    showImageLightbox(imageUrl, title) {
+        console.log(`[UI] opening lightbox with source: ${imageUrl}`);
+        // Remove existing if any
+        document.querySelector('.lightbox-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'lightbox-overlay animate-fade-in';
+        overlay.innerHTML = `
+            <div class="lightbox-content">
+                <button class="lightbox-close" aria-label="Close Lightbox">&times;</button>
+                <div class="lightbox-img-container">
+                    <img src="${imageUrl}" class="lightbox-img presentation-mode" alt="${title}">
+                </div>
+                <div class="lightbox-caption">
+                    <h3 class="lightbox-title">${title}</h3>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+        document.body.classList.add('body-no-scroll');
+
+        const close = () => {
+            overlay.classList.remove('animate-fade-in');
+            overlay.classList.add('animate-fade-out');
+            setTimeout(() => {
+                overlay.remove();
+                document.body.classList.remove('body-no-scroll');
+            }, 300);
+        };
+
+        overlay.querySelector('.lightbox-close').onclick = close;
+        overlay.onclick = (e) => { if (e.target === overlay) close(); };
+        window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); }, { once: true });
     },
 
     createWhatsAppShareUrl(title, workId) {
@@ -633,8 +723,7 @@ export const UI = {
                             <a href="#upload" class="hero-btn hero-btn-secondary" data-link="upload">
                                 Upload Yours
                             </a>
-                            <button id="pwa-install-btn" class="hero-btn hero-btn-primary" style="display: none; gap: 8px; font-size: 0.88rem;">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            <button id="installBtn" style="display:none;" class="hero-btn hero-btn-primary">
                                 Install App
                             </button>
                         </div>
@@ -828,45 +917,67 @@ export const UI = {
                         <textarea name="description" class="form-control" rows="3" placeholder="Tell us more about your work..."></textarea>
                     </div>
 
-                    <!-- Thumbnail Upload -->
-                    <div class="form-group">
-                        <label>Thumbnail (optional)</label>
-                        <div class="thumbnail-upload-area">
-                            <div id="thumbnail-preview" class="thumbnail-preview">
-                                <span class="thumbnail-placeholder">📷 Click or drag to add a cover image</span>
+                    <div id="non-image-fields">
+                        <!-- Thumbnail Upload -->
+                        <div class="form-group">
+                            <label>Thumbnail (optional)</label>
+                            <div class="thumbnail-upload-area">
+                                <div id="thumbnail-preview" class="thumbnail-preview">
+                                    <span class="thumbnail-placeholder">📷 Click or drag to add a cover image</span>
+                                </div>
+                                <input type="file" name="thumbnail" id="thumbnail-input" accept="image/*" class="thumbnail-file-input">
                             </div>
-                            <input type="file" name="thumbnail" id="thumbnail-input" accept="image/*" class="thumbnail-file-input">
+                        </div>
+
+                        <!-- Content Mode -->
+                        <div class="form-group">
+                            <label>Content Mode*</label>
+                            <div class="radio-group mode-tabs">
+                                <label class="mode-tab"><input type="radio" name="content_mode" value="file" checked> 📁 Upload File</label>
+                                <label class="mode-tab"><input type="radio" name="content_mode" value="text"> ✏️ Text Only</label>
+                                <label class="mode-tab"><input type="radio" name="content_mode" value="code"> 💻 Paste Code</label>
+                                <!-- Image option removed since Image is now the primary Category choice -->
+                            </div>
+                        </div>
+
+                        <div id="file-input-group" class="form-group">
+                            <label>File Upload* (PDF, TXT, MP3, ZIP - Max 50MB)</label>
+                            <input type="file" name="file" class="form-control" id="file-input" required>
+                        </div>
+
+                        <div id="text-input-group" class="form-group hidden">
+                            <label>Write your content here*</label>
+                            <textarea name="content_text" class="form-control" rows="10" placeholder="Paste or write your story, poem, or article here..."></textarea>
+                        </div>
+
+                        <div id="code-input-group" class="form-group hidden">
+                            <label>Paste HTML/CSS/JS Code*</label>
+                            <p class="text-muted text-sm">Paste your full web page code below (HTML, CSS, JS). A live preview will appear.</p>
+                            <textarea id="code-textarea" name="code_content" class="form-control code-editor" rows="12" placeholder="<!DOCTYPE html>\n<html>...</html>"></textarea>
+                            <div class="code-preview-container">
+                                <p class="preview-label">Live Preview</p>
+                                <iframe id="code-preview-frame" class="code-preview-frame" sandbox="allow-scripts"></iframe>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Content Mode -->
-                    <div class="form-group">
-                        <label>Content Mode*</label>
-                        <div class="radio-group mode-tabs">
-                            <label class="mode-tab"><input type="radio" name="content_mode" value="file" checked> 📁 Upload File</label>
-                            <label class="mode-tab"><input type="radio" name="content_mode" value="text"> ✏️ Text Only</label>
-                            <label class="mode-tab"><input type="radio" name="content_mode" value="code"> 💻 Paste Code</label>
+                    <!-- Independent Image Flow Container -->
+                    <div id="image-input-group" class="form-group hidden">
+                        <label>Image Upload* (JPG, PNG, WEBP - Max 15MB)</label>
+                        <p class="text-muted text-sm mb-10">Images over 100 KB are automatically compressed for speed and storage.</p>
+                        <div class="image-drop-zone" id="image-drop-zone">
+                            <div class="drop-zone-content">
+                                <span class="drop-zone-icon">📸</span>
+                                <p class="drop-zone-text">Drag & drop an image here<br><span class="text-muted text-sm">or click to browse</span></p>
+                            </div>
+                            <div class="image-upload-preview" id="image-upload-preview" style="display: none;">
+                                <img id="image-preview-img" alt="Preview" class="image-preview-img">
+                                <button type="button" class="image-remove-btn" id="image-remove-btn" title="Remove image">✕</button>
+                                <div class="image-preview-info" id="image-preview-info"></div>
+                            </div>
+                            <input type="file" id="image-file-input" accept="image/jpeg,image/jpg,image/png,image/webp" class="hidden-file-input">
                         </div>
-                    </div>
-
-                    <div id="file-input-group" class="form-group">
-                        <label>File Upload* (PDF, TXT, PNG, JPG, MP3, ZIP - Max 50MB)</label>
-                        <input type="file" name="file" class="form-control" id="file-input" required>
-                    </div>
-
-                    <div id="text-input-group" class="form-group hidden">
-                        <label>Write your content here*</label>
-                        <textarea name="content_text" class="form-control" rows="10" placeholder="Paste or write your story, poem, or article here..."></textarea>
-                    </div>
-
-                    <div id="code-input-group" class="form-group hidden">
-                        <label>Paste HTML/CSS/JS Code*</label>
-                        <p class="text-muted text-sm">Paste your full web page code below (HTML, CSS, JS). A live preview will appear.</p>
-                        <textarea id="code-textarea" name="code_content" class="form-control code-editor" rows="12" placeholder="<!DOCTYPE html>\n<html>...</html>"></textarea>
-                        <div class="code-preview-container">
-                            <p class="preview-label">Live Preview</p>
-                            <iframe id="code-preview-frame" class="code-preview-frame" sandbox="allow-scripts"></iframe>
-                        </div>
+                        <div class="image-compression-status" id="image-compression-status" style="display: none;"></div>
                     </div>
 
                     <div class="form-actions">

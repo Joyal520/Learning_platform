@@ -1,5 +1,6 @@
 import { API } from '../assets/js/api.js';
 import { UI } from '../assets/js/ui.js';
+import App from '../assets/js/app.js';
 
 export const ExplorePage = {
     _currentCategory: 'all',
@@ -28,6 +29,11 @@ export const ExplorePage = {
                 if (error) throw error;
 
                 let filteredData = data || [];
+                // Filtering: If 'all' is selected, hide images from the main feed as requested.
+                if (this._currentCategory === 'all') {
+                    filteredData = filteredData.filter(s => s.category !== 'images');
+                }
+
                 if (search) {
                     filteredData = filteredData.filter(s =>
                         s.title.toLowerCase().includes(search) ||
@@ -50,10 +56,19 @@ export const ExplorePage = {
 
                 const finalList = sortAndSliceFn(filteredData);
 
+                const isImages = this._currentCategory === 'images';
+
                 if (finalList.length === 0) {
                     gridEl.innerHTML = `<p class="text-muted text-center" style="grid-column: 1/-1;">Not enough data.</p>`;
                 } else {
-                    gridEl.innerHTML = finalList.map(w => UI.renderCard(w, badgeObj)).join('');
+                    if (isImages) {
+                        gridEl.classList.add('masonry-grid');
+                        gridEl.innerHTML = finalList.map(w => UI.renderMasonryCard(w)).join('');
+                        this.setupMasonryInteractions(gridEl);
+                    } else {
+                        gridEl.classList.remove('masonry-grid');
+                        gridEl.innerHTML = finalList.map(w => UI.renderCard(w, badgeObj)).join('');
+                    }
                 }
             } catch (err) {
                 console.warn(`[Explore] Load error for ${label}:`, err);
@@ -146,5 +161,55 @@ export const ExplorePage = {
             `;
         }
         return html;
+    },
+
+    setupMasonryInteractions(gridEl) {
+        if (!gridEl) return;
+
+        gridEl.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.interaction-btn');
+            const img = e.target.closest('.masonry-img');
+            
+            if (btn) {
+                e.stopPropagation();
+                const user = App.user;
+                if (!user) return UI.showToast('Please login to interact', 'error');
+
+                const subId = btn.dataset.id;
+                
+                if (btn.classList.contains('btn-like')) {
+                    const { action, error } = await API.toggleLike(subId, user.id);
+                    if (!error) {
+                        const isLiked = action === 'liked';
+                        // Toggle visual state for all instances of this button for this ID
+                        gridEl.querySelectorAll(`.btn-like[data-id="${subId}"]`).forEach(el => {
+                            el.classList.toggle('liked', isLiked);
+                            const countSpan = el.querySelector('.like-count');
+                            if (countSpan) {
+                                countSpan.textContent = parseInt(countSpan.textContent) + (isLiked ? 1 : -1);
+                            }
+                        });
+                        UI.showToast(isLiked ? 'Liked!' : 'Unliked');
+                    }
+                } else if (btn.classList.contains('btn-save')) {
+                    const { action, error } = await API.toggleBookmark(subId, user.id);
+                    if (!error) {
+                        const isSaved = action === 'saved';
+                        gridEl.querySelectorAll(`.btn-save[data-id="${subId}"]`).forEach(el => {
+                            el.classList.toggle('bookmarked', isSaved);
+                        });
+                        UI.showToast(isSaved ? 'Saved to collection!' : 'Removed from collection');
+                    }
+                }
+            } else {
+                const imgWrapper = e.target.closest('.masonry-image-wrapper');
+                const card = e.target.closest('.masonry-item');
+                if (imgWrapper && card) {
+                    const fullUrl = card.dataset.fullUrl;
+                    const title = imgWrapper.querySelector('.masonry-img')?.alt || 'Image';
+                    UI.showImageLightbox(fullUrl, title);
+                }
+            }
+        });
     }
 };

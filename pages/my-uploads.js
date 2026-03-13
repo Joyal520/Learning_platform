@@ -25,19 +25,75 @@ export const MyUploadsPage = {
         }
 
         listContainer.innerHTML = data.map(sub => `
-            <div class="submission-item">
+            <div class="submission-item glass-card" data-id="${sub.id}">
                 <div class="sub-info">
                     <h3>${sub.title}</h3>
                     <div class="sub-meta">
                         <span>Category: ${sub.category.replace('_', ' ')}</span>
                         <span>Uploaded: ${new Date(sub.created_at).toLocaleDateString()}</span>
+                        <span class="badge badge-${sub.status}">${sub.status}</span>
                     </div>
                 </div>
                 <div class="sub-actions">
-                    <a href="#edit/${sub.id}" class="btn btn-edit btn-sm">✏️ Edit</a>
-                    <span class="badge badge-${sub.status}">${sub.status}</span>
+                    <a href="#edit/${sub.id}" class="btn btn-outline btn-sm">✏️ Edit</a>
+                    <button class="btn btn-danger btn-sm action-delete" data-id="${sub.id}">Delete</button>
                 </div>
             </div>
         `).join('');
+
+        this.setupActions();
+    },
+
+    setupActions() {
+        document.querySelectorAll('.action-delete').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                const title = btn.closest('.submission-item')?.querySelector('h3')?.textContent || 'this submission';
+                this.showDeleteConfirmation(id, title);
+            });
+        });
+    },
+
+    showDeleteConfirmation(id, title) {
+        document.querySelector('.delete-modal-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'delete-modal-overlay';
+        overlay.innerHTML = `
+            <div class="delete-modal">
+                <h3>⚠️ Delete Submission</h3>
+                <p>Are you sure you want to permanently delete <strong>"${title}"</strong>? This action cannot be undone.</p>
+                <div class="delete-modal-actions">
+                    <button class="btn btn-cancel" id="delete-cancel">Cancel</button>
+                    <button class="btn btn-confirm-delete" id="delete-confirm">Yes, Delete</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        document.getElementById('delete-cancel').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+        document.getElementById('delete-confirm').addEventListener('click', async () => {
+            const confirmBtn = document.getElementById('delete-confirm');
+            confirmBtn.textContent = 'Deleting...';
+            confirmBtn.disabled = true;
+
+            try {
+                console.log('[MyUploads] Attempting to delete:', id);
+                const { error } = await supabase.from('submissions').delete().eq('id', id);
+
+                if (error) throw error;
+                
+                UI.showToast('Submission deleted.', 'success');
+                this.init(); // Refresh list
+            } catch (err) {
+                console.error('[MyUploads] Delete failed:', err);
+                UI.showToast('Delete failed: ' + err.message, 'error');
+            } finally {
+                overlay.remove();
+            }
+        });
     }
 };
