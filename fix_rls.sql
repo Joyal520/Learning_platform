@@ -7,6 +7,7 @@ ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON public.submissions;
 DROP POLICY IF EXISTS "Enable select for users based on author_id" ON public.submissions;
 DROP POLICY IF EXISTS "Admins can view all submissions" ON public.submissions;
+DROP POLICY IF EXISTS "Admins and owners can delete submissions" ON public.submissions;
 
 -- 3. Create Policy: Anyone can view APPROVED submissions
 CREATE POLICY "Anyone can view approved submissions" ON public.submissions
@@ -34,6 +35,17 @@ CREATE POLICY "Users can insert own submissions" ON public.submissions
 -- 7. Create Policy: Admins and Owners can UPDATE submissions
 CREATE POLICY "Admins and owners can update submissions" ON public.submissions
     FOR UPDATE USING (
+        auth.uid() = author_id OR
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
+    );
+
+-- 8. Create Policy: Admins and Owners can DELETE submissions
+CREATE POLICY "Admins and owners can delete submissions" ON public.submissions
+    FOR DELETE USING (
         auth.uid() = author_id OR
         EXISTS (
             SELECT 1 FROM public.profiles

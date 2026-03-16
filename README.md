@@ -20,7 +20,17 @@ A production-ready educational platform for student creativity.
 
 ### 3. Local Development
 1. Clone the repository.
-2. Open `index.html` using a local server (e.g., VS Code Live Server).
+2. Install dependencies with `npm install`.
+3. Create a local `.env` file from `.env.example`.
+4. Run `npm run dev`.
+5. Open `http://localhost:3000`.
+
+### Local API Runtime
+- The files in `api/` are Vercel-style serverless handlers.
+- `npm run dev` starts `dev-server.js`, which serves the SPA and mounts `/api/*` locally.
+- Opening `index.html` with a static server such as Live Server will not execute `api/*.js`, so `/api/r2-metrics` will return `404`.
+- Create `.env` from `.env.example` and fill in `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and `R2_PUBLIC_URL`.
+- The repository currently includes `.env.txt`, but its keys do not fully match the runtime requirements and it does not define `R2_BUCKET`, so `.env` is the recommended local setup.
 
 ## Deployment (GitHub Pages)
 1. Push the code to a GitHub repository.

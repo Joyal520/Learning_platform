@@ -10,8 +10,15 @@
         var search = location.search;
         var hash = location.hash;
 
+        // Never route backend API paths through the hash-based frontend router.
+        if (path === '/api' || path.indexOf('/api/') === 0) {
+            document.addEventListener('DOMContentLoaded', function () {
+                document.body.textContent = 'API endpoint not found.';
+            });
+        } else {
         // Redirect to root with the path as a hash
-        location.replace('/Learning_platform/#' + path + search + hash);
+            location.replace('/Learning_platform/#' + path + search + hash);
+        }
     </script>
 </head>
 

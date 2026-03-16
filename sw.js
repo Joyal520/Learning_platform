@@ -1,17 +1,16 @@
-const CACHE_NAME = 'edtechra-v6';
+const CACHE_NAME = 'edtechra-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
   '/assets/css/styles.css',
   '/assets/css/explore_recovered.css',
-  '/public/icons/icon-192.png',
-  '/public/icons/icon-512.png',
-  '/public/icons/icon-512-maskable.png',
-  '/public/favicon.ico',
-  '/public/favicon-32x32.png',
-  '/public/favicon-16x16.png',
-  '/public/icons/apple-touch-icon.png'
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/public/favicon.ico?v=3',
+  '/public/favicon-32x32.png?v=3',
+  '/public/favicon-16x16.png?v=3',
+  '/public/icons/apple-touch-icon.png?v=3'
 ];
 
 self.addEventListener('install', (event) => {
@@ -42,7 +41,8 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   
   const url = new URL(event.request.url);
-  // Exclude API/Supabase requests from standard caching entirely
+  // Exclude API/Supabase requests from caching and SPA fallbacks entirely.
+  if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) return;
   if (url.hostname.includes('supabase.co')) return;
 
   event.respondWith(

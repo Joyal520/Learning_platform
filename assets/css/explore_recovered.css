@@ -404,3 +404,172 @@ body.explore-view .explore-row-title {
     cursor: pointer;
     border: 2px solid rgba(255, 255, 255, 0.2);
 }
+
+/* ============================================================
+   IMAGE FEED CARD STYLES (for image posts on Explore)
+   ============================================================ */
+
+.image-feed-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.feed-image-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: var(--clay-radius, 32px) var(--clay-radius, 32px) 0 0;
+}
+
+.feed-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.4s ease;
+}
+
+.image-feed-card:hover .feed-img {
+    transform: scale(1.04);
+}
+
+.image-overlay-category {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    z-index: 2;
+}
+
+.feed-body {
+    padding: 16px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex-grow: 1;
+}
+
+.feed-body .card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+    line-height: 1.3;
+}
+
+.feed-description {
+    font-size: 0.88rem;
+    color: #64748b;
+    line-height: 1.45;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.feed-author-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.author-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mini-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+}
+
+.author-name {
+    font-size: 0.85rem;
+    color: #475569;
+    font-weight: 500;
+}
+
+.feed-stats {
+    font-size: 0.82rem;
+}
+
+.feed-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+/* ============================================================
+   LOAD MORE BUTTON
+   ============================================================ */
+
+.explore-load-more-container {
+    display: flex;
+    justify-content: center;
+    padding: 30px 0 50px;
+}
+
+#explore-load-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 40px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #4f46e5;
+    background: var(--clay-bg-light, #f0f4f8);
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: var(--clay-shadow-out, 8px 8px 16px rgba(163,177,198,0.4), -8px -8px 16px rgba(255,255,255,0.8));
+    transition: all 0.25s ease;
+}
+
+#explore-load-more:hover {
+    background: #e0e7ff;
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(79, 70, 229, 0.15);
+}
+
+#explore-load-more:active {
+    transform: translateY(1px);
+    box-shadow: var(--clay-shadow-in, inset 6px 6px 12px rgba(163,177,198,0.3), inset -6px -6px 12px rgba(255,255,255,0.7));
+}
+
+#explore-load-more:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+#explore-load-more .load-more-spinner {
+    width: 18px;
+    height: 18px;
+    border: 3px solid rgba(79, 70, 229, 0.2);
+    border-top-color: #4f46e5;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    display: none;
+}
+
+#explore-load-more.loading .load-more-spinner {
+    display: inline-block;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

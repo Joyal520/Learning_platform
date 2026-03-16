@@ -5,39 +5,130 @@ import { ImageUtils } from '../assets/js/image-utils.js';
 import App from '../assets/js/app.js';
 
 export const UploadPage = {
+    _imageFile: null,
+    _imageCompressedBlob: null,
+    _imageThumbnailBlob: null,
+    _imageMetadata: null,
+    _imagePreviewUrl: null,
+
     init() {
         const form = document.querySelector('#upload-form');
         const fileGroup = document.querySelector('#file-input-group');
         const textGroup = document.querySelector('#text-input-group');
         const codeGroup = document.querySelector('#code-input-group');
+        const imageGroup = document.querySelector('#image-input-group');
         const modeRadios = document.querySelectorAll('input[name="content_mode"]');
         const thumbnailInput = document.getElementById('thumbnail-input');
         const thumbnailPreview = document.getElementById('thumbnail-preview');
 
-        // Toggle file/text/code inputs
+        // Reset image state
+        this._resetImageSelection();
+
+        // Image Dropzone Elements
+        const imageDropZone = document.getElementById('image-drop-zone');
+        const imageFileInput = document.getElementById('image-file-input');
+        const imageRemoveBtn = document.getElementById('image-remove-btn');
+
+        // Category (Content Type) dropdown logic - MAIN TOGGLE for Image-only flow
+        const categorySelect = document.querySelector('select[name="category"]');
+        const nonImageFields = document.getElementById('non-image-fields');
+
+        categorySelect?.addEventListener('change', (e) => {
+            const isImages = e.target.value === 'images';
+            if (isImages) {
+                nonImageFields?.classList.add('hidden');
+                imageGroup?.classList.remove('hidden');
+                
+                // Clear and disable non-image fields to avoid validation errors
+                fileGroup?.classList.add('hidden');
+                textGroup?.classList.add('hidden');
+                codeGroup?.classList.add('hidden');
+                
+                fileGroup?.querySelector('input')?.removeAttribute('required');
+                textGroup?.querySelector('textarea')?.removeAttribute('required');
+                codeGroup?.querySelector('textarea')?.removeAttribute('required');
+            } else {
+                nonImageFields?.classList.remove('hidden');
+                imageGroup?.classList.add('hidden');
+                
+                // Re-trigger sub-mode logic
+                const activeMode = document.querySelector('input[name="content_mode"]:checked');
+                if (activeMode) activeMode.dispatchEvent(new Event('change'));
+            }
+        });
+
+        // Toggle file/text/code inputs (now only within #non-image-fields)
         modeRadios.forEach(radio => {
             radio.addEventListener('change', (e) => {
-                fileGroup.classList.add('hidden');
-                textGroup.classList.add('hidden');
-                codeGroup.classList.add('hidden');
+                // If we are in Image category, ignore mode changes (UI is hidden anyway)
+                if (categorySelect?.value === 'images') return;
+
+                fileGroup?.classList.add('hidden');
+                textGroup?.classList.add('hidden');
+                codeGroup?.classList.add('hidden');
+                imageGroup?.classList.add('hidden');
 
                 // Remove all required
-                fileGroup.querySelector('input')?.removeAttribute('required');
-                textGroup.querySelector('textarea')?.removeAttribute('required');
-                codeGroup.querySelector('textarea')?.removeAttribute('required');
+                fileGroup?.querySelector('input')?.removeAttribute('required');
+                textGroup?.querySelector('textarea')?.removeAttribute('required');
+                codeGroup?.querySelector('textarea')?.removeAttribute('required');
 
                 if (e.target.value === 'file') {
-                    fileGroup.classList.remove('hidden');
-                    fileGroup.querySelector('input').required = true;
+                    fileGroup?.classList.remove('hidden');
+                    const fileInput = fileGroup?.querySelector('input');
+                    if (fileInput) fileInput.required = true;
                 } else if (e.target.value === 'text') {
-                    textGroup.classList.remove('hidden');
-                    textGroup.querySelector('textarea').required = true;
+                    textGroup?.classList.remove('hidden');
+                    const textInput = textGroup?.querySelector('textarea');
+                    if (textInput) textInput.required = true;
                 } else if (e.target.value === 'code') {
-                    codeGroup.classList.remove('hidden');
-                    codeGroup.querySelector('textarea').required = true;
+                    codeGroup?.classList.remove('hidden');
+                    const codeInput = codeGroup?.querySelector('textarea');
+                    if (codeInput) codeInput.required = true;
                 }
             });
         });
+
+        // ========== Image Dropzone Events (FIXED LOOP BUG) ==========
+        if (imageDropZone && imageFileInput) {
+            const preventDefaults = (e) => { e.preventDefault(); e.stopPropagation(); };
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(event => {
+                imageDropZone.addEventListener(event, preventDefaults);
+            });
+
+            ['dragenter', 'dragover'].forEach(event => {
+                imageDropZone.addEventListener(event, () => imageDropZone.classList.add('drag-over'));
+            });
+
+            ['dragleave', 'drop'].forEach(event => {
+                imageDropZone.addEventListener(event, () => imageDropZone.classList.remove('drag-over'));
+            });
+
+            imageDropZone.addEventListener('drop', (e) => {
+                const files = e.dataTransfer.files;
+                if (files.length > 0) this._handleImageSelect(files[0]);
+            });
+
+            // FIX: Only trigger click if the target is the drop zone itself or safe elements, 
+            // preventing clicks on the remove button or inputs from bubbling back up.
+            imageDropZone.addEventListener('click', (e) => {
+                // Prevent trigger if the file input or remove button was the source
+                if (e.target.closest('#image-remove-btn') || e.target === imageFileInput) return;
+                imageFileInput.click();
+            });
+
+            imageFileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    this._handleImageSelect(e.target.files[0]);
+                }
+            });
+
+            imageRemoveBtn?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._resetImageSelection();
+            });
+        }
 
         // ========== Theme Multi-Select ==========
         this.setupThemeSelector();
@@ -119,11 +210,12 @@ export const UploadPage = {
                 }
 
                 const formData = new FormData(form);
+                const category = formData.get('category');
                 const contentMode = formData.get('content_mode');
                 const file = formData.get('file');
 
                 // Validation
-                if (contentMode === 'file' && (!file || file.size === 0)) {
+                if (category !== 'images' && contentMode === 'file' && (!file || file.size === 0)) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit for Review';
                     return UI.showToast('Please select a file to upload.', 'error');
@@ -132,6 +224,15 @@ export const UploadPage = {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit for Review';
                     return UI.showToast('File size exceeds 50MB limit.', 'error');
+                }
+                if (category !== 'images' && contentMode === 'file') {
+                    const validationError = this.validateProjectFile(file);
+                    if (validationError) {
+                        UI.hideLoader();
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Submit for Review';
+                        return UI.showToast(validationError, 'error');
+                    }
                 }
 
                 UI.showLoader();
@@ -142,12 +243,23 @@ export const UploadPage = {
                     return UI.showToast('Authentication failed. Please login again.', 'error');
                 }
 
-                // Determine content text
+                // Content Type Specific Variables
                 let contentText = null;
+                let fileToUpload = null;
+                let finalFileSize = 0;
+                let finalFileType = 'text/plain';
+
                 if (contentMode === 'text') {
                     contentText = formData.get('content_text');
                 } else if (contentMode === 'code') {
                     contentText = formData.get('code_content');
+                    finalFileType = 'text/html';
+                } else if (contentMode === 'file') {
+                    fileToUpload = file && file.size > 0 ? file : null;
+                    if (fileToUpload) {
+                        finalFileSize = fileToUpload.size;
+                        finalFileType = fileToUpload.type;
+                    }
                 }
 
                 const selectedThemes = this.getSelectedThemes();
@@ -158,62 +270,105 @@ export const UploadPage = {
                     return UI.showToast('Please select at least 1 theme.', 'error');
                 }
 
-                const submissionData = {
-                    author_id: user.id,
-                    title: formData.get('title'),
-                    category: formData.get('category'),
-                    themes: selectedThemes,
-                    audience_level: formData.get('audience_level'),
-                    description: formData.get('description') || '',
-                    content_text: contentText,
-                    file_type: contentMode === 'file' ? file.type : (contentMode === 'code' ? 'text/html' : 'text/plain'),
-                    file_size: contentMode === 'file' ? file.size : 0,
-                    status: 'pending'
-                };
-
-                // Processing high-performance image pipeline
-                let thumbnailBlob = null;
-                let displayBlob = null;
-                const thumbnailFile = formData.get('thumbnail');
-
-                if (thumbnailFile && thumbnailFile.size > 0 && thumbnailFile.type.startsWith('image/')) {
-                    if (thumbnailFile.size > 10 * 1024 * 1024) {
+                // If image category, we submit as "Image Post" not just normal submission
+                if (category === 'images') {
+                    if (!this._imageFile && !this._imageCompressedBlob) {
                         UI.hideLoader();
                         submitBtn.disabled = false;
                         submitBtn.textContent = 'Submit for Review';
-                        return UI.showToast('Thumbnail image exceeds 10MB limit.', 'error');
+                        return UI.showToast('Please select an image to upload.', 'error');
                     }
 
-                    console.log('[Upload] Starting image compression pipeline...');
-                    try {
-                        // Use pre-compressed blob if available from the prompt flow
-                        if (thumbnailInput._compressedBlob) {
-                            console.log('[Upload] Using pre-compressed thumbnail blob');
-                            thumbnailBlob = thumbnailInput._compressedBlob;
-                            // Still need display version (larger)
-                            displayBlob = await ImageUtils.compressToTarget(thumbnailFile, 500, 1400, 'Display');
-                        } else {
-                            const versions = await ImageUtils.createThumbnailAndDisplayVersions(thumbnailFile);
-                            thumbnailBlob = versions.thumbnail;
-                            displayBlob = versions.display;
-                        }
-                    } catch (imgErr) {
-                        console.error('[Upload] Image pipeline failed:', imgErr);
+                    const meta = this._imageMetadata || {};
+                    const fullSizeImage = this._imageFile;
+                    const imageThumbnail = this._imageThumbnailBlob || this._imageFile;
+                    const submissionData = {
+                        author_id: user.id,
+                        title: formData.get('title'),
+                        description: formData.get('description') || '',
+                        category: formData.get('category'),
+                        content_type: 'image',
+                        file_type: fullSizeImage?.type || 'image/webp',
+                        file_size: fullSizeImage?.size || 0,
+                        original_size: meta.originalSize || this._imageFile?.size || 0,
+                        compressed_size: imageThumbnail?.size || 0,
+                        image_width: meta.width || 0,
+                        image_height: meta.height || 0,
+                        mime_type: fullSizeImage?.type || 'image/webp',
+                        status: 'pending', // Restore moderation flow - images must be approved first
+                        themes: selectedThemes,
+                        audience_level: formData.get('audience_level')
+                    };
+
+                    const { error } = await API.uploadImagePost(
+                        submissionData,
+                        fullSizeImage,
+                        imageThumbnail
+                    );
+
+                    if (error) {
+                        console.error('Image Upload error:', error);
+                        UI.showToast(error.message || 'Image Upload failed.', 'error');
+                    } else {
+                        UI.showToast('Image uploaded successfully! 🎉', 'success');
+                        this._resetImageSelection();
+                        setTimeout(() => window.location.hash = '#my-uploads', 1500);
                     }
-                }
 
-                console.log('Submitting:', submissionData);
-                if (submitBtn) submitBtn.textContent = '⏳ Uploading...';
-
-                const fileToUpload = (contentMode === 'file' && file && file.size > 0) ? file : null;
-                const { error } = await API.uploadSubmission(submissionData, fileToUpload, thumbnailBlob, displayBlob);
-
-                if (error) {
-                    console.error('Upload error:', error);
-                    UI.showToast(error.message || 'Upload failed.', 'error');
                 } else {
-                    UI.showToast('Uploaded successfully! Waiting for review.', 'success');
-                    window.location.hash = '#my-uploads';
+                    // Normal File/Text/Code Submission Path
+                    const submissionData = {
+                        author_id: user.id,
+                        title: formData.get('title'),
+                        category: formData.get('category'),
+                        themes: selectedThemes,
+                        audience_level: formData.get('audience_level'),
+                        description: formData.get('description') || '',
+                        content_text: contentText,
+                        file_type: finalFileType,
+                        file_size: finalFileSize,
+                        status: 'pending' // Normal flows require review
+                    };
+
+                    // Processing high-performance thumbnail pipeline
+                    let thumbnailBlob = null;
+                    let displayBlob = null;
+                    const thumbnailFile = formData.get('thumbnail');
+
+                    if (thumbnailFile && thumbnailFile.size > 0 && thumbnailFile.type.startsWith('image/')) {
+                        if (thumbnailFile.size > 10 * 1024 * 1024) {
+                            UI.hideLoader();
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = 'Submit for Review';
+                            return UI.showToast('Thumbnail image exceeds 10MB limit.', 'error');
+                        }
+
+                        console.log('[Upload] Starting thumbnail compression pipeline...');
+                        try {
+                            if (thumbnailInput._compressedBlob) {
+                                console.log('[Upload] Using pre-compressed thumbnail blob');
+                                thumbnailBlob = thumbnailInput._compressedBlob;
+                                displayBlob = await ImageUtils.compressToTarget(thumbnailFile, 500, 1400, 'Display');
+                            } else {
+                                const versions = await ImageUtils.createThumbnailAndDisplayVersions(thumbnailFile);
+                                thumbnailBlob = versions.thumbnail;
+                                displayBlob = versions.display;
+                            }
+                        } catch (imgErr) {
+                            console.error('[Upload] Image pipeline failed:', imgErr);
+                        }
+                    }
+
+                    console.log('Submitting standard post:', submissionData);
+                    const { error } = await API.uploadSubmission(submissionData, fileToUpload, thumbnailBlob, displayBlob);
+
+                    if (error) {
+                        console.error('Upload error:', error);
+                        UI.showToast(error.message || 'Upload failed.', 'error');
+                    } else {
+                        UI.showToast('Uploaded successfully! Waiting for review.', 'success');
+                        setTimeout(() => window.location.hash = '#my-uploads', 1500);
+                    }
                 }
             } catch (err) {
                 console.error('Unexpected upload error:', err);
@@ -287,6 +442,38 @@ export const UploadPage = {
         return Array.from(document.querySelectorAll('input[name="themes"]:checked')).map(cb => cb.value);
     },
 
+    validateProjectFile(file) {
+        if (!file) return 'Please select a file to upload.';
+
+        const allowedTypes = new Set([
+            'application/pdf',
+            'text/plain',
+            'application/zip',
+            'application/x-zip-compressed',
+            'audio/mpeg',
+            'audio/mp3',
+            'audio/wav',
+            'audio/x-wav',
+            'audio/ogg',
+            'audio/webm',
+            'audio/mp4',
+            'audio/x-m4a',
+            'audio/aac',
+            'application/json',
+            'text/csv',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        ]);
+
+        if (!allowedTypes.has(file.type)) {
+            return 'Unsupported file type. Use PDF, TXT, ZIP, DOCX, PPTX, JSON, CSV, or supported audio.';
+        }
+
+        return null;
+    },
+
     async initEdit(id) {
         const form = document.querySelector('#upload-form');
         if (!form) return;
@@ -328,7 +515,55 @@ export const UploadPage = {
 
             // Fill fields
             form.querySelector('input[name="title"]').value = sub.title || '';
-            form.querySelector('select[name="category"]').value = sub.category || '';
+            const categorySelect = form.querySelector('select[name="category"]');
+            categorySelect.value = sub.category || '';
+            
+            // Trigger category change logic to show/hide correct groups
+            categorySelect.dispatchEvent(new Event('change'));
+
+            if (sub.category === 'images') {
+                // If it's an image post, category is 'images', content_type is 'image'
+                if (sub.thumbnail_url) {
+                    const preview = document.getElementById('image-upload-preview');
+                    const img = document.getElementById('image-preview-img');
+                    const zone = document.getElementById('image-drop-zone');
+                    
+                    if (preview && img && zone) {
+                        img.src = sub.thumbnail_url;
+                        preview.style.display = 'block';
+                        zone.classList.add('has-file');
+                        zone.querySelector('.drop-zone-content').style.display = 'none';
+                    }
+                }
+            } else {
+                // For other types, handle content mode
+                if (sub.content_text) {
+                    const isHTML = sub.file_type === 'text/html';
+                    const mode = isHTML ? 'code' : 'text';
+                    const modeRadio = form.querySelector(`input[name="content_mode"][value="${mode}"]`);
+                    if (modeRadio) {
+                        modeRadio.checked = true;
+                        modeRadio.dispatchEvent(new Event('change'));
+                    }
+                    
+                    if (isHTML) {
+                        const codeArea = document.getElementById('code-textarea');
+                        if (codeArea) {
+                            codeArea.value = sub.content_text;
+                            codeArea.dispatchEvent(new Event('input'));
+                        }
+                    } else {
+                        const textArea = form.querySelector('textarea[name="content_text"]');
+                        if (textArea) textArea.value = sub.content_text;
+                    }
+                } else {
+                    const modeRadio = form.querySelector('input[name="content_mode"][value="file"]');
+                    if (modeRadio) {
+                        modeRadio.checked = true;
+                        modeRadio.dispatchEvent(new Event('change'));
+                    }
+                }
+            }
             form.querySelector('textarea[name="description"]').value = sub.description || '';
             const audienceSelect = form.querySelector('select[name="audience_level"]');
             if (audienceSelect) audienceSelect.value = sub.audience_level || 'General';
@@ -489,6 +724,166 @@ export const UploadPage = {
             console.error('initEdit error:', err);
             UI.showToast('Failed to load for editing.', 'error');
             UI.hideLoader();
+        }
+    },
+
+    // ==========================================
+    // IMAGE UPLOAD DOM & COMPRESSION LOGIC
+    // ==========================================
+
+    async _handleImageSelect(file) {
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        const maxSize = 15 * 1024 * 1024; // 15MB
+
+        // Validate type
+        if (!allowedTypes.includes(file.type)) {
+            return UI.showToast(`Unsupported format. Use JPG, PNG, or WEBP.`, 'error');
+        }
+
+        // Validate size
+        if (file.size > maxSize) {
+            return UI.showToast(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 15 MB.`, 'error');
+        }
+
+        this._imageFile = file;
+
+        const dropZone = document.getElementById('image-drop-zone');
+        const previewOpts = document.getElementById('image-upload-preview');
+        const previewImg = document.getElementById('image-preview-img');
+        const previewInfo = document.getElementById('image-preview-info');
+        const compressionStatus = document.getElementById('image-compression-status');
+
+        dropZone?.classList.add('has-file');
+        if (previewOpts) previewOpts.style.display = 'flex';
+
+        // Blur placeholder
+        try {
+            const placeholder = await ImageUtils.generatePlaceholder(file);
+            if (previewImg) {
+                previewImg.src = placeholder;
+                previewImg.style.filter = 'blur(6px)';
+            }
+        } catch (e) {
+            console.warn('Placeholder failed:', e);
+        }
+
+        const originalSizeKB = file.size / 1024;
+        if (previewInfo) {
+            previewInfo.innerHTML = `
+                <span class="preview-filename">${file.name}</span>
+                <span class="preview-size">${originalSizeKB.toFixed(0)} KB</span>
+            `;
+        }
+
+        // Compress if > 100 KB
+        if (originalSizeKB > 100) {
+            if (compressionStatus) {
+                compressionStatus.style.display = 'block';
+                compressionStatus.innerHTML = `
+                    <div class="compression-bar-mini">
+                        <div class="compression-bar-fill-mini" id="comp-fill-mini" style="width: 5%"></div>
+                    </div>
+                    <span class="compression-text-mini">Compressing...</span>
+                `;
+            }
+
+            try {
+                // Background compression logic
+                const result = await ImageUtils.compressForUpload(file, (progress, text) => {
+                    const fill = document.getElementById('comp-fill-mini');
+                    const textEl = compressionStatus?.querySelector('.compression-text-mini');
+                    if (fill) fill.style.width = `${progress}%`;
+                    if (textEl) textEl.textContent = text;
+                });
+
+                this._imageCompressedBlob = result.blob;
+                this._imageThumbnailBlob = result.thumbnail;
+                this._imageMetadata = {
+                    originalSize: file.size,
+                    compressedSize: result.thumbnail?.size || file.size,
+                    width: result.width,
+                    height: result.height
+                };
+
+                this._cleanupImagePreview();
+                this._imagePreviewUrl = URL.createObjectURL(file);
+                if (previewImg) {
+                    previewImg.src = this._imagePreviewUrl;
+                    previewImg.style.filter = 'none';
+                }
+
+                if (compressionStatus) {
+                    compressionStatus.innerHTML = `<span class="compression-done">Full-size image preserved. Optimized thumbnail: ${(result.thumbnail.size / 1024).toFixed(0)} KB</span>`;
+                }
+
+                if (previewInfo) {
+                    previewInfo.innerHTML = `<span class="preview-filename">${file.name}</span><span class="preview-size">${originalSizeKB.toFixed(0)} KB <span style="color: #22c55e; font-size: 0.8em;">(full size preserved)</span></span>`;
+                }
+            } catch (err) {
+                console.error('Image compression failed:', err);
+                UI.showToast('Thumbnail generation failed. Using original image.', 'warning');
+                this._imageCompressedBlob = file;
+                if (compressionStatus) compressionStatus.style.display = 'none';
+
+                this._cleanupImagePreview();
+                this._imagePreviewUrl = URL.createObjectURL(file);
+                if (previewImg) {
+                    previewImg.src = this._imagePreviewUrl;
+                    previewImg.style.filter = 'none';
+                }
+            }
+        } else {
+            // Small file — no compression needed
+            if (compressionStatus) {
+                compressionStatus.style.display = 'block';
+                compressionStatus.innerHTML = `<span class="compression-done">✅ No compression needed (${originalSizeKB.toFixed(0)} KB)</span>`;
+            }
+
+            try {
+                const result = await ImageUtils.compressForUpload(file, null);
+                this._imageCompressedBlob = result.blob;
+                this._imageThumbnailBlob = result.thumbnail;
+                this._imageMetadata = {
+                    originalSize: file.size,
+                    compressedSize: result.thumbnail?.size || file.size,
+                    width: result.width,
+                    height: result.height
+                };
+            } catch (e) {
+                this._imageCompressedBlob = file;
+            }
+
+            this._cleanupImagePreview();
+            this._imagePreviewUrl = URL.createObjectURL(this._imageCompressedBlob || file);
+            if (previewImg) {
+                previewImg.src = this._imagePreviewUrl;
+                previewImg.style.filter = 'none';
+            }
+        }
+    },
+
+    _resetImageSelection() {
+        this._imageFile = null;
+        this._imageCompressedBlob = null;
+        this._imageThumbnailBlob = null;
+        this._imageMetadata = null;
+        this._cleanupImagePreview();
+
+        const dropZone = document.getElementById('image-drop-zone');
+        const previewOpts = document.getElementById('image-upload-preview');
+        const fileInput = document.getElementById('image-file-input');
+        const compressionStatus = document.getElementById('image-compression-status');
+
+        dropZone?.classList.remove('has-file', 'drag-over');
+        if (previewOpts) previewOpts.style.display = 'none';
+        if (fileInput) fileInput.value = '';
+        if (compressionStatus) compressionStatus.style.display = 'none';
+    },
+
+    _cleanupImagePreview() {
+        if (this._imagePreviewUrl) {
+            URL.revokeObjectURL(this._imagePreviewUrl);
+            this._imagePreviewUrl = null;
         }
     }
 };

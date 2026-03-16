@@ -27,8 +27,47 @@ export const DetailPage = {
                 return;
             }
 
+            const currentUser = App.user;
+            const userRole = App.profile?.role;
+            const canViewUnapproved = currentUser && (currentUser.id === sub.author_id || userRole === 'admin');
+
+            if (sub.status !== 'approved' && !canViewUnapproved) {
+                console.warn('[DETAIL] Blocked non-approved submission for public viewer:', id);
+                UI.showToast('Submission not found', 'error');
+                UI.hideLoader();
+                window.location.hash = 'explore';
+                return;
+            }
+
             // Step 2: Handle file path/URL
-            if (sub.file_path) {
+            if (sub.storage_provider === 'r2') {
+                if (sub.content_type === 'image') {
+                    sub.public_url = sub.image_url || sub.file_url || sub.public_url || null;
+                    if (!sub.thumbnail_url) {
+                        sub.thumbnail_url = sub.image_url || sub.file_url || null;
+                    }
+                } else {
+                    sub.public_url = sub.file_url || (sub.file_path?.startsWith?.('http') ? sub.file_path : null);
+                }
+            } else if (sub.content_type === 'image' && sub.status !== 'approved') {
+                if (sub.file_path) {
+                    const { data, error: signedError } = await supabase.storage
+                        .from('submissions_private')
+                        .createSignedUrl(sub.file_path, 3600);
+                    if (!signedError) {
+                        sub.public_url = data.signedUrl;
+                    }
+                }
+
+                if (!sub.thumbnail_url && sub.thumbnail_path) {
+                    const { data, error: thumbSignedError } = await supabase.storage
+                        .from('submissions_private')
+                        .createSignedUrl(sub.thumbnail_path, 3600);
+                    if (!thumbSignedError) {
+                        sub.thumbnail_url = data.signedUrl;
+                    }
+                }
+            } else if (sub.file_path) {
                 const { data } = supabase.storage
                     .from(sub.status === 'approved' ? 'approved_public' : 'submissions_private')
                     .getPublicUrl(sub.file_path);
@@ -36,8 +75,6 @@ export const DetailPage = {
             }
 
             // Step 3: Initial Render (Show content immediately)
-            const currentUser = App.user;
-            const userRole = App.profile?.role;
             main.innerHTML = UI.pages.detail(sub, currentUser, userRole);
             this._currentSub = sub;
 
@@ -51,6 +88,15 @@ export const DetailPage = {
             this.setupEditButton(sub);
             this.setupPreviewFullscreen();
             this.setupBookmark(sub);
+
+            // Check for ?fullscreen=true in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('fullscreen') === 'true') {
+                setTimeout(() => {
+                    const btn = document.getElementById('previewFullscreenBtn');
+                    if (btn) btn.click();
+                }, 500); // Small delay to ensure render is complete
+            }
 
             // Record a view (non-blocking)
             this.recordView(sub.id);
@@ -92,7 +138,7 @@ export const DetailPage = {
                 : '<span>⛶ Fullscreen</span>';
 
             if (isFullscreen) {
-                UI.showToast('Immersive mode active. Scroll down to hide UI.');
+                UI.showToast('Immersive mode — tap Cancel to exit.');
                 btn.focus();
             }
         };

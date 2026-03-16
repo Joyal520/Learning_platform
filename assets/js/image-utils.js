@@ -6,14 +6,14 @@
 export const ImageUtils = {
     /**
      * Compresses an image file to a target size (KB) and maxWidth.
-     * @param {File} file 
-     * @param {number} targetKB 
-     * @param {number} maxWidth 
+     * @param {File} file
+     * @param {number} targetKB
+     * @param {number} maxWidth
      * @returns {Promise<Blob>}
      */
     async compressToTarget(file, targetKB, maxWidth, label = 'Image', onProgress = null) {
         return new Promise((resolve, reject) => {
-            console.log(`[ImageUtils] 🌀 Starting compression for ${label}: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
+            console.log(`[ImageUtils] Starting compression for ${label}: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
             if (onProgress) onProgress(5, `Loading ${label}...`);
 
             const reader = new FileReader();
@@ -26,7 +26,6 @@ export const ImageUtils = {
                     let width = img.width;
                     let height = img.height;
 
-                    // Resize if larger than maxWidth
                     if (width > maxWidth) {
                         height = Math.round((height * maxWidth) / width);
                         width = maxWidth;
@@ -36,12 +35,10 @@ export const ImageUtils = {
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
 
-                    // White background for consistency
                     ctx.fillStyle = '#FFFFFF';
                     ctx.fillRect(0, 0, width, height);
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    // Iterative quality reduction to hit target size
                     let quality = 0.9;
                     const minQuality = 0.1;
                     const step = 0.1;
@@ -63,12 +60,11 @@ export const ImageUtils = {
                             console.log(`[ImageUtils] ${label} - Quality: ${quality.toFixed(1)}, Size: ${currentKB.toFixed(1)}KB`);
 
                             if (currentKB <= targetKB || quality <= minQuality) {
-                                console.log(`[ImageUtils] ✅ ${label} compressed to ${currentKB.toFixed(1)}KB`);
+                                console.log(`[ImageUtils] ${label} compressed to ${currentKB.toFixed(1)}KB`);
                                 if (onProgress) onProgress(100, `${label} optimized!`);
                                 resolve(blob);
                             } else {
                                 quality -= step;
-                                // Add a small delay for visual smooth progress
                                 setTimeout(attemptToSaturate, 50);
                             }
                         }, 'image/webp', quality);
@@ -115,27 +111,22 @@ export const ImageUtils = {
                 img.src = e.target.result;
                 img.onload = async () => {
                     const canvas = document.createElement('canvas');
-                    const SIZE = 256; // Fixed small square size
+                    const SIZE = 256;
                     canvas.width = SIZE;
                     canvas.height = SIZE;
                     const ctx = canvas.getContext('2d');
 
-                    // Calculate crop for square
                     const size = Math.min(img.width, img.height);
                     const sx = (img.width - size) / 2;
                     const sy = (img.height - size) / 2;
 
                     ctx.fillStyle = '#FFFFFF';
                     ctx.fillRect(0, 0, SIZE, SIZE);
-
-                    // Draw centered square crop
                     ctx.drawImage(img, sx, sy, size, size, 0, 0, SIZE, SIZE);
 
-                    // Compress to exactly 50KB or below using the same logic
                     try {
                         const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 1.0));
                         const tempFile = new File([blob], 'avatar.jpg', { type: 'image/jpeg' });
-                        // target 45KB to be safe under 50
                         const finalBlob = await this.compressToTarget(tempFile, 45, SIZE, 'Avatar', onProgress);
                         resolve(finalBlob);
                     } catch (err) {
@@ -165,6 +156,70 @@ export const ImageUtils = {
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, 20, canvas.height);
                     resolve(canvas.toDataURL('image/webp', 0.2));
+                };
+            };
+        });
+    },
+
+    /**
+     * Prepare assets for the image-post upload flow.
+     * The original file stays intact; only the thumbnail is optimized for review/feed usage.
+     * @returns {Promise<{blob: File, thumbnail: Blob, width: number, height: number, originalSize: number}>}
+     */
+    async compressForUpload(file, onProgress = null) {
+        const THUMB_DIM = 400;
+
+        return new Promise((resolve, reject) => {
+            if (onProgress) onProgress(5, 'Loading image...');
+
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onerror = () => reject(new Error('Failed to read image file'));
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onerror = () => reject(new Error('Failed to decode image'));
+                img.onload = async () => {
+                    const width = img.width;
+                    const height = img.height;
+
+                    if (onProgress) onProgress(20, 'Processing...');
+
+                    let thumbW = THUMB_DIM;
+                    let thumbH = Math.round((height * THUMB_DIM) / width);
+                    if (thumbH > THUMB_DIM) {
+                        thumbW = Math.round((width * THUMB_DIM) / height);
+                        thumbH = THUMB_DIM;
+                    }
+
+                    const thumbCanvas = document.createElement('canvas');
+                    thumbCanvas.width = thumbW;
+                    thumbCanvas.height = thumbH;
+                    const thumbCtx = thumbCanvas.getContext('2d');
+                    thumbCtx.fillStyle = '#FFFFFF';
+                    thumbCtx.fillRect(0, 0, thumbW, thumbH);
+                    thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
+
+                    try {
+                        const thumbnailBlob = await new Promise((res) => {
+                            thumbCanvas.toBlob(res, 'image/webp', 0.82);
+                        });
+
+                        if (!thumbnailBlob) {
+                            return reject(new Error('Thumbnail generation failed'));
+                        }
+
+                        if (onProgress) onProgress(100, 'Ready!');
+                        resolve({
+                            blob: file,
+                            thumbnail: thumbnailBlob,
+                            width,
+                            height,
+                            originalSize: file.size
+                        });
+                    } catch (err) {
+                        reject(err);
+                    }
                 };
             };
         });
