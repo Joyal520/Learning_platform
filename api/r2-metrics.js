@@ -1,9 +1,8 @@
 const {
+    getCachedR2Metrics,
     json,
-    listAllObjects,
     METRICS_PREFIXES,
     requireAdmin,
-    summarizeObjects,
     validateR2Config
 } = require('./_lib/r2');
 
@@ -21,8 +20,8 @@ module.exports = async function handler(req, res) {
 
     try {
         await requireAdmin(req);
-        const objects = await listAllObjects();
-        const summary = summarizeObjects(objects);
+        const forceRefresh = req.query?.refresh === 'true';
+        const summary = await getCachedR2Metrics({ forceRefresh });
 
         console.log('[R2 Metrics] Bucket:', summary.bucket);
         console.log('[R2 Metrics] Prefixes scanned:', METRICS_PREFIXES.join(', '));
@@ -35,6 +34,7 @@ module.exports = async function handler(req, res) {
             `other=${summary.breakdown.other.count}`
         );
         console.log('[R2 Metrics] Total bytes calculated:', summary.totalBytes);
+        console.log('[R2 Metrics] Cache status:', summary.cached ? `hit (${summary.cacheAgeMs} ms old)` : 'miss');
 
         return json(res, 200, summary);
     } catch (error) {

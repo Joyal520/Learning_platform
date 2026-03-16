@@ -65,6 +65,14 @@ async function callServerApi(path, options = {}) {
 async function uploadAssetToR2({ submissionId, assetType, file, filename = file?.name, contentType = file?.type }) {
     if (!file) return null;
 
+    console.log('[API] R2 upload requested:', {
+        submissionId,
+        assetType,
+        originalFilename: filename,
+        originalFileSize: file.size,
+        contentType
+    });
+
     const signedUpload = await callServerApi('/api/r2-sign-upload', {
         method: 'POST',
         headers: {
@@ -87,6 +95,30 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
 
     if (!uploadResponse.ok) {
         throw new Error(`Upload failed for ${assetType}: ${uploadResponse.status} ${uploadResponse.statusText}`);
+    }
+
+    const verification = await callServerApi('/api/r2-verify-object', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            objectKey: signedUpload.objectKey
+        })
+    });
+
+    console.log('[API] R2 upload result:', {
+        assetType,
+        destinationStorageProvider: signedUpload.storageProvider,
+        destinationObjectKey: signedUpload.objectKey,
+        publicUrl: signedUpload.publicUrl,
+        uploadSucceeded: uploadResponse.ok,
+        objectExists: verification.exists,
+        objectListed: verification.listed
+    });
+
+    if (!verification.exists) {
+        throw new Error(`Upload verification failed for ${assetType}: ${signedUpload.objectKey}`);
     }
 
     return signedUpload;
@@ -251,6 +283,10 @@ export const API = {
 
             if (thumbnailBlob) {
                 console.log('[API] Uploading thumbnail to R2...');
+                console.log('[API] Generated thumbnail asset:', {
+                    filename: `thumbnail-${subId}.webp`,
+                    size: thumbnailBlob.size
+                });
                 const thumbUpload = await uploadAssetToR2({
                     submissionId: subId,
                     assetType: 'thumbnail',
@@ -266,6 +302,10 @@ export const API = {
 
             if (displayBlob) {
                 console.log('[API] Uploading display image to R2...');
+                console.log('[API] Generated display asset:', {
+                    filename: `display-${subId}.webp`,
+                    size: displayBlob.size
+                });
                 const displayUpload = await uploadAssetToR2({
                     submissionId: subId,
                     assetType: 'display',
@@ -330,6 +370,10 @@ export const API = {
 
             if (thumbnailBlob) {
                 console.log('[API] Uploading thumbnail to R2...');
+                console.log('[API] Generated thumbnail asset:', {
+                    filename: `thumbnail-${id}.webp`,
+                    size: thumbnailBlob.size
+                });
                 const thumbUpload = await uploadAssetToR2({
                     submissionId: id,
                     assetType: 'thumbnail',
@@ -345,6 +389,10 @@ export const API = {
 
             if (displayBlob) {
                 console.log('[API] Uploading display image to R2...');
+                console.log('[API] Generated display asset:', {
+                    filename: `display-${id}.webp`,
+                    size: displayBlob.size
+                });
                 const displayUpload = await uploadAssetToR2({
                     submissionId: id,
                     assetType: 'display',
@@ -407,6 +455,10 @@ export const API = {
 
             const imageType = imageBlob.type || submissionData.mime_type || 'image/webp';
             console.log('[API] Uploading full-size image to R2...');
+            console.log('[API] Full-size image asset:', {
+                filename: imageBlob.name || `image-${subId}`,
+                size: imageBlob.size
+            });
             const imageUpload = await uploadAssetToR2({
                 submissionId: subId,
                 assetType: 'image',
@@ -424,6 +476,10 @@ export const API = {
 
             if (thumbnailBlob) {
                 console.log('[API] Uploading thumbnail to R2...');
+                console.log('[API] Generated thumbnail asset:', {
+                    filename: `thumbnail-${subId}.webp`,
+                    size: thumbnailBlob.size
+                });
                 const thumbUpload = await uploadAssetToR2({
                     submissionId: subId,
                     assetType: 'thumbnail',

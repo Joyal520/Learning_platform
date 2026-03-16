@@ -39,6 +39,12 @@ const MAX_SIZE_BY_ASSET = {
 
 const REQUIRED_R2_ENV_NAMES = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
 const METRICS_PREFIXES = ['images/', 'audio/', 'projects/', 'thumbnails/', 'thumbs/'];
+const R2_METRICS_CACHE_TTL_MS = 45000;
+const r2MetricsCache = {
+    expiresAt: 0,
+    objects: null,
+    summary: null
+};
 
 function getMissingR2EnvVars() {
     return REQUIRED_R2_ENV_NAMES.filter((name) => !process.env[name]);
@@ -57,6 +63,12 @@ function validateR2Config({ log = false } = {}) {
     return missing;
 }
 
+function clearR2MetricsCache() {
+    r2MetricsCache.expiresAt = 0;
+    r2MetricsCache.objects = null;
+    r2MetricsCache.summary = null;
+}
+
 function getRequiredEnv(name) {
     const value = process.env[name];
     if (!value) {
@@ -68,8 +80,10 @@ function getRequiredEnv(name) {
 function getConfig() {
     const endpoint = getRequiredEnv('R2_ENDPOINT').replace(/\/+$/, '');
     const publicBaseUrl = process.env.R2_PUBLIC_URL?.replace(/\/+$/, '');
+    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim() || process.env.R2_ACCOUNT_ID?.trim() || null;
 
     return {
+        accountId,
         accessKeyId: getRequiredEnv('R2_ACCESS_KEY_ID'),
         secretAccessKey: getRequiredEnv('R2_SECRET_ACCESS_KEY'),
         endpoint,
@@ -494,6 +508,128 @@ async function listAllObjects() {
     return allObjects;
 }
 
+async function getCachedR2Metrics({ forceRefresh = false } = {}) {
+    const now = Date.now();
+    if (!forceRefresh && r2MetricsCache.summary && r2MetricsCache.expiresAt > now) {
+        return {
+            ...r2MetricsCache.summary,
+            cached: true,
+            cacheAgeMs: R2_METRICS_CACHE_TTL_MS - (r2MetricsCache.expiresAt - now)
+        };
+    }
+
+    const objects = await listAllObjects();
+    const summary = summarizeObjects(objects);
+    r2MetricsCache.expiresAt = now + R2_METRICS_CACHE_TTL_MS;
+    r2MetricsCache.objects = objects;
+    r2MetricsCache.summary = summary;
+
+    return {
+        ...summary,
+        cached: false,
+        cacheAgeMs: 0
+    };
+}
+
+function redactValue(value, { head = 4, tail = 4 } = {}) {
+    if (!value) return null;
+    if (value.length <= head + tail) return `${value.slice(0, 1)}***`;
+    return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
+
+function fingerprintValue(value) {
+    if (!value) return null;
+    return crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
+}
+
+function getR2Identity() {
+    const config = getConfig();
+    const endpointUrl = new URL(config.endpoint);
+    const endpointHost = endpointUrl.host;
+    const inferredAccountToken = endpointHost.split('.')[0] || null;
+
+    return {
+        activeAccountId: config.accountId,
+        activeBucketName: config.bucket,
+        endpointHost,
+        publicBaseUrl: config.publicBaseUrl || null,
+        inferredAccountToken,
+        credentialFingerprint: {
+            accessKeyId: redactValue(config.accessKeyId),
+            accessKeyFingerprint: fingerprintValue(config.accessKeyId),
+            secretFingerprint: fingerprintValue(config.secretAccessKey),
+            endpointFingerprint: fingerprintValue(config.endpoint),
+            bucketFingerprint: fingerprintValue(config.bucket),
+            publicBaseUrlFingerprint: fingerprintValue(config.publicBaseUrl || ''),
+            accountFingerprint: fingerprintValue(config.accountId || inferredAccountToken || '')
+        }
+    };
+}
+
+async function doesObjectExist(objectKey) {
+    if (!objectKey) return false;
+
+    const signed = signRequest({ method: 'HEAD', objectKey });
+    const response = await fetch(`${signed.endpoint}/${signed.bucket}/${objectKey.split('/').map(encodeRfc3986).join('/')}`, {
+        method: 'HEAD',
+        headers: signed.headers
+    });
+
+    if (response.status === 404) {
+        return false;
+    }
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`R2 head failed: ${response.status} ${errorText}`.trim());
+    }
+
+    return true;
+}
+
+async function verifyObjectAvailability(objectKey) {
+    const exists = await doesObjectExist(objectKey);
+    if (!exists) {
+        return { exists: false, listed: false };
+    }
+
+    const objects = r2MetricsCache.objects && r2MetricsCache.expiresAt > Date.now()
+        ? r2MetricsCache.objects
+        : await listAllObjects();
+
+    const listed = objects.some((object) => object.key === objectKey);
+    if (!r2MetricsCache.objects || r2MetricsCache.expiresAt <= Date.now()) {
+        r2MetricsCache.objects = objects;
+        r2MetricsCache.summary = summarizeObjects(objects);
+        r2MetricsCache.expiresAt = Date.now() + R2_METRICS_CACHE_TTL_MS;
+    }
+
+    return { exists: true, listed };
+}
+
+function groupObjectsByFolder(objects) {
+    return objects.reduce((acc, object) => {
+        const key = object.key || '';
+        const folder = key.includes('/') ? key.split('/')[0] : 'root';
+        if (!acc[folder]) {
+            acc[folder] = [];
+        }
+        acc[folder].push({ key, size: object.size || 0 });
+        return acc;
+    }, {});
+}
+
+async function listObjectsGroupedByFolder({ forceRefresh = false } = {}) {
+    const metrics = await getCachedR2Metrics({ forceRefresh });
+    const objects = forceRefresh || !r2MetricsCache.objects ? await listAllObjects() : r2MetricsCache.objects;
+    return {
+        bucket: metrics.bucket,
+        totalBytes: metrics.totalBytes,
+        fileCount: metrics.fileCount,
+        groupedKeys: groupObjectsByFolder(objects)
+    };
+}
+
 function summarizeObjects(objects) {
     const breakdown = {
         images: { bytes: 0, count: 0 },
@@ -534,11 +670,17 @@ module.exports = {
     buildObjectKey,
     buildPresignedUpload,
     buildPublicUrl,
+    clearR2MetricsCache,
     deleteObjects,
+    doesObjectExist,
     getConfig,
+    getCachedR2Metrics,
     getMissingR2EnvVars,
+    getR2Identity,
+    groupObjectsByFolder,
     json,
     listAllObjects,
+    listObjectsGroupedByFolder,
     METRICS_PREFIXES,
     normalizeObjectKey,
     readJsonBody,
@@ -546,5 +688,6 @@ module.exports = {
     summarizeObjects,
     validateR2Config,
     validateAsset,
+    verifyObjectAvailability,
     verifySupabaseUser
 };
