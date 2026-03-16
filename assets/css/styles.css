@@ -423,19 +423,18 @@ h3,
 }
 
 @media (max-width: 768px) {
-    .mobile-menu-toggle {
-        display: flex;
-    }
-
     .nav-links,
     .nav-auth {
-        display: none;
+        display: flex;
         width: 100%;
+        visibility: hidden;
+        pointer-events: none;
     }
 
     .main-nav.mobile-open .nav-links,
     .main-nav.mobile-open .nav-auth {
-        display: flex;
+        visibility: visible;
+        pointer-events: auto;
     }
 
     /* Mobile Dropdown Styling - Unified Flow */
@@ -497,7 +496,11 @@ h3,
     border: none;
     cursor: pointer;
     padding: 0;
+    position: relative;
     z-index: 110;
+    pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 @media (max-width: 768px) {

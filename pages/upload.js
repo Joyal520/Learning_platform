@@ -613,7 +613,10 @@ export const UploadPage = {
             const thumbnailPreview = document.getElementById('thumbnail-preview');
 
             // Show existing thumbnail if available
-            const existingThumb = sub.thumbnail_url || sub.thumbnail_path;
+            const existingThumb = sub.thumbnail_url
+                || (sub.storage_provider === 'r2' ? null : UI.resolveMediaUrl(sub.thumbnail_path))
+                || sub.image_url
+                || null;
             if (existingThumb) {
                 thumbnailPreview.innerHTML = `<img src="${existingThumb}" alt="Current thumbnail">`;
                 thumbnailPreview.classList.add('has-image');

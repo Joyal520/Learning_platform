@@ -5,10 +5,7 @@ import { AvatarLibrary } from './avatars.js';
 
 export const UI = {
     init() {
-        // Menu toggle mobile
-        document.getElementById('menu-toggle')?.addEventListener('click', () => {
-            document.querySelector('.main-nav').classList.toggle('mobile-open');
-        });
+        this.setupMobileMenu();
 
         // Hidden Debug Tool for PWA: long press the logo
         const logo = document.getElementById('nav-home');
@@ -22,6 +19,56 @@ export const UI = {
             });
             logo.addEventListener('touchend', () => clearTimeout(pressTimer));
         }
+    },
+
+    setupMobileMenu() {
+        const toggle = document.getElementById('menu-toggle');
+        const nav = document.querySelector('.main-nav');
+        const navLinks = document.getElementById('nav-links');
+        const navAuth = document.getElementById('nav-auth');
+
+        console.log('[Mobile Nav] hamburger found:', !!toggle);
+        console.log('[Mobile Nav] mobile menu found:', !!nav && !!navLinks && !!navAuth);
+
+        if (!toggle || !nav || !navLinks || !navAuth || toggle.dataset.mobileMenuBound === 'true') {
+            return;
+        }
+
+        let lastTouchToggleAt = 0;
+        const setMenuState = (isOpen) => {
+            nav.classList.toggle('mobile-open', isOpen);
+            toggle.setAttribute('aria-expanded', String(isOpen));
+            console.log(`[Mobile Nav] menu ${isOpen ? 'opened' : 'closed'}`);
+        };
+
+        const handleToggle = (source) => {
+            const isOpen = !nav.classList.contains('mobile-open');
+            console.log(`[Mobile Nav] hamburger clicked (${source})`);
+            setMenuState(isOpen);
+        };
+
+        toggle.addEventListener('touchend', (event) => {
+            event.preventDefault();
+            lastTouchToggleAt = Date.now();
+            handleToggle('touch');
+        }, { passive: false });
+
+        toggle.addEventListener('click', (event) => {
+            if (Date.now() - lastTouchToggleAt < 500) {
+                return;
+            }
+
+            event.preventDefault();
+            handleToggle('click');
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768 && nav.classList.contains('mobile-open')) {
+                setMenuState(false);
+            }
+        });
+
+        toggle.dataset.mobileMenuBound = 'true';
     },
 
     // Hero Animations: Cycling Subtitle + Confetti Dots
