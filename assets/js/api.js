@@ -580,5 +580,10 @@ export const API = {
 
     async getR2Metrics() {
         return callServerApi('/api/r2-metrics', { method: 'GET' });
+    },
+
+    async getR2Diagnostics(refresh = true) {
+        const query = refresh ? '?refresh=true' : '';
+        return callServerApi(`/api/r2-diagnostics${query}`, { method: 'GET' });
     }
 };

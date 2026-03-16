@@ -55,8 +55,51 @@ export const DashboardPage = {
         main.innerHTML = UI.pages.dashboard(App.profile.role);
 
         this.setupTabs();
+        this.setupDiagnostics();
         this.loadTabContent();
         if (App.profile.role === 'admin') this.loadStats();
+    },
+
+    setupDiagnostics() {
+        const button = document.getElementById('run-r2-diagnostics-btn');
+        const panel = document.getElementById('r2-diagnostics-panel');
+        const status = document.getElementById('r2-diagnostics-status');
+        const output = document.getElementById('r2-diagnostics-output');
+
+        if (!button || !panel || !status || !output) return;
+
+        button.addEventListener('click', async () => {
+            console.log('[Dashboard] Starting authenticated R2 diagnostics request...');
+            panel.style.display = 'block';
+            status.textContent = 'Running authenticated R2 diagnostics...';
+            output.textContent = '';
+            button.disabled = true;
+            button.textContent = 'Running...';
+
+            try {
+                const diagnostics = await API.getR2Diagnostics(true);
+                console.log('[Dashboard] R2 diagnostics request succeeded:', diagnostics);
+
+                status.textContent = 'Authenticated R2 diagnostics completed.';
+                output.textContent = JSON.stringify({
+                    activeAccountId: diagnostics.activeAccountId || '(not configured)',
+                    activeBucketName: diagnostics.activeBucketName,
+                    endpointHost: diagnostics.endpointHost,
+                    publicBaseUrl: diagnostics.publicBaseUrl || '(not configured)',
+                    realR2ObjectCount: diagnostics.realR2ObjectCount,
+                    realR2TotalBytes: diagnostics.realR2TotalBytes,
+                    firstFiveObjectKeys: diagnostics.firstFiveObjectKeys || [],
+                    lastFiveObjectKeys: diagnostics.lastFiveObjectKeys || []
+                }, null, 2);
+            } catch (err) {
+                console.error('[Dashboard] R2 diagnostics request failed:', err);
+                status.textContent = `Diagnostics failed: ${err.message}`;
+                output.textContent = '';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Run R2 Diagnostics';
+            }
+        });
     },
 
     setupTabs() {

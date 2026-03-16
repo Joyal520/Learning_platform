@@ -1321,7 +1321,15 @@ export const UI = {
                             <div class="storage-bar-container">
                                 <div class="storage-bar" id="storage-bar" style="width: 0%"></div>
                             </div>
+                            <button class="btn btn-outline btn-sm" id="run-r2-diagnostics-btn" type="button" style="margin-top: 12px;">Run R2 Diagnostics</button>
                         </div>
+                    </div>
+                </div>
+                <div class="glass-card admin-stat mb-30" id="r2-diagnostics-panel" style="display:none;">
+                    <div class="stat-data">
+                        <p class="text-muted text-xs uppercase letter-spacing">Admin Diagnostics</p>
+                        <div class="text-muted text-xs" id="r2-diagnostics-status">Ready to run authenticated R2 diagnostics.</div>
+                        <pre id="r2-diagnostics-output" style="margin-top: 12px; white-space: pre-wrap; word-break: break-word; font-size: 0.82rem; line-height: 1.55;"></pre>
                     </div>
                 </div>
                 ` : ''}
