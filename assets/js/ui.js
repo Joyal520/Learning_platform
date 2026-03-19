@@ -440,6 +440,30 @@ export const UI = {
         };
     },
 
+    getCategoryAssetPath(category) {
+        const normalized = String(category || '').trim().toLowerCase();
+        const categoryAssetMap = {
+            short_stories: 'assets/images/story.png',
+            long_stories: 'assets/images/story.png',
+            comics: 'assets/images/story.png',
+            essays: 'assets/images/writing.png',
+            articles: 'assets/images/writing.png',
+            speech: 'assets/images/writing.png',
+            poems: 'assets/images/literature.png',
+            classroom_play: 'assets/images/literature.png',
+            conversations: 'assets/images/literature.png',
+            lessons: 'assets/images/learning.png',
+            flashcards: 'assets/images/learning.png',
+            presentations: 'assets/images/learning.png',
+            images: 'assets/images/media.png',
+            songs: 'assets/images/media.png',
+            puzzle: 'assets/images/fun.png',
+            game: 'assets/images/fun.png'
+        };
+
+        return categoryAssetMap[normalized] || 'assets/images/default.png';
+    },
+
     renderCard(sub, badgeObj = null) {
         const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
         const categoryColors = {
@@ -453,6 +477,7 @@ export const UI = {
 
         const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
         const thumbnailUrl = previewUrl;
+        const fallbackAssetUrl = this.getCategoryAssetPath(sub.category);
 
         const thumbnailHtml = thumbnailUrl
             ? `<div class="card-thumbnail-container">
@@ -467,7 +492,13 @@ export const UI = {
                  </div>
                </div>`
             : `<div class="card-thumbnail-container">
-                <div class="card-thumbnail card-thumb-gradient" style="background:linear-gradient(135deg, ${color}22, ${color}44)">
+                <img src="${fallbackAssetUrl}"
+                     class="card-thumbnail-img"
+                     loading="lazy"
+                     decoding="async"
+                     alt="${sub.title}"
+                     onerror="this.style.opacity='0'; this.nextElementSibling.style.display='flex';">
+                <div class="card-thumbnail card-thumb-gradient" style="display:none; background:linear-gradient(135deg, ${color}22, ${color}44)">
                     <span class="thumb-emoji">${this.categoryEmoji(sub.category)}</span>
                 </div>
                </div>`;
@@ -1131,7 +1162,7 @@ export const UI = {
                             <h1 class="explore-hero-title">Creative Works</h1>
                             <p class="explore-hero-subtitle">Discover and learn from student creators around the world.</p>
                         </div>
-                        <img src="assets/images/clay-hero.png" alt="Clay Illustration" class="explore-hero-image" loading="lazy">
+                        <img src="assets/images/dashboard-bg.webp" alt="Creative Works" class="explore-hero-image" loading="lazy">
                     </div>
 
                     <div class="explore-sections-container">
