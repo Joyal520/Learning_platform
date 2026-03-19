@@ -300,7 +300,6 @@ export const UploadPage = {
                         audience_level: formData.get('audience_level')
                     };
 
-                    console.log('Submitting category:', submissionData.category);
                     const { error } = await API.uploadImagePost(
                         submissionData,
                         fullSizeImage,
@@ -361,7 +360,6 @@ export const UploadPage = {
                     }
 
                     console.log('Submitting standard post:', submissionData);
-                    console.log('Submitting category:', submissionData.category);
                     const { error } = await API.uploadSubmission(submissionData, fileToUpload, thumbnailBlob, displayBlob);
 
                     if (error) {
@@ -447,8 +445,11 @@ export const UploadPage = {
     normalizeSubmissionCategory(category) {
         const rawValue = String(category || '').trim();
         const normalizedValue = rawValue.toLowerCase();
-        const CATEGORY_MAP = { Lessons: 'lessons', lessons: 'lessons' };
-        return CATEGORY_MAP[rawValue] || CATEGORY_MAP[normalizedValue] || normalizedValue || null;
+        const CATEGORY_MAP = {
+            lesson: 'lessons',
+            lessons: 'lessons',
+        };
+        return CATEGORY_MAP[normalizedValue] || null;
     },
 
     validateProjectFile(file) {
@@ -711,7 +712,6 @@ export const UploadPage = {
                             displayBlob = versions.display;
                         }
                     }
-                    console.log('Submitting category:', updateData.category);
 
                     const { error: updateError } = await API.updateSubmission(id, updateData, thumbnailBlob, displayBlob);
 
