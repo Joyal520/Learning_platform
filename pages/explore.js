@@ -4,20 +4,343 @@ import App from '../assets/js/app.js';
 
 export const ExplorePage = {
     _currentCategory: 'all',
+    _currentGroup: null,
+    _currentTheme: null,
     _isLoading: false,
     _allFetchedData: [],  // holds all fetched submissions for Load More
     _displayCount: 6,     // initial items to show per section
     _loadMoreStep: 6,     // how many more to show each click
+    _topCreators: [],
+    _isSearchFocused: false,
+
+    _getDesktopSectionCount() {
+        return window.matchMedia('(min-width: 993px)').matches ? 4 : 3;
+    },
+
+    _getBaseDisplayCount() {
+        return window.matchMedia('(min-width: 993px)').matches ? 4 : 6;
+    },
 
     async init() {
         this._currentCategory = 'all';
+        this._currentGroup = null;
+        this._currentTheme = null;
         this._isLoading = false;
         this._allFetchedData = [];
-        this._displayCount = 6;
+        this._displayCount = this._getBaseDisplayCount();
+        this._topCreators = [];
+        this._isSearchFocused = false;
 
         // Always re-query DOM elements fresh (avoids stale reference from cloning)
         const getSearchInput = () => document.querySelector('#search-input');
         const getCategoryFilters = () => document.querySelector('#category-filters');
+        const getCreatorsSection = () => document.querySelector('.explore-creators-section');
+        const getSectionsContainer = () => document.querySelector('.explore-sections-container');
+        const getTrendingCreationsSection = () => document.querySelector('#trending-creations');
+        const getChipViewport = () => document.querySelector('.explore-desktop-flow #explore-chip-viewport');
+        const getChipDropdownLayer = () => document.querySelector('.explore-desktop-flow #explore-chip-dropdown-layer');
+        const updateCreatorsVisibility = () => {
+            const creatorsSection = getCreatorsSection();
+            const sectionsContainer = getSectionsContainer();
+            const searchValue = getSearchInput()?.value?.trim() || '';
+            const hasExpandedCategoryGroup = !!getCategoryFilters()?.querySelector('.category-filter-group.expanded');
+            const shouldShowCreators = !this._isSearchFocused
+                && !searchValue
+                && this._currentCategory === 'all'
+                && !this._currentTheme
+                && !hasExpandedCategoryGroup;
+
+            creatorsSection?.classList.toggle('is-hidden', !shouldShowCreators);
+            sectionsContainer?.classList.toggle('creators-hidden', !shouldShowCreators);
+        };
+        const syncDesktopActiveState = (filtersRoot = getCategoryFilters()) => {
+            if (!filtersRoot || !window.matchMedia('(min-width: 993px)').matches) return;
+
+            filtersRoot.querySelectorAll('.category-clay-item, .category-parent-toggle').forEach((item) => {
+                item.classList.remove('active');
+            });
+
+            if (this._currentCategory === 'all' && !this._currentTheme) {
+                filtersRoot.querySelector('.category-card-all')?.classList.add('active');
+                return;
+            }
+
+            const matchingChips = Array.from(filtersRoot.querySelectorAll('.category-clay-item')).filter((chip) => {
+                if (chip.dataset.category !== this._currentCategory) return false;
+                return (chip.dataset.theme || '') === (this._currentTheme || '');
+            });
+
+            const visibleChip = matchingChips.find((chip) => !chip.closest('.category-children'));
+            if (visibleChip) {
+                visibleChip.classList.add('active');
+                return;
+            }
+
+            const groupedChip = matchingChips[0];
+            const parentToggle = groupedChip?.closest('.category-filter-group')?.querySelector('.category-parent-toggle');
+            parentToggle?.classList.add('active');
+        };
+        const closeDesktopDropdown = (filtersRoot = getCategoryFilters(), dropdownLayer = getChipDropdownLayer()) => {
+            if (filtersRoot) {
+                filtersRoot.querySelectorAll('.category-filter-group').forEach((group) => {
+                    group.classList.remove('expanded');
+                });
+                filtersRoot.querySelectorAll('.category-parent-toggle').forEach((toggle) => {
+                    toggle.classList.remove('active');
+                    toggle.setAttribute('aria-expanded', 'false');
+                });
+            }
+
+            if (dropdownLayer) {
+                dropdownLayer.classList.remove('is-open');
+                dropdownLayer.setAttribute('aria-hidden', 'true');
+                dropdownLayer.innerHTML = '';
+                dropdownLayer.style.left = '';
+                dropdownLayer.style.top = '';
+                dropdownLayer.style.minWidth = '';
+                dropdownLayer.dataset.group = '';
+            }
+
+            syncDesktopActiveState(filtersRoot);
+            updateCreatorsVisibility();
+        };
+        const positionDesktopDropdown = (anchorButton, dropdownLayer, chipBar) => {
+            if (!anchorButton || !dropdownLayer || !chipBar || !dropdownLayer.childElementCount) return;
+
+            const chipBarRect = chipBar.getBoundingClientRect();
+            const anchorRect = anchorButton.getBoundingClientRect();
+            const dropdownWidth = dropdownLayer.offsetWidth;
+            const minLeft = 12;
+            const maxLeft = Math.max(minLeft, chipBar.clientWidth - dropdownWidth - 12);
+            const desiredLeft = anchorRect.left - chipBarRect.left;
+            const left = Math.max(minLeft, Math.min(desiredLeft, maxLeft));
+            const top = anchorRect.bottom - chipBarRect.top + 8;
+
+            dropdownLayer.style.left = `${Math.round(left)}px`;
+            dropdownLayer.style.top = `${Math.round(top)}px`;
+            dropdownLayer.style.minWidth = `${Math.max(220, Math.round(anchorRect.width))}px`;
+        };
+        const openDesktopDropdown = (groupWrapper, parentToggle, filtersRoot) => {
+            const dropdownLayer = getChipDropdownLayer();
+            const chipBar = document.querySelector('.explore-desktop-flow .explore-chip-bar');
+            const sourcePanel = groupWrapper?.querySelector('.category-children');
+            if (!dropdownLayer || !chipBar || !sourcePanel || !sourcePanel.children.length) return;
+
+            filtersRoot.querySelectorAll('.category-filter-group').forEach((group) => {
+                const isTarget = group === groupWrapper;
+                group.classList.toggle('expanded', isTarget);
+            });
+            filtersRoot.querySelectorAll('.category-parent-toggle').forEach((toggle) => {
+                const isTarget = toggle === parentToggle;
+                toggle.classList.toggle('active', isTarget);
+                toggle.setAttribute('aria-expanded', String(isTarget));
+            });
+
+            dropdownLayer.innerHTML = `
+                <div class="explore-chip-dropdown-panel" data-group-panel="${groupWrapper.dataset.group || ''}">
+                    ${sourcePanel.innerHTML}
+                </div>
+            `;
+            dropdownLayer.classList.add('is-open');
+            dropdownLayer.setAttribute('aria-hidden', 'false');
+            dropdownLayer.dataset.group = groupWrapper.dataset.group || '';
+            positionDesktopDropdown(parentToggle, dropdownLayer, chipBar);
+            updateCreatorsVisibility();
+        };
+        const bindDesktopChipScroll = () => {
+            const chipViewport = getChipViewport();
+            const chipRow = document.querySelector('.explore-desktop-flow .category-sidebar-list');
+            const leftBtn = document.querySelector('.explore-desktop-flow [data-chip-scroll="left"]');
+            const rightBtn = document.querySelector('.explore-desktop-flow [data-chip-scroll="right"]');
+            if (!chipViewport || !chipRow || !leftBtn || !rightBtn || chipViewport.dataset.desktopScrollBound === 'true') return;
+
+            const updateDesktopChipControls = () => {
+                if (!window.matchMedia('(min-width: 993px)').matches) return;
+                const maxScrollLeft = Math.max(0, chipViewport.scrollWidth - chipViewport.clientWidth);
+                leftBtn.disabled = chipViewport.scrollLeft <= 4;
+                rightBtn.disabled = chipViewport.scrollLeft >= maxScrollLeft - 4;
+            };
+
+            chipViewport.addEventListener('wheel', (event) => {
+                if (!window.matchMedia('(min-width: 993px)').matches) return;
+                if (!event.shiftKey && Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+
+                event.preventDefault();
+                chipViewport.scrollBy({
+                    left: event.deltaX || event.deltaY,
+                    behavior: 'auto'
+                });
+                updateDesktopChipControls();
+            }, { passive: false });
+
+            const scrollByAmount = (direction) => {
+                chipViewport.scrollBy({
+                    left: direction * Math.min(320, chipViewport.clientWidth * 0.8),
+                    behavior: 'smooth'
+                });
+            };
+
+            leftBtn.addEventListener('click', () => scrollByAmount(-1));
+            rightBtn.addEventListener('click', () => scrollByAmount(1));
+
+            const dragThreshold = 8;
+            let isPointerDown = false;
+            let dragMoved = false;
+            let hasDragGesture = false;
+            let dragStartX = 0;
+            let dragStartScrollLeft = 0;
+
+            chipViewport.addEventListener('pointerdown', (event) => {
+                if (!window.matchMedia('(min-width: 993px)').matches) return;
+                if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+                isPointerDown = true;
+                dragMoved = false;
+                hasDragGesture = false;
+                dragStartX = event.clientX;
+                dragStartScrollLeft = chipViewport.scrollLeft;
+            });
+
+            chipViewport.addEventListener('pointermove', (event) => {
+                if (!isPointerDown || !window.matchMedia('(min-width: 993px)').matches) return;
+
+                const deltaX = event.clientX - dragStartX;
+                if (!hasDragGesture) {
+                    if (Math.abs(deltaX) < dragThreshold) return;
+                    hasDragGesture = true;
+                    chipViewport.classList.add('is-dragging');
+                    chipViewport.setPointerCapture?.(event.pointerId);
+                }
+
+                dragMoved = true;
+                chipViewport.scrollLeft = dragStartScrollLeft - deltaX;
+                updateDesktopChipControls();
+            });
+
+            const stopPointerDrag = (event) => {
+                if (!isPointerDown) return;
+                const shouldReleasePointer = hasDragGesture;
+                isPointerDown = false;
+                hasDragGesture = false;
+                chipViewport.classList.remove('is-dragging');
+                if (shouldReleasePointer) {
+                    chipViewport.releasePointerCapture?.(event.pointerId);
+                }
+                updateDesktopChipControls();
+            };
+
+            chipViewport.addEventListener('pointerup', stopPointerDrag);
+            chipViewport.addEventListener('pointercancel', stopPointerDrag);
+            chipViewport.addEventListener('mouseleave', () => {
+                if (!isPointerDown) return;
+                isPointerDown = false;
+                chipViewport.classList.remove('is-dragging');
+                updateDesktopChipControls();
+            });
+            chipViewport.addEventListener('click', (event) => {
+                if (!dragMoved) return;
+                event.preventDefault();
+                event.stopPropagation();
+                dragMoved = false;
+            }, true);
+
+            chipViewport.addEventListener('scroll', updateDesktopChipControls, { passive: true });
+            chipViewport.addEventListener('scroll', () => {
+                const dropdownLayer = getChipDropdownLayer();
+                const filtersRoot = getCategoryFilters();
+                const openGroup = filtersRoot?.querySelector('.category-filter-group.expanded');
+                const anchorButton = openGroup?.querySelector('.category-parent-toggle');
+                const chipBar = document.querySelector('.explore-desktop-flow .explore-chip-bar');
+                if (anchorButton && dropdownLayer?.classList.contains('is-open')) {
+                    positionDesktopDropdown(anchorButton, dropdownLayer, chipBar);
+                }
+            }, { passive: true });
+            window.addEventListener('resize', () => {
+                updateDesktopChipControls();
+                const dropdownLayer = getChipDropdownLayer();
+                const filtersRoot = getCategoryFilters();
+                const openGroup = filtersRoot?.querySelector('.category-filter-group.expanded');
+                const anchorButton = openGroup?.querySelector('.category-parent-toggle');
+                const chipBar = document.querySelector('.explore-desktop-flow .explore-chip-bar');
+                if (anchorButton && dropdownLayer?.classList.contains('is-open')) {
+                    positionDesktopDropdown(anchorButton, dropdownLayer, chipBar);
+                }
+            });
+            window.addEventListener('scroll', () => {
+                const dropdownLayer = getChipDropdownLayer();
+                const filtersRoot = getCategoryFilters();
+                const openGroup = filtersRoot?.querySelector('.category-filter-group.expanded');
+                const anchorButton = openGroup?.querySelector('.category-parent-toggle');
+                const chipBar = document.querySelector('.explore-desktop-flow .explore-chip-bar');
+                if (anchorButton && dropdownLayer?.classList.contains('is-open')) {
+                    positionDesktopDropdown(anchorButton, dropdownLayer, chipBar);
+                }
+            }, { passive: true });
+
+            updateDesktopChipControls();
+            chipViewport.dataset.desktopScrollBound = 'true';
+        };
+        const syncResponsiveLayout = () => {
+            const container = document.querySelector('.light-theme-explore.explore-container');
+            const main = document.querySelector('.explore-main');
+            const sidebar = document.querySelector('.explore-sidebar');
+            const hero = document.querySelector('.explore-hero');
+            const desktopDiscovery = document.querySelector('.explore-desktop-discovery');
+            const mobileDiscovery = document.querySelector('.explore-mobile-discovery');
+            const searchCard = document.querySelector('[data-mobile-slot="search"]');
+            const categoriesCard = document.querySelector('[data-mobile-slot="categories"]');
+            const sectionsContainer = document.querySelector('.explore-sections-container');
+            const creatorsSection = document.querySelector('.explore-creators-section');
+            if (!container || !main || !sidebar || !hero || !desktopDiscovery || !mobileDiscovery || !searchCard || !categoriesCard || !sectionsContainer || !creatorsSection) return;
+
+            const isMobile = window.matchMedia('(max-width: 640px)').matches;
+            const isDesktop = window.matchMedia('(min-width: 993px)').matches;
+
+            if (isDesktop) {
+                container.classList.add('explore-desktop-flow');
+                container.classList.remove('explore-mobile-flow');
+                desktopDiscovery.append(searchCard, categoriesCard);
+                if (hero.nextElementSibling !== desktopDiscovery) {
+                    hero.insertAdjacentElement('afterend', desktopDiscovery);
+                }
+                if (desktopDiscovery.nextElementSibling !== creatorsSection) {
+                    desktopDiscovery.insertAdjacentElement('afterend', creatorsSection);
+                }
+                sidebar.classList.add('explore-sidebar-empty');
+                bindDesktopChipScroll();
+                updateCreatorsVisibility();
+                return;
+            }
+
+            if (isMobile) {
+                closeDesktopDropdown();
+                container.classList.add('explore-mobile-flow');
+                container.classList.remove('explore-desktop-flow');
+                mobileDiscovery.append(searchCard, categoriesCard);
+                if (hero.nextElementSibling !== mobileDiscovery) {
+                    hero.insertAdjacentElement('afterend', mobileDiscovery);
+                }
+                sectionsContainer.prepend(creatorsSection);
+                sidebar.classList.add('explore-sidebar-empty');
+                updateCreatorsVisibility();
+            } else {
+                closeDesktopDropdown();
+                container.classList.remove('explore-mobile-flow');
+                container.classList.remove('explore-desktop-flow');
+                sidebar.classList.remove('explore-sidebar-empty');
+                sidebar.append(searchCard, categoriesCard);
+                sectionsContainer.prepend(creatorsSection);
+                updateCreatorsVisibility();
+            }
+        };
+
+        syncResponsiveLayout();
+
+        if (this._mobileLayoutHandler) {
+            window.removeEventListener('resize', this._mobileLayoutHandler);
+        }
+        this._mobileLayoutHandler = UI.debounce(syncResponsiveLayout, 80);
+        window.addEventListener('resize', this._mobileLayoutHandler);
 
         const loadAllSections = async (isLoadMore = false) => {
             if (this._isLoading) return;
@@ -26,6 +349,7 @@ export const ExplorePage = {
             const gridTrending = document.querySelector('#grid-trending');
             const gridNew = document.querySelector('#grid-new');
             const gridTop = document.querySelector('#grid-top');
+            const creatorsRow = document.querySelector('#trending-creators-row');
             const searchInput = getSearchInput();
 
             const category = this._currentCategory === 'all' ? null : this._currentCategory;
@@ -36,6 +360,9 @@ export const ExplorePage = {
                 [gridTrending, gridNew, gridTop].forEach(g => {
                     if (g) g.innerHTML = this.renderSkeletons(3);
                 });
+                if (creatorsRow) {
+                    creatorsRow.innerHTML = this.renderCreatorSkeletons(3);
+                }
             }
 
             try {
@@ -54,6 +381,18 @@ export const ExplorePage = {
                            s.profiles?.display_name?.toLowerCase().includes(search)
                        );
                     }
+                }
+
+                if (this._currentTheme) {
+                    filteredData = filteredData.filter((submission) =>
+                        Array.isArray(submission.themes) && submission.themes.includes(this._currentTheme)
+                    );
+                }
+
+                if (this._currentGroup) {
+                    filteredData = filteredData.filter((submission) =>
+                        UI.getContentTypeOption(submission.category, submission.content_type)?.group === this._currentGroup
+                    );
                 }
 
                 // Apply search filter
@@ -76,22 +415,31 @@ export const ExplorePage = {
                     this._allFetchedData = filteredData;
                 }
 
+                if (!this._topCreators.length) {
+                    const { data: creators } = await API.getTopCreators(10);
+                    this._topCreators = creators || [];
+                }
+
                 // Determine if this is images category (uses different card rendering)
                 const isImages = this._currentCategory === 'images';
 
+                this._renderCreators(creatorsRow, this._topCreators);
+
                 // --- Trending section ---
+                const desktopSectionCount = this._getDesktopSectionCount();
+
                 const trending = [...filteredData].sort((a, b) => {
                     const sA = a.submission_stats[0];
                     const sB = b.submission_stats[0];
                     if (sB.like_count !== sA.like_count) return (sB.like_count || 0) - (sA.like_count || 0);
                     return (sB.view_count || 0) - (sA.view_count || 0);
-                }).slice(0, 3);
+                }).slice(0, desktopSectionCount);
 
-                this._renderGrid(gridTrending, trending, { text: '🔥 TRENDING', className: 'badge-trending' }, isImages);
+                this._renderGrid(gridTrending, trending, { text: 'TRENDING', className: 'badge-trending' }, isImages);
 
                 // --- New section ---
                 const newItems = filteredData.slice(0, this._displayCount);
-                this._renderGrid(gridNew, newItems, { text: '✨ NEW', className: 'badge-new' }, isImages);
+                this._renderGrid(gridNew, newItems, { text: 'NEW', className: 'badge-new' }, isImages);
 
                 // --- Top rated section ---
                 const topRated = [...filteredData].sort((a, b) => {
@@ -100,7 +448,7 @@ export const ExplorePage = {
                     return avgB - avgA;
                 }).slice(0, this._displayCount);
 
-                this._renderGrid(gridTop, topRated, { text: '⭐ TOP RATED', className: 'badge-top' }, isImages);
+                this._renderGrid(gridTop, topRated, { text: 'TOP RATED', className: 'badge-top' }, isImages);
 
                 // Update Load More button visibility
                 this._updateLoadMoreButton();
@@ -131,15 +479,96 @@ export const ExplorePage = {
             // Clone to remove old listeners
             const newFilters = categoryFilters.cloneNode(true);
             categoryFilters.parentNode.replaceChild(newFilters, categoryFilters);
+            if (this._desktopSubcategoryDismissHandler) {
+                document.removeEventListener('click', this._desktopSubcategoryDismissHandler);
+            }
+            this._desktopSubcategoryDismissHandler = (event) => {
+                if (!window.matchMedia('(min-width: 993px)').matches) return;
+                if (event.target.closest('#category-filters') || event.target.closest('#explore-chip-dropdown-layer')) return;
+                const dropdownLayer = getChipDropdownLayer();
+                if (!dropdownLayer?.classList.contains('is-open')) return;
+                closeDesktopDropdown(newFilters, dropdownLayer);
+            };
+            document.addEventListener('click', this._desktopSubcategoryDismissHandler);
             newFilters.addEventListener('click', async (e) => {
+                const parentToggle = e.target.closest('.category-parent-toggle');
+                if (parentToggle) {
+                    if (newFilters.closest('.explore-desktop-flow')) {
+                        const targetGroup = parentToggle.dataset.group;
+                        const targetWrapper = newFilters.querySelector(`.category-filter-group[data-group="${targetGroup}"]`);
+                        const dropdownLayer = getChipDropdownLayer();
+                        const shouldExpand = !targetWrapper?.classList.contains('expanded')
+                            || dropdownLayer?.dataset.group !== targetGroup;
+
+                        if (!targetWrapper) return;
+                        if (!shouldExpand) {
+                            closeDesktopDropdown(newFilters, dropdownLayer);
+                            return;
+                        }
+
+                        openDesktopDropdown(targetWrapper, parentToggle, newFilters);
+                        return;
+                    }
+
+                    const targetGroup = parentToggle.dataset.group;
+                    const targetWrapper = newFilters.querySelector(`.category-filter-group[data-group="${targetGroup}"]`);
+                    const shouldExpand = !targetWrapper?.classList.contains('expanded');
+
+                    newFilters.querySelectorAll('.category-filter-group').forEach(group => {
+                        const isTarget = group.dataset.group === targetGroup;
+                        group.classList.toggle('expanded', shouldExpand && isTarget);
+                        const toggle = group.querySelector('.category-parent-toggle');
+                        if (toggle) {
+                            toggle.setAttribute('aria-expanded', String(shouldExpand && isTarget));
+                        }
+                    });
+                    updateCreatorsVisibility();
+                    return;
+                }
+
                 const chip = e.target.closest('.category-clay-item');
                 if (!chip) return;
-                newFilters.querySelectorAll('.category-clay-item').forEach(c => c.classList.remove('active'));
+                newFilters.querySelectorAll('.category-clay-item, .category-parent-toggle').forEach(c => c.classList.remove('active'));
+                closeDesktopDropdown(newFilters);
                 chip.classList.add('active');
                 this._currentCategory = chip.dataset.category;
-                this._displayCount = 6; // reset on category change
+                this._currentGroup = null;
+                this._currentTheme = chip.dataset.theme || null;
+                this._displayCount = this._getBaseDisplayCount(); // reset on category change
+                updateCreatorsVisibility();
                 await loadAllSections();
             });
+
+            const dropdownLayer = getChipDropdownLayer();
+            if (dropdownLayer) {
+                if (this._desktopDropdownClickHandler) {
+                    dropdownLayer.removeEventListener('click', this._desktopDropdownClickHandler);
+                }
+                this._desktopDropdownClickHandler = async (event) => {
+                    const chip = event.target.closest('.category-clay-item');
+                    if (!chip) return;
+                    const panel = chip.closest('.explore-chip-dropdown-panel');
+                    const sourceGroup = panel?.dataset.groupPanel || '';
+                    const sourceWrapper = sourceGroup
+                        ? newFilters.querySelector(`.category-filter-group[data-group="${sourceGroup}"]`)
+                        : null;
+                    const sourceToggle = sourceWrapper?.querySelector('.category-parent-toggle');
+
+                    newFilters.querySelectorAll('.category-clay-item, .category-parent-toggle').forEach((item) => item.classList.remove('active'));
+                    closeDesktopDropdown(newFilters, dropdownLayer);
+                    if (sourceToggle) {
+                        sourceToggle.classList.add('active');
+                        sourceToggle.setAttribute('aria-expanded', 'false');
+                    }
+                    this._currentCategory = chip.dataset.category;
+                    this._currentGroup = null;
+                    this._currentTheme = chip.dataset.theme || null;
+                    this._displayCount = this._getBaseDisplayCount();
+                    updateCreatorsVisibility();
+                    await loadAllSections();
+                };
+                dropdownLayer.addEventListener('click', this._desktopDropdownClickHandler);
+            }
         }
 
         // Search input handling
@@ -147,8 +576,19 @@ export const ExplorePage = {
         if (searchInput) {
             const newSearch = searchInput.cloneNode(true);
             searchInput.parentNode.replaceChild(newSearch, searchInput);
+            newSearch.addEventListener('focus', () => {
+                this._isSearchFocused = true;
+                updateCreatorsVisibility();
+            });
+            newSearch.addEventListener('blur', () => {
+                this._isSearchFocused = false;
+                updateCreatorsVisibility();
+            });
+            newSearch.addEventListener('input', () => {
+                updateCreatorsVisibility();
+            });
             newSearch.addEventListener('input', UI.debounce(async () => {
-                this._displayCount = 6; // reset on search change
+                this._displayCount = this._getBaseDisplayCount(); // reset on search change
                 await loadAllSections();
             }, 500));
         }
@@ -166,6 +606,20 @@ export const ExplorePage = {
             });
         }
 
+        const heroCta = document.querySelector('#explore-hero-cta');
+        if (heroCta) {
+            heroCta.addEventListener('click', (event) => {
+                event.preventDefault();
+                const trendingCreationsSection = getTrendingCreationsSection();
+                if (!trendingCreationsSection) return;
+                trendingCreationsSection.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            });
+        }
+
+        updateCreatorsVisibility();
         await loadAllSections();
     },
 
@@ -178,11 +632,11 @@ export const ExplorePage = {
         }
 
         if (isImages) {
-            gridEl.classList.add('masonry-grid');
+            gridEl.classList.add('masonry-grid', 'image-feed-grid');
             gridEl.innerHTML = items.map(w => UI.renderMasonryCard(w)).join('');
             this.setupMasonryInteractions(gridEl);
         } else {
-            gridEl.classList.remove('masonry-grid');
+            gridEl.classList.remove('masonry-grid', 'image-feed-grid');
             gridEl.innerHTML = items.map(w => UI.renderCard(w, badgeObj)).join('');
         }
     },
@@ -200,6 +654,43 @@ export const ExplorePage = {
         } else {
             btn.style.display = 'none';
         }
+    },
+
+    renderCreatorSkeletons(count) {
+        return Array.from({ length: count }, () => '<div class="creator-skeleton"></div>').join('');
+    },
+
+    _renderCreators(container, creators) {
+        if (!container) return;
+
+        const topCreators = (creators || []).slice(0, 5);
+
+        if (!topCreators.length) {
+            container.innerHTML = `
+                <div class="creators-empty-state">
+                    <span>Creators will appear here as new work is published.</span>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = topCreators.map((creator, index) => `
+            <article class="creator-spotlight-card animate-fade-in" data-rank="${index + 1}">
+                <div class="creator-spotlight-media">
+                    <div class="creator-rank-badge">${index === 0 ? 'Trending' : 'Creator'}</div>
+                    <div class="creator-avatar-shell">
+                        ${creator.avatar
+                            ? `<img src="${creator.avatar}" alt="${creator.name}" class="creator-avatar-img">`
+                            : `<span class="creator-avatar-fallback">${creator.name.charAt(0).toUpperCase()}</span>`}
+                    </div>
+                </div>
+                <div class="creator-spotlight-copy">
+                    <h3 class="creator-name">${creator.name}</h3>
+                    <p class="creator-title">${creator.title}</p>
+                    <p class="creator-points">${creator.points} pts</p>
+                </div>
+            </article>
+        `).join('');
     },
 
     renderSkeletons(count) {
@@ -221,7 +712,20 @@ export const ExplorePage = {
 
         gridEl.addEventListener('click', async (e) => {
             const btn = e.target.closest('.interaction-btn');
-            const img = e.target.closest('.masonry-img');
+            const downloadBtn = e.target.closest('.btn-download');
+            const shareBtn = e.target.closest('.btn-share');
+
+            if (downloadBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                await UI.downloadFile(downloadBtn.href, downloadBtn.dataset.filename || 'image');
+                return;
+            }
+
+            if (shareBtn) {
+                e.stopPropagation();
+                return;
+            }
             
             if (btn) {
                 e.stopPropagation();

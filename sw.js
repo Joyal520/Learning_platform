@@ -1,4 +1,4 @@
-const CACHE_NAME = 'edtechra-v4';
+const CACHE_NAME = 'edtechra-v5';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -37,12 +37,15 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) {
+    return;
+  }
+
   // Only handle GET requests
   if (event.request.method !== 'GET') return;
-  
-  const url = new URL(event.request.url);
-  // Exclude API/Supabase requests from caching and SPA fallbacks entirely.
-  if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) return;
+
+  // Exclude Supabase requests from caching and SPA fallbacks entirely.
   if (url.hostname.includes('supabase.co')) return;
 
   event.respondWith(
