@@ -201,6 +201,69 @@ export const API = {
         return updateObject;
     },
 
+    async getTopCreators(limit = 10) {
+        try {
+            const { data: profiles, error } = await supabase
+                .from('profiles')
+                .select('id, display_name, avatar_url')
+                .order('display_name', { ascending: true });
+
+            if (error) throw error;
+
+            const { data: approvedSubmissions, error: submissionsError } = await supabase
+                .from('submissions')
+                .select('id, author_id')
+                .eq('status', 'approved');
+
+            if (submissionsError) throw submissionsError;
+
+            const submissionIds = (approvedSubmissions || []).map((submission) => submission.id);
+            const statsMap = await this.getStatsForSubmissions(submissionIds);
+            const scoreByAuthor = {};
+
+            (approvedSubmissions || []).forEach((submission) => {
+                const stats = statsMap[submission.id] || { avg_rating: 0, like_count: 0, view_count: 0 };
+                const score = (Number(stats.like_count) || 0)
+                    + (Number(stats.view_count) || 0)
+                    + Math.round((Number(stats.avg_rating) || 0) * 20);
+
+                scoreByAuthor[submission.author_id] = (scoreByAuthor[submission.author_id] || 0) + score;
+            });
+
+            const creators = (profiles || [])
+                .map((profile) => {
+                    const displayName = profile.display_name || 'Creator';
+                    const points = scoreByAuthor[profile.id] || 0;
+
+                    return {
+                        id: profile.id,
+                        name: displayName,
+                        display_name: displayName,
+                        avatar: profile.avatar_url || null,
+                        avatar_url: profile.avatar_url || null,
+                        title: 'Student',
+                        points,
+                        rank: 0,
+                        points_today: 0
+                    };
+                })
+                .sort((a, b) => {
+                    if (b.points !== a.points) return b.points - a.points;
+                    return a.name.localeCompare(b.name);
+                })
+                .slice(0, limit)
+                .map((creator, index) => ({
+                    ...creator,
+                    rank: index + 1
+                }));
+
+            return { data: creators, error: null };
+        } catch (error) {
+            console.error('[API] Error fetching top creators:', error);
+            return { data: [], error };
+        }
+    },
+
     async getSubmissions(category = null, sort = 'created_at', limit = 20, offset = 0) {
         let query = supabase
             .from('submissions')
@@ -210,9 +273,12 @@ export const API = {
                 description,
                 category,
                 author_id,
+                themes,
                 thumbnail_path,
                 thumbnail_url,
                 image_url,
+                file_path,
+                file_url,
                 content_type,
                 status,
                 created_at,
@@ -231,7 +297,23 @@ export const API = {
             .order(sort, { ascending: false })
             .range(offset, offset + limit - 1);
 
-        return { data, error };
+        if (error || !data?.length) {
+            return { data, error };
+        }
+
+        const statsMap = await this.getStatsForSubmissions(data.map((submission) => submission.id));
+        const normalizedData = data.map((submission) => {
+            const stats = statsMap[submission.id] || { avg_rating: 0, like_count: 0, view_count: 0 };
+
+            return {
+                ...submission,
+                thumbnail: submission.thumbnail_url || submission.thumbnail_path || submission.image_url || submission.file_url || null,
+                stats,
+                submission_stats: [stats]
+            };
+        });
+
+        return { data: normalizedData, error: null };
     },
 
     async getStatsForSubmissions(ids) {
