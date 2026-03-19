@@ -2,6 +2,7 @@
 import { supabase } from '../assets/js/supabase.js';
 import { UI } from '../assets/js/ui.js';
 import App from '../assets/js/app.js';
+import { API } from '../assets/js/api.js';
 
 export const StudentDashboardPage = {
     async init() {
@@ -14,39 +15,56 @@ export const StudentDashboardPage = {
         const profile = App.profile || { display_name: 'Creator' };
         main.innerHTML = UI.pages.studentDashboard(profile);
 
-        // Load data in parallel for performance
-        await Promise.all([
-            this.loadStats(),
-            this.loadRecentCreations(),
-            this.loadLeaderboard(),
-            this.loadActivityFeed(),
-            this.loadSavedCreations()
-        ]);
-
         // Setup horizontal scroll controls for saved creations
         this.setupSavedScroll();
 
-        // Initialize animated counters after data loads
-        this.animateCounters();
+        // Make the page usable immediately, then fill sections independently.
+        this.loadStats();
+        this.loadRecentCreations();
+        this.loadLeaderboard();
+        this.loadActivityFeed();
+        this.loadSavedCreations();
+    },
+
+    async getCreatorRankings() {
+        if (this._creatorRankingsPromise) {
+            return this._creatorRankingsPromise;
+        }
+
+        this._creatorRankingsPromise = API.getTopCreators(500)
+            .then(({ data, error }) => {
+                if (error) throw error;
+                this._creatorRankings = data || [];
+                return this._creatorRankings;
+            })
+            .finally(() => {
+                this._creatorRankingsPromise = null;
+            });
+
+        return this._creatorRankingsPromise;
     },
 
     async loadStats() {
         const userId = App.user.id;
 
         try {
-            // Get user's approved submissions count
-            const { count: worksCount } = await supabase
+            const worksCountPromise = supabase
                 .from('submissions')
                 .select('*', { count: 'exact', head: true })
                 .eq('author_id', userId)
                 .eq('status', 'approved');
 
-            // Get all user submission IDs for stats lookup
-            const { data: userSubs } = await supabase
+            const userSubsPromise = supabase
                 .from('submissions')
                 .select('id')
                 .eq('author_id', userId)
                 .eq('status', 'approved');
+
+            const [
+                { count: worksCount },
+                { data: userSubs },
+                creatorRankings
+            ] = await Promise.all([worksCountPromise, userSubsPromise, this.getCreatorRankings()]);
 
             let totalLikes = 0;
             let totalRating = 0;
@@ -77,13 +95,8 @@ export const StudentDashboardPage = {
 
             const avgRating = ratedCount > 0 ? (totalRating / ratedCount).toFixed(1) : '0.0';
 
-            // Calculate rank
-            const { data: allProfiles } = await supabase.from('profiles').select('id');
-            let rank = 1;
-            if (allProfiles) {
-                rank = Math.max(1, allProfiles.length - (worksCount || 0) + 1);
-                if (rank > allProfiles.length) rank = allProfiles.length;
-            }
+            const rankIndex = creatorRankings.findIndex((creator) => creator.id === userId);
+            const rank = rankIndex >= 0 ? rankIndex + 1 : 0;
 
             // Update DOM — set data-target AND text content directly
             const elWorks = document.getElementById('sd-stat-works');
@@ -96,11 +109,16 @@ export const StudentDashboardPage = {
             if (elLikes) { elLikes.setAttribute('data-target', totalLikes); elLikes.textContent = totalLikes; }
             if (elRating) { elRating.setAttribute('data-target', avgRating); elRating.textContent = avgRating; }
             if (elViews) { elViews.setAttribute('data-target', totalViews); elViews.textContent = totalViews; }
-            if (elRank) { elRank.setAttribute('data-target', rank); elRank.textContent = `#${rank}`; }
+            if (elRank) {
+                elRank.setAttribute('data-target', rank);
+                elRank.textContent = rank > 0 ? `#${rank}` : '#—';
+            }
 
             // Update new leaderboard rank badge if it exists
             const elRankBadge = document.getElementById('sd-user-rank-badge');
-            if (elRankBadge) elRankBadge.textContent = `#${rank}`;
+            if (elRankBadge) elRankBadge.textContent = rank > 0 ? `#${rank}` : '#--';
+
+            this.animateCounters();
 
         } catch (err) {
             console.warn('[StudentDashboard] Stats load error:', err);
@@ -210,23 +228,25 @@ export const StudentDashboardPage = {
             const subTitleMap = {};
             userSubs.forEach(s => { subTitleMap[s.id] = s.title; });
 
-            // Fetch recent likes on user's submissions (exclude self-likes)
-            const { data: recentLikes } = await supabase
-                .from('likes')
-                .select('id, submission_id, user_id, created_at, profiles!user_id(display_name)')
-                .in('submission_id', subIds)
-                .neq('user_id', userId)
-                .order('created_at', { ascending: false })
-                .limit(10);
+            const [recentLikesResult, recentRatingsResult] = await Promise.all([
+                supabase
+                    .from('likes')
+                    .select('id, submission_id, user_id, created_at, profiles!user_id(display_name)')
+                    .in('submission_id', subIds)
+                    .neq('user_id', userId)
+                    .order('created_at', { ascending: false })
+                    .limit(10),
+                supabase
+                    .from('ratings')
+                    .select('id, submission_id, user_id, rating, created_at, profiles!user_id(display_name)')
+                    .in('submission_id', subIds)
+                    .neq('user_id', userId)
+                    .order('created_at', { ascending: false })
+                    .limit(10)
+            ]);
 
-            // Fetch recent ratings on user's submissions (exclude self-ratings)
-            const { data: recentRatings } = await supabase
-                .from('ratings')
-                .select('id, submission_id, user_id, rating, created_at, profiles!user_id(display_name)')
-                .in('submission_id', subIds)
-                .neq('user_id', userId)
-                .order('created_at', { ascending: false })
-                .limit(10);
+            const recentLikes = recentLikesResult.data;
+            const recentRatings = recentRatingsResult.data;
 
             // Merge and sort by created_at
             const activities = [];
@@ -369,52 +389,15 @@ export const StudentDashboardPage = {
 
     async loadLeaderboard() {
         try {
-            const { data: allSubs, error } = await supabase
-                .from('submissions')
-                .select('id, author_id, profiles!author_id(display_name, avatar_url)')
-                .eq('status', 'approved')
-                .limit(200);
+            const creatorRankings = await this.getCreatorRankings();
 
-            if (error) throw error;
-
-            if (!allSubs || allSubs.length === 0) {
+            if (!creatorRankings || creatorRankings.length === 0) {
                 const podium = document.getElementById('sd-lb-podium');
                 if (podium) podium.innerHTML = '<p class="text-muted">No creators yet this week.</p>';
                 return;
             }
 
-            // Get like counts from stats table instead of loading all likes
-            const subIds = allSubs.map(s => s.id);
-            let likesMap = {};
-            const { data: statsData } = await supabase
-                .from('submission_stats')
-                .select('id, like_count')
-                .in('id', subIds);
-
-            if (statsData) {
-                statsData.forEach(s => {
-                    likesMap[s.id] = s.like_count || 0;
-                });
-            }
-
-            // Aggregate by author
-            const authorMap = {};
-            allSubs.forEach(sub => {
-                const authorId = sub.author_id;
-                const name = sub.profiles?.display_name || 'Anonymous';
-                const avatar = sub.profiles?.avatar_url || null;
-                const likes = likesMap[sub.id] || 0;
-
-                if (!authorMap[authorId]) {
-                    authorMap[authorId] = { name, avatar, points: 0 };
-                }
-                authorMap[authorId].points += likes;
-            });
-
-            // Store full top 10
-            this._leaderboardData = Object.values(authorMap)
-                .sort((a, b) => b.points - a.points)
-                .slice(0, 10);
+            this._leaderboardData = creatorRankings.slice(0, 10);
 
             // Render
             this.renderLeaderboard();
@@ -433,6 +416,53 @@ export const StudentDashboardPage = {
 
         const top3 = this._leaderboardData.slice(0, 3);
         const rest = this._leaderboardData.slice(3, 10);
+        const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char]));
+        const getAvatarMarkup = (creator, className) => {
+            const avatarUrl = creator?.avatar || creator?.avatar_url || creator?.profile_image_url || '';
+            const displayName = creator?.name || creator?.display_name || 'Creator';
+            const initial = displayName.trim().charAt(0).toUpperCase() || '?';
+            const toneIndex = ((initial.charCodeAt(0) || 65) % 4) + 1;
+
+            return avatarUrl
+                ? `<img src="${escapeHtml(avatarUrl)}" class="${className}" alt="${escapeHtml(displayName)}">`
+                : `<span class="${className} sd-avatar-fallback sd-avatar-tone-${toneIndex}" data-initial="${escapeHtml(initial)}">${escapeHtml(initial)}</span>`;
+        };
+        const getTodayPoints = (creator) => {
+            const rawValue = creator?.points_today ?? creator?.pointsToday ?? creator?.today_points ?? creator?.todayPoints ?? creator?.daily_points ?? creator?.dailyPoints ?? null;
+            const value = Number.isFinite(Number(rawValue)) ? Math.max(0, Number(rawValue)) : 0;
+            if (value > 0) {
+                return { className: 'positive', label: `+${value} today` };
+            }
+
+            return { className: 'muted', label: '0 today' };
+        };
+        const getMovementMeta = (creator) => {
+            const rawValue = creator?.rank_change_today ?? creator?.rankChangeToday ?? creator?.rank_delta ?? creator?.rankDelta ?? creator?.movement ?? null;
+            const value = Number.isFinite(Number(rawValue)) ? Number(rawValue) : null;
+
+            if (value === null || value === 0) {
+                return { className: 'neutral', label: '-' };
+            }
+
+            return value > 0
+                ? { className: 'up', label: `+${value}` }
+                : { className: 'down', label: `${value}` };
+        };
+        const getNextRankMeta = (creator, boardIndex) => {
+            const previousCreator = this._leaderboardData[boardIndex - 1];
+            const currentPoints = Number(creator?.points || 0);
+            const previousPoints = Number(previousCreator?.points || 0);
+            const targetPoints = previousPoints > currentPoints ? previousPoints : currentPoints + 1;
+            const progress = targetPoints > 0 ? Math.min(100, (currentPoints / targetPoints) * 100) : 0;
+
+            return { targetPoints, progress };
+        };
 
         // Map colors and badges for podium
         const podiumConfig = [
@@ -447,6 +477,109 @@ export const StudentDashboardPage = {
             top3[0] || { name: '---', points: 0, placeholder: true },
             top3[2] || { name: '---', points: 0, placeholder: true }
         ];
+
+        const confettiPieces = [
+            { left: '8%', top: '6%', rotate: '-18deg', color: '#ffd562', delay: '-0.9s', duration: '5.4s', driftX: '-10px', driftY: '54px', width: '9px', height: '18px', radius: '999px' },
+            { left: '16%', top: '2%', rotate: '16deg', color: '#8da7ff', delay: '-2.8s', duration: '6.1s', driftX: '9px', driftY: '58px', width: '10px', height: '16px', radius: '999px' },
+            { left: '24%', top: '12%', rotate: '-24deg', color: '#7c5cff', delay: '-1.7s', duration: '5.7s', driftX: '-7px', driftY: '48px', width: '8px', height: '15px', radius: '4px' },
+            { left: '31%', top: '5%', rotate: '24deg', color: '#ff9f67', delay: '-3.2s', duration: '6.4s', driftX: '11px', driftY: '56px', width: '11px', height: '18px', radius: '999px' },
+            { left: '39%', top: '16%', rotate: '-14deg', color: '#6dd3c7', delay: '-0.6s', duration: '5.8s', driftX: '-8px', driftY: '46px', width: '8px', height: '14px', radius: '999px' },
+            { left: '47%', top: '1%', rotate: '12deg', color: '#ffd562', delay: '-2.1s', duration: '6.2s', driftX: '6px', driftY: '60px', width: '10px', height: '17px', radius: '5px' },
+            { left: '56%', top: '10%', rotate: '-18deg', color: '#ec7ab7', delay: '-3.6s', duration: '5.6s', driftX: '-9px', driftY: '50px', width: '9px', height: '16px', radius: '999px' },
+            { left: '64%', top: '4%', rotate: '22deg', color: '#8da7ff', delay: '-1.3s', duration: '6.3s', driftX: '8px', driftY: '58px', width: '10px', height: '16px', radius: '4px' },
+            { left: '72%', top: '15%', rotate: '-10deg', color: '#ffd562', delay: '-2.4s', duration: '5.9s', driftX: '-6px', driftY: '44px', width: '8px', height: '14px', radius: '999px' },
+            { left: '80%', top: '6%', rotate: '18deg', color: '#7c5cff', delay: '-4.1s', duration: '6.5s', driftX: '10px', driftY: '54px', width: '10px', height: '18px', radius: '999px' },
+            { left: '88%', top: '11%', rotate: '-16deg', color: '#6dd3c7', delay: '-1.9s', duration: '5.5s', driftX: '-8px', driftY: '48px', width: '9px', height: '15px', radius: '4px' }
+        ];
+
+        podium.innerHTML = `
+            <div class="sd-lb-celebration">
+                <div class="sd-lb-confetti" aria-hidden="true">
+                    ${confettiPieces.map((piece) => `<span class="sd-lb-confetti-piece" style="left:${piece.left};top:${piece.top};--piece-rotate:${piece.rotate};--piece-color:${piece.color};--confetti-delay:${piece.delay};--confetti-duration:${piece.duration};--confetti-drift-x:${piece.driftX};--confetti-drift-y:${piece.driftY};--piece-width:${piece.width};--piece-height:${piece.height};--piece-radius:${piece.radius};"></span>`).join('')}
+                </div>
+                <div class="sd-lb-stars" aria-hidden="true">
+                    <span class="sd-lb-star sd-lb-star-a">★</span>
+                    <span class="sd-lb-star sd-lb-star-b">★</span>
+                    <span class="sd-lb-star sd-lb-star-c">★</span>
+                    <span class="sd-lb-star sd-lb-star-d">★</span>
+                </div>
+                <div class="sd-lb-podium-stage sd-podium-layout-v2">
+                    ${reordered.map((creator, i) => {
+                        const config = podiumConfig[i];
+                        const creatorName = escapeHtml(creator.name || '---');
+                        const avatarHtml = getAvatarMarkup(creator, 'sd-lb-avatar-img');
+                        const topPoints = top3[0]?.points || 1;
+                        const progress = creator.placeholder ? 0 : Math.min(100, (creator.points / topPoints) * 100);
+                        const isFirst = config.rank === 1;
+                        const isCurrentUser = creator?.id && App.user?.id && creator.id === App.user.id;
+                        const crownHtml = isFirst ? '<div class="sd-podium-crown" aria-hidden="true">👑</div>' : '';
+
+                        return `
+                            <div class="sd-podium-item ${config.class} ${creator.placeholder ? 'placeholder' : ''} ${isCurrentUser ? 'current-user' : ''}">
+                                <div class="sd-podium-avatar-wrapper">
+                                    ${crownHtml}
+                                    <div class="sd-podium-avatar">${avatarHtml}</div>
+                                    <div class="sd-podium-rank-badge">${config.rank}</div>
+                                </div>
+                                <div class="sd-podium-base">
+                                    <div class="sd-podium-top-ring"></div>
+                                    <div class="sd-podium-info">
+                                        <span class="sd-podium-name" title="${creatorName}">${creatorName}</span>
+                                        <span class="sd-podium-badge">${config.badge}</span>
+                                        <span class="sd-podium-pts">${creator.points} pts</span>
+                                        <div class="sd-podium-progress"><div class="sd-pp-inner" style="width: ${progress}%"></div></div>
+                                    </div>
+                                    <div class="sd-podium-foot">
+                                        <span class="sd-podium-foot-value">${creator.points} pts</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+
+        if (runners) {
+            runners.innerHTML = rest.length > 0 ? rest.map((creator, i) => {
+                const rank = i + 4;
+                const avatarHtml = getAvatarMarkup(creator, 'sd-lb-avatar-img');
+                const movement = getMovementMeta(creator);
+                const todayMeta = getTodayPoints(creator);
+                const { targetPoints, progress } = getNextRankMeta(creator, rank - 1);
+                const isCurrentUser = creator?.id && App.user?.id && creator.id === App.user.id;
+                const creatorName = escapeHtml(creator.name || 'Unknown creator');
+
+                return `
+                    <div class="sd-lb-compact-row ${isCurrentUser ? 'is-current-user' : ''}" style="--i: ${i}">
+                        <div class="sd-lb-compact-rank">
+                            <span class="sd-lb-compact-rank-value">${rank}</span>
+                            <span class="sd-lb-compact-move ${movement.className}">${movement.label}</span>
+                        </div>
+                        <div class="sd-lb-compact-avatar">${avatarHtml}</div>
+                        <div class="sd-lb-compact-copy">
+                            <span class="sd-lb-compact-name">${creatorName}</span>
+                            <span class="sd-lb-compact-today ${todayMeta.className}">${todayMeta.label}</span>
+                        </div>
+                        <div class="sd-lb-compact-score">
+                            <span class="sd-lb-compact-points">${creator.points} pts</span>
+                            <span class="sd-lb-compact-next">Next: ${targetPoints}</span>
+                        </div>
+                        <div class="sd-lb-compact-progress">
+                            <div class="sd-lb-compact-progress-meta">
+                                <span class="sd-lb-compact-progress-current">${creator.points} pts</span>
+                                <span class="sd-lb-compact-progress-target">${targetPoints}</span>
+                            </div>
+                            <div class="sd-lb-compact-progress-track">
+                                <div class="sd-lb-compact-progress-fill" style="width: ${progress}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('') : '<p class="text-muted" style="text-align:center; font-size: 0.8rem; padding: 10px;">Climb higher to reach the top!</p>';
+        }
+
+        return;
 
         // Generate Confetti HTML
         let confettiHtml = '<div class="lb-confetti-container">';
