@@ -286,7 +286,7 @@ export const UploadPage = {
                         author_id: user.id,
                         title: formData.get('title'),
                         description: formData.get('description') || '',
-                        category: formData.get('category'),
+                        category: this.normalizeSubmissionCategory(formData.get('category')),
                         content_type: 'image',
                         file_type: fullSizeImage?.type || 'image/webp',
                         file_size: fullSizeImage?.size || 0,
@@ -300,6 +300,7 @@ export const UploadPage = {
                         audience_level: formData.get('audience_level')
                     };
 
+                    console.log('Submitting category:', submissionData.category);
                     const { error } = await API.uploadImagePost(
                         submissionData,
                         fullSizeImage,
@@ -320,7 +321,7 @@ export const UploadPage = {
                     const submissionData = {
                         author_id: user.id,
                         title: formData.get('title'),
-                        category: formData.get('category'),
+                        category: this.normalizeSubmissionCategory(formData.get('category')),
                         themes: selectedThemes,
                         audience_level: formData.get('audience_level'),
                         description: formData.get('description') || '',
@@ -360,6 +361,7 @@ export const UploadPage = {
                     }
 
                     console.log('Submitting standard post:', submissionData);
+                    console.log('Submitting category:', submissionData.category);
                     const { error } = await API.uploadSubmission(submissionData, fileToUpload, thumbnailBlob, displayBlob);
 
                     if (error) {
@@ -440,6 +442,13 @@ export const UploadPage = {
 
     getSelectedThemes() {
         return Array.from(document.querySelectorAll('input[name="themes"]:checked')).map(cb => cb.value);
+    },
+
+    normalizeSubmissionCategory(category) {
+        const rawValue = String(category || '').trim();
+        const normalizedValue = rawValue.toLowerCase();
+        const CATEGORY_MAP = { Lessons: 'lessons', lessons: 'lessons' };
+        return CATEGORY_MAP[rawValue] || CATEGORY_MAP[normalizedValue] || normalizedValue || null;
     },
 
     validateProjectFile(file) {
@@ -676,7 +685,7 @@ export const UploadPage = {
 
                     const updateData = {
                         title: formData.get('title'),
-                        category: formData.get('category'),
+                        category: this.normalizeSubmissionCategory(formData.get('category')),
                         description: formData.get('description') || '',
                         themes: this.getSelectedThemes(),
                         audience_level: formData.get('audience_level') || 'General',
@@ -702,6 +711,7 @@ export const UploadPage = {
                             displayBlob = versions.display;
                         }
                     }
+                    console.log('Submitting category:', updateData.category);
 
                     const { error: updateError } = await API.updateSubmission(id, updateData, thumbnailBlob, displayBlob);
 
