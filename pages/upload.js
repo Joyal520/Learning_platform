@@ -546,12 +546,8 @@ export const UploadPage = {
 
     normalizeSubmissionCategory(category) {
         const rawValue = String(category || '').trim();
-        const normalizedValue = rawValue.toLowerCase();
-        const CATEGORY_MAP = {
-            lesson: 'lessons',
-            lessons: 'lessons',
-        };
-        return CATEGORY_MAP[normalizedValue] || null;
+        if (!rawValue) return null;
+        return UI.normalizeCategoryValue(rawValue);
     },
 
     normalizeAudienceLevel(level) {
