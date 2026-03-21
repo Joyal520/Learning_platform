@@ -13,6 +13,7 @@ export const UI = {
         media: '/assets/images/media.png',
         fun: '/assets/images/fun.png'
     },
+    _audioR2PublicBaseUrlPromise: null,
 
     contentTypeOptions: [
         { value: 'short_stories', label: 'Short Story', navLabel: 'Short Stories', group: 'Stories' },
@@ -833,28 +834,47 @@ export const UI = {
         };
     },
 
-    getCategoryAssetPath(category) {
-        const normalized = String(category || '').trim().toLowerCase();
-        const categoryAssetMap = {
-            short_stories: 'assets/images/story.png',
-            long_stories: 'assets/images/story.png',
-            comics: 'assets/images/story.png',
-            essays: 'assets/images/writing.png',
-            articles: 'assets/images/writing.png',
-            speech: 'assets/images/writing.png',
-            poems: 'assets/images/literature.png',
-            classroom_play: 'assets/images/literature.png',
-            conversations: 'assets/images/literature.png',
-            lessons: 'assets/images/learning.png',
-            flashcards: 'assets/images/learning.png',
-            presentations: 'assets/images/learning.png',
-            images: 'assets/images/media.png',
-            songs: 'assets/images/media.png',
-            puzzle: 'assets/images/fun.png',
-            game: 'assets/images/fun.png'
-        };
+    async getAudioR2PublicBaseUrl() {
+        if (!this._audioR2PublicBaseUrlPromise) {
+            this._audioR2PublicBaseUrlPromise = fetch('/api/r2-public-config')
+                .then(async (response) => {
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || !payload.publicBaseUrl) {
+                        throw new Error(payload.error || 'R2 public URL not available.');
+                    }
+                    return String(payload.publicBaseUrl).replace(/\/+$/, '');
+                });
+        }
 
-        return categoryAssetMap[normalized] || 'assets/images/default.png';
+        return this._audioR2PublicBaseUrlPromise;
+    },
+
+    async resolveAudioSourceUrl(submission) {
+        if (submission?.file_url) {
+            return submission.file_url;
+        }
+
+        if (submission?.storage_provider === 'r2' && submission?.file_path && !/^https?:\/\//i.test(submission.file_path)) {
+            try {
+                const publicBaseUrl = await this.getAudioR2PublicBaseUrl();
+                return `${publicBaseUrl}/${String(submission.file_path).replace(/^\/+/, '')}`;
+            } catch (error) {
+                console.warn('[UI] Falling back from R2 audio source lookup:', error);
+            }
+        }
+
+        if (submission?.file_path && !/^https?:\/\//i.test(submission.file_path)) {
+            return this.resolveMediaUrl(submission.file_path);
+        }
+
+        return submission?.public_url || submission?.file_path || null;
+    },
+
+    renderAudioVisualizerMarkup() {
+        const barHeights = [16, 30, 56, 74, 48, 22, 12, 18, 36, 58, 26, 12, 18, 34, 54, 42, 24, 68, 38, 22, 30, 48, 34];
+        return barHeights.map((height, index) => `
+            <span class="audio-feed-wave-bar" style="--bar-height:${height}px; --bar-index:${index};"></span>
+        `).join('');
     },
 
     renderCard(sub, badgeObj = null) {
@@ -862,6 +882,7 @@ export const UI = {
         const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
         const color = this.getCategoryColor(sub.category, sub.content_type);
         const categoryLabel = this.getContentTypeLabel(sub.category, sub.content_type);
+        const title = sub.title || 'Untitled';
 
         const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
         const thumbnailUrl = previewUrl;
@@ -873,7 +894,7 @@ export const UI = {
                       class="card-thumbnail-img" 
                       loading="lazy" 
                       decoding="async" 
-                      alt="${sub.title}"
+                      alt="${title}"
                       onerror="if(this.dataset.fallbackApplied==='true'){this.style.opacity='0'; this.parentElement.querySelector('.card-thumb-gradient').style.display='flex'; return;} this.dataset.fallbackApplied='true'; this.src='${fallbackThumbnailUrl}';">
                  <div class="card-thumbnail card-thumb-gradient" style="display:none; background:linear-gradient(135deg, ${color}22, ${color}44); position:absolute; top:0; left:0;">
                     <span class="thumb-emoji">${this.getCategoryEmoji(sub.category, sub.content_type)}</span>
@@ -891,6 +912,126 @@ export const UI = {
             </div>
         ` : '';
 
+        if (normalizedCategory === 'songs' || sub.content_type === 'audio' || sub.file_type?.startsWith('audio/')) {
+            const authorName = sub.profiles?.display_name || 'Anonymous';
+            const initials = authorName.charAt(0).toUpperCase();
+            const shareUrl = this.createWhatsAppShareUrl(title, sub.id);
+            const audioArtworkUrl = previewUrl || fullUrl || fallbackThumbnailUrl;
+            const activeRating = Math.round(Number(stats.avg_rating) || 0);
+            const ratingControls = Array.from({ length: 5 }, (_, index) => {
+                const value = index + 1;
+                return `
+                    <button class="audio-feed-rate-star ${value <= activeRating ? 'is-active' : ''}"
+                            type="button"
+                            data-audio-action="rate"
+                            data-rating="${value}"
+                            aria-label="Rate ${value} star${value === 1 ? '' : 's'}">★</button>
+                `;
+            }).join('');
+
+            return `
+                <article class="content-card clay-card audio-feed-card animate-fade-in" data-id="${sub.id}">
+                    <div class="audio-feed-shell">
+                        <div class="audio-feed-creator-row">
+                            <div class="audio-feed-avatar">
+                                ${sub.profiles?.avatar_url
+                                    ? `<img src="${sub.profiles.avatar_url}" alt="${authorName}" class="audio-feed-avatar-img">`
+                                    : `<span class="audio-feed-avatar-fallback">${initials}</span>`}
+                            </div>
+                            <div class="audio-feed-creator-copy">
+                                <h3 class="audio-feed-creator-name">${authorName}</h3>
+                            </div>
+                        </div>
+
+                        <div class="audio-feed-media">
+                            <img src="${audioArtworkUrl}"
+                                 class="audio-feed-cover"
+                                 loading="lazy"
+                                 decoding="async"
+                                 alt="${title}"
+                                 onerror="if(this.dataset.fallbackApplied==='true'){return;} this.dataset.fallbackApplied='true'; this.src='${fallbackThumbnailUrl}';">
+                            <div class="audio-feed-media-overlay"></div>
+                            <div class="audio-feed-media-sheen"></div>
+                            <span class="audio-feed-badge">${categoryLabel}</span>
+
+                            <div class="audio-feed-wave" aria-hidden="true">
+                                ${this.renderAudioVisualizerMarkup()}
+                            </div>
+
+                            <button class="audio-feed-play" type="button" data-audio-action="toggle" aria-label="Play audio">
+                                <span class="audio-feed-play-icon audio-feed-play-icon-play">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M8 6.5v11l9-5.5z"></path>
+                                    </svg>
+                                </span>
+                                <span class="audio-feed-play-icon audio-feed-play-icon-pause">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M8 6h3.5v12H8z"></path>
+                                        <path d="M12.5 6H16v12h-3.5z"></path>
+                                    </svg>
+                                </span>
+                            </button>
+
+                            <button class="audio-feed-loop" type="button" data-audio-action="loop" aria-label="Enable loop">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M17 1l4 4-4 4"></path>
+                                    <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                                    <path d="M7 23l-4-4 4-4"></path>
+                                    <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+                                </svg>
+                            </button>
+
+                            <div class="audio-feed-progress" data-audio-action="seek" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                <div class="audio-feed-progress-fill"></div>
+                            </div>
+
+                            <audio class="audio-feed-native" preload="none"></audio>
+                        </div>
+
+                        <div class="audio-feed-footer">
+                            <div class="audio-feed-meta">
+                                <h3 class="card-title audio-feed-card-title">${title}</h3>
+                                <div class="audio-feed-stats">
+                                    <span class="audio-feed-stat audio-feed-stat-rating">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="m12 2.5 2.9 5.87 6.48.94-4.69 4.57 1.11 6.47L12 17.32 6.2 20.35l1.11-6.47L2.62 9.31l6.48-.94Z"></path>
+                                        </svg>
+                                        <span class="audio-feed-rating-value">${Number(stats.avg_rating).toFixed(1)}</span>
+                                    </span>
+                                    <button class="audio-feed-stat audio-feed-like-btn" type="button" data-audio-action="like" aria-label="Like audio">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="m12 21-1.45-1.32C5.4 15.02 2 11.93 2 8.13 2 5.04 4.42 2.5 7.5 2.5c1.74 0 3.41.81 4.5 2.09A5.94 5.94 0 0 1 16.5 2.5C19.58 2.5 22 5.04 22 8.13c0 3.8-3.4 6.89-8.55 11.55Z"></path>
+                                        </svg>
+                                        <span class="audio-feed-like-count">${stats.like_count || 0}</span>
+                                    </button>
+                                    <span class="audio-feed-stat">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M1.5 12s3.8-7 10.5-7 10.5 7 10.5 7-3.8 7-10.5 7S1.5 12 1.5 12Z"></path>
+                                            <circle cx="12" cy="12" r="3.2"></circle>
+                                        </svg>
+                                        ${stats.view_count || 0}
+                                    </span>
+                                </div>
+
+                                <div class="audio-feed-rating-row">
+                                    <span class="audio-feed-rating-label">Rate</span>
+                                    <div class="audio-feed-rating-stars" aria-label="Rate this audio">
+                                        ${ratingControls}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="audio-feed-share" title="Share on WhatsApp" aria-label="Share on WhatsApp">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.08.54 4.11 1.56 5.9L0 24l6.37-1.67a11.86 11.86 0 0 0 5.69 1.45h.01c6.55 0 11.89-5.34 11.9-11.9a11.82 11.82 0 0 0-3.45-8.4Zm-8.46 18.3h-.01a9.87 9.87 0 0 1-5.04-1.38l-.36-.22-3.78.99 1.01-3.69-.24-.38a9.82 9.82 0 0 1-1.52-5.24c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.11 1.03 6.98 2.9a9.82 9.82 0 0 1 2.89 6.99c0 5.46-4.44 9.9-9.89 9.9Zm5.42-7.4c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.29-.76.96-.94 1.16-.17.2-.35.22-.64.07-.3-.14-1.26-.46-2.39-1.47-.89-.79-1.49-1.76-1.66-2.06-.18-.29-.02-.45.13-.6.13-.14.3-.35.45-.53.15-.17.2-.29.3-.49.1-.2.05-.37-.03-.53-.07-.14-.67-1.61-.91-2.2-.24-.58-.49-.5-.67-.51h-.58c-.19 0-.5.07-.76.37-.27.29-1.03 1-1.03 2.44 0 1.44 1.05 2.83 1.2 3.03.15.2 2.07 3.16 5.02 4.43.7.31 1.25.49 1.68.63.72.23 1.38.2 1.89.12.58-.08 1.76-.72 2.01-1.41.25-.69.25-1.28.17-1.41-.07-.12-.27-.2-.56-.34Z"></path>
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
+                </article>
+            `;
+        }
+
         // NEW: Image-First Feed Card for 'images' category
         if (normalizedCategory === 'images' || sub.content_type === 'image') {
             return `
@@ -901,14 +1042,14 @@ export const UI = {
                              class="feed-img" 
                              loading="lazy" 
                              decoding="async" 
-                             alt="${sub.title}"
+                             alt="${title}"
                              onerror="if(this.dataset.fallbackApplied==='true'){this.src='${fallbackThumbnailUrl}'; return;} this.dataset.fallbackApplied='true'; this.src='${fullUrl || fallbackThumbnailUrl}';">
                         <div class="image-overlay-category">
                             <span class="badge badge-category" style="--cat-color:${color}">${this.getCategoryEmoji(sub.category, sub.content_type)} ${categoryLabel}</span>
                         </div>
                     </div>
                     <div class="card-body feed-body">
-                        <h3 class="card-title">${sub.title}</h3>
+                        <h3 class="card-title">${title}</h3>
                         ${sub.description ? `<p class="feed-description">${sub.description}</p>` : ''}
                         
                         <div class="feed-author-row">
@@ -947,7 +1088,7 @@ export const UI = {
                 ${thumbnailHtml}
                 <div class="card-body">
                     <span class="badge badge-category" style="--cat-color:${color}">${categoryLabel}</span>
-                    <h3 class="card-title">${sub.title}</h3>
+                    <h3 class="card-title">${title}</h3>
                     <p class="card-author">By ${sub.profiles?.display_name || 'Anonymous'}</p>
                     <div class="card-footer">
                         <div class="card-stats">

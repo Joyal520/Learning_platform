@@ -36,6 +36,15 @@ function resolveApiUrl(path) {
     return new URL(normalizedPath, window.location.origin).toString();
 }
 
+function formatServerApiError(payload, response) {
+    const missingEnv = Array.isArray(payload?.missingEnv) ? payload.missingEnv.filter(Boolean) : [];
+    if (payload?.code === 'R2_CONFIG_MISSING' && missingEnv.length > 0) {
+        return `Upload is not configured correctly on this environment. Missing ${missingEnv.join(', ')}.`;
+    }
+
+    return payload?.error || `Request failed with status ${response.status}.`;
+}
+
 async function callServerApi(path, options = {}) {
     const accessToken = await getAccessToken();
     if (!accessToken) {
@@ -53,9 +62,11 @@ async function callServerApi(path, options = {}) {
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-        const error = new Error(payload.error || `Request failed with status ${response.status}.`);
+        const error = new Error(formatServerApiError(payload, response));
         error.status = response.status;
         error.url = apiUrl;
+        error.code = payload?.code || null;
+        error.missingEnv = Array.isArray(payload?.missingEnv) ? payload.missingEnv : [];
         throw error;
     }
 
@@ -87,11 +98,27 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
         })
     });
 
+    if (assetType === 'project') {
+        console.log('[API] Project signed upload ready:', {
+            originalFilename: filename,
+            objectKey: signedUpload.objectKey,
+            publicUrl: signedUpload.publicUrl
+        });
+    }
+
     const uploadResponse = await fetch(signedUpload.uploadUrl, {
         method: 'PUT',
         headers: signedUpload.headers,
         body: file
     });
+
+    if (assetType === 'project') {
+        console.log('[API] Project PUT completed:', {
+            objectKey: signedUpload.objectKey,
+            status: uploadResponse.status,
+            ok: uploadResponse.ok
+        });
+    }
 
     if (!uploadResponse.ok) {
         throw new Error(`Upload failed for ${assetType}: ${uploadResponse.status} ${uploadResponse.statusText}`);
@@ -121,7 +148,44 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
         throw new Error(`Upload verification failed for ${assetType}: ${signedUpload.objectKey}`);
     }
 
+    if (assetType === 'project') {
+        console.log('[API] Project upload verified in R2:', {
+            objectKey: signedUpload.objectKey,
+            exists: verification.exists,
+            listed: verification.listed
+        });
+    }
+
     return signedUpload;
+}
+
+function createUploadPreflightId() {
+    if (globalThis.crypto?.randomUUID) {
+        return globalThis.crypto.randomUUID();
+    }
+
+    return `preflight-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function preflightR2Upload({ assetType, file, filename = file?.name, contentType = file?.type }) {
+    if (!file) return null;
+
+    await callServerApi('/api/r2-sign-upload', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            submissionId: createUploadPreflightId(),
+            assetType,
+            filename,
+            contentType,
+            size: file.size,
+            preflight: true
+        })
+    });
+
+    return true;
 }
 
 async function deleteR2Assets(keysOrUrls, submissionId) {
@@ -201,69 +265,6 @@ export const API = {
         return updateObject;
     },
 
-    async getTopCreators(limit = 10) {
-        try {
-            const { data: profiles, error } = await supabase
-                .from('profiles')
-                .select('id, display_name, avatar_url')
-                .order('display_name', { ascending: true });
-
-            if (error) throw error;
-
-            const { data: approvedSubmissions, error: submissionsError } = await supabase
-                .from('submissions')
-                .select('id, author_id')
-                .eq('status', 'approved');
-
-            if (submissionsError) throw submissionsError;
-
-            const submissionIds = (approvedSubmissions || []).map((submission) => submission.id);
-            const statsMap = await this.getStatsForSubmissions(submissionIds);
-            const scoreByAuthor = {};
-
-            (approvedSubmissions || []).forEach((submission) => {
-                const stats = statsMap[submission.id] || { avg_rating: 0, like_count: 0, view_count: 0 };
-                const score = (Number(stats.like_count) || 0)
-                    + (Number(stats.view_count) || 0)
-                    + Math.round((Number(stats.avg_rating) || 0) * 20);
-
-                scoreByAuthor[submission.author_id] = (scoreByAuthor[submission.author_id] || 0) + score;
-            });
-
-            const creators = (profiles || [])
-                .map((profile) => {
-                    const displayName = profile.display_name || 'Creator';
-                    const points = scoreByAuthor[profile.id] || 0;
-
-                    return {
-                        id: profile.id,
-                        name: displayName,
-                        display_name: displayName,
-                        avatar: profile.avatar_url || null,
-                        avatar_url: profile.avatar_url || null,
-                        title: 'Student',
-                        points,
-                        rank: 0,
-                        points_today: 0
-                    };
-                })
-                .sort((a, b) => {
-                    if (b.points !== a.points) return b.points - a.points;
-                    return a.name.localeCompare(b.name);
-                })
-                .slice(0, limit)
-                .map((creator, index) => ({
-                    ...creator,
-                    rank: index + 1
-                }));
-
-            return { data: creators, error: null };
-        } catch (error) {
-            console.error('[API] Error fetching top creators:', error);
-            return { data: [], error };
-        }
-    },
-
     async getSubmissions(category = null, sort = 'created_at', limit = 20, offset = 0) {
         let query = supabase
             .from('submissions')
@@ -272,13 +273,11 @@ export const API = {
                 title,
                 description,
                 category,
-                author_id,
                 themes,
+                author_id,
                 thumbnail_path,
                 thumbnail_url,
                 image_url,
-                file_path,
-                file_url,
                 content_type,
                 status,
                 created_at,
@@ -297,23 +296,7 @@ export const API = {
             .order(sort, { ascending: false })
             .range(offset, offset + limit - 1);
 
-        if (error || !data?.length) {
-            return { data, error };
-        }
-
-        const statsMap = await this.getStatsForSubmissions(data.map((submission) => submission.id));
-        const normalizedData = data.map((submission) => {
-            const stats = statsMap[submission.id] || { avg_rating: 0, like_count: 0, view_count: 0 };
-
-            return {
-                ...submission,
-                thumbnail: submission.thumbnail_url || submission.thumbnail_path || submission.image_url || submission.file_url || null,
-                stats,
-                submission_stats: [stats]
-            };
-        });
-
-        return { data: normalizedData, error: null };
+        return { data, error };
     },
 
     async getStatsForSubmissions(ids) {
@@ -335,6 +318,90 @@ export const API = {
         }
     },
 
+    async getTopCreators(limit = 10) {
+        const resolvedLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 500)) : 500;
+        const { data: submissions, error } = await supabase
+            .from('submissions')
+            .select(`
+                id,
+                author_id,
+                category,
+                content_type,
+                profiles!author_id(display_name, avatar_url)
+            `)
+            .eq('status', 'approved')
+            .limit(500);
+
+        if (error) {
+            return { data: [], error };
+        }
+
+        if (!submissions || submissions.length === 0) {
+            return { data: [], error: null };
+        }
+
+        const statsMap = await this.getStatsForSubmissions(submissions.map((submission) => submission.id));
+        const creatorMap = new Map();
+
+        submissions.forEach((submission) => {
+            const authorId = submission.author_id;
+            if (!authorId) return;
+
+            const profile = submission.profiles || {};
+            const stats = statsMap[submission.id] || { avg_rating: 0, like_count: 0, view_count: 0 };
+            const points = this.calculateCreatorPoints(stats);
+            const title = this.getCreatorTitle(submission);
+
+            if (!creatorMap.has(authorId)) {
+                creatorMap.set(authorId, {
+                    id: authorId,
+                    name: profile.display_name || 'Anonymous Creator',
+                    avatar: profile.avatar_url || null,
+                    points: 0,
+                    title,
+                    topSubmissionPoints: points
+                });
+            }
+
+            const creator = creatorMap.get(authorId);
+            creator.points += points;
+            if (points >= creator.topSubmissionPoints) {
+                creator.topSubmissionPoints = points;
+                creator.title = title;
+            }
+        });
+
+        const data = [...creatorMap.values()]
+            .sort((a, b) => {
+                if (b.points !== a.points) return b.points - a.points;
+                return a.name.localeCompare(b.name);
+            })
+            .slice(0, resolvedLimit)
+            .map(({ topSubmissionPoints, ...creator }) => creator);
+
+        return { data, error: null };
+    },
+
+    calculateCreatorPoints(stats = {}) {
+        const likeCount = Number(stats.like_count) || 0;
+        const viewCount = Number(stats.view_count) || 0;
+        const avgRating = Number(stats.avg_rating) || 0;
+        return (likeCount * 5) + viewCount + Math.round(avgRating * 10);
+    },
+
+    getCreatorTitle(submission = {}) {
+        const category = String(submission.category || '');
+        const contentType = String(submission.content_type || '');
+        const label = `${category} ${contentType}`.toLowerCase();
+
+        if (label.includes('story')) return 'Young Storyteller';
+        if (label.includes('writing') || label.includes('poem') || label.includes('essay')) return 'Aspiring Writer';
+        if (label.includes('image') || label.includes('art') || label.includes('media')) return 'Creative Artist';
+        if (label.includes('learning') || label.includes('tool') || label.includes('project')) return 'Curious Builder';
+        if (label.includes('fun')) return 'Imaginative Maker';
+        return 'Creative Explorer';
+    },
+
     async uploadSubmission(submissionData, file = null, thumbnailBlob = null, displayBlob = null) {
         console.log('[API] === UPLOAD START ===');
         let createdSubmissionId = null;
@@ -349,6 +416,31 @@ export const API = {
 
             const payloadStr = JSON.stringify(submissionData);
             console.log(`[API] Payload size: ${(payloadStr.length / 1024).toFixed(2)} KB`);
+
+            if (thumbnailBlob) {
+                await preflightR2Upload({
+                    assetType: 'thumbnail',
+                    file: thumbnailBlob,
+                    filename: 'thumbnail-preflight.webp',
+                    contentType: thumbnailBlob.type || 'image/webp'
+                });
+            }
+
+            if (displayBlob) {
+                await preflightR2Upload({
+                    assetType: 'display',
+                    file: displayBlob,
+                    filename: 'display-preflight.webp',
+                    contentType: displayBlob.type || 'image/webp'
+                });
+            }
+
+            if (file) {
+                await preflightR2Upload({
+                    assetType: file.type?.startsWith('audio/') ? 'audio' : 'project',
+                    file
+                });
+            }
 
             console.log('[API] Sending insert request...');
             const { data: sub, error: insertError } = await withTimeout(
@@ -517,6 +609,21 @@ export const API = {
                 console.warn('[API] No active session for image upload.');
             }
 
+            await preflightR2Upload({
+                assetType: 'image',
+                file: imageBlob,
+                contentType: imageBlob?.type || submissionData.mime_type || 'image/webp'
+            });
+
+            if (thumbnailBlob) {
+                await preflightR2Upload({
+                    assetType: 'thumbnail',
+                    file: thumbnailBlob,
+                    filename: 'thumbnail-preflight.webp',
+                    contentType: thumbnailBlob.type || 'image/webp'
+                });
+            }
+
             console.log('[API] Inserting image post record...');
             const { data: sub, error: insertError } = await withTimeout(
                 supabase.from('submissions').insert([submissionData]).select('id').single(),
@@ -610,6 +717,59 @@ export const API = {
                 }
             }
             return { error: err };
+        }
+    },
+
+    async getSubmissionPlaybackData(submissionId) {
+        try {
+            const { data, error } = await supabase
+                .from('submissions')
+                .select('id, file_path, file_url, file_type, mime_type, storage_provider, content_type')
+                .eq('id', submissionId)
+                .maybeSingle();
+
+            return { data, error };
+        } catch (err) {
+            console.error('[API] Submission playback fetch error:', err);
+            return { data: null, error: err };
+        }
+    },
+
+    async rateSubmission(submissionId, userId, rating) {
+        try {
+            const parsedRating = Math.max(1, Math.min(5, Number(rating) || 0));
+            const { error } = await supabase
+                .from('ratings')
+                .upsert({
+                    submission_id: submissionId,
+                    user_id: userId,
+                    rating: parsedRating
+                }, { onConflict: 'submission_id,user_id' });
+
+            if (error) throw error;
+
+            const { data: ratings, error: ratingsError } = await supabase
+                .from('ratings')
+                .select('rating')
+                .eq('submission_id', submissionId);
+
+            if (ratingsError) throw ratingsError;
+
+            const ratingCount = ratings?.length || 0;
+            const ratingSum = (ratings || []).reduce((sum, item) => sum + Number(item.rating || 0), 0);
+            const avgRating = ratingCount > 0 ? ratingSum / ratingCount : 0;
+
+            return {
+                data: {
+                    avgRating,
+                    ratingCount,
+                    userRating: parsedRating
+                },
+                error: null
+            };
+        } catch (err) {
+            console.error('[API] Rating error:', err);
+            return { data: null, error: err };
         }
     },
 
