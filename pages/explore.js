@@ -3,6 +3,8 @@ import { UI } from '../assets/js/ui.js';
 import App from '../assets/js/app.js';
 
 export const ExplorePage = {
+    _stateStorageKey: 'edtechra_explore_state',
+    _restoreFlagKey: 'edtechra_explore_restore_once',
     _currentCategory: 'all',
     _currentGroup: null,
     _currentTheme: null,
@@ -21,6 +23,42 @@ export const ExplorePage = {
         return window.matchMedia('(min-width: 993px)').matches ? 4 : 6;
     },
 
+    _readSavedState() {
+        try {
+            const raw = sessionStorage.getItem(this._stateStorageKey);
+            return raw ? JSON.parse(raw) : null;
+        } catch (_) {
+            return null;
+        }
+    },
+
+    _persistState(searchValue = '', scrollY = window.scrollY) {
+        const payload = {
+            category: this._currentCategory || 'all',
+            group: this._currentGroup || null,
+            theme: this._currentTheme || null,
+            search: String(searchValue || ''),
+            displayCount: this._displayCount,
+            scrollY: Math.max(0, Number(scrollY) || 0)
+        };
+
+        try {
+            sessionStorage.setItem(this._stateStorageKey, JSON.stringify(payload));
+        } catch (_) {
+            // Ignore storage failures and keep Explore functional.
+        }
+    },
+
+    _consumeRestoreFlag() {
+        try {
+            const shouldRestore = sessionStorage.getItem(this._restoreFlagKey) === 'true';
+            sessionStorage.removeItem(this._restoreFlagKey);
+            return shouldRestore;
+        } catch (_) {
+            return false;
+        }
+    },
+
     async init() {
         this._currentCategory = 'all';
         this._currentGroup = null;
@@ -30,6 +68,17 @@ export const ExplorePage = {
         this._displayCount = this._getBaseDisplayCount();
         this._topCreators = [];
         this._isSearchFocused = false;
+        const shouldRestoreState = this._consumeRestoreFlag();
+        const savedState = shouldRestoreState ? this._readSavedState() : null;
+
+        if (savedState) {
+            this._currentCategory = savedState.category || 'all';
+            this._currentGroup = savedState.group || null;
+            this._currentTheme = savedState.theme || null;
+            this._displayCount = Number(savedState.displayCount) > 0
+                ? Number(savedState.displayCount)
+                : this._getBaseDisplayCount();
+        }
 
         // Always re-query DOM elements fresh (avoids stale reference from cloning)
         const getSearchInput = () => document.querySelector('#search-input');
@@ -47,6 +96,7 @@ export const ExplorePage = {
             const shouldShowCreators = !this._isSearchFocused
                 && !searchValue
                 && this._currentCategory === 'all'
+                && !this._currentGroup
                 && !this._currentTheme
                 && !hasExpandedCategoryGroup;
 
@@ -54,14 +104,19 @@ export const ExplorePage = {
             sectionsContainer?.classList.toggle('creators-hidden', !shouldShowCreators);
         };
         const syncDesktopActiveState = (filtersRoot = getCategoryFilters()) => {
-            if (!filtersRoot || !window.matchMedia('(min-width: 993px)').matches) return;
+            if (!filtersRoot) return;
 
             filtersRoot.querySelectorAll('.category-clay-item, .category-parent-toggle').forEach((item) => {
                 item.classList.remove('active');
             });
 
-            if (this._currentCategory === 'all' && !this._currentTheme) {
+            if (this._currentCategory === 'all' && !this._currentGroup && !this._currentTheme) {
                 filtersRoot.querySelector('.category-card-all')?.classList.add('active');
+                return;
+            }
+
+            if (this._currentGroup && this._currentCategory === 'all' && !this._currentTheme) {
+                filtersRoot.querySelector(`.category-parent-toggle[data-group-filter="${this._currentGroup}"]`)?.classList.add('active');
                 return;
             }
 
@@ -77,6 +132,7 @@ export const ExplorePage = {
             }
 
             const groupedChip = matchingChips[0];
+            groupedChip?.classList.add('active');
             const parentToggle = groupedChip?.closest('.category-filter-group')?.querySelector('.category-parent-toggle');
             parentToggle?.classList.add('active');
         };
@@ -295,11 +351,19 @@ export const ExplorePage = {
 
             const isMobile = window.matchMedia('(max-width: 640px)').matches;
             const isDesktop = window.matchMedia('(min-width: 993px)').matches;
+            const placeDiscoveryCards = (target) => {
+                if (!target) return;
+                [searchCard, categoriesCard].forEach((card, index) => {
+                    if (card.parentNode !== target || target.children[index] !== card) {
+                        target.appendChild(card);
+                    }
+                });
+            };
 
             if (isDesktop) {
                 container.classList.add('explore-desktop-flow');
                 container.classList.remove('explore-mobile-flow');
-                desktopDiscovery.append(searchCard, categoriesCard);
+                placeDiscoveryCards(desktopDiscovery);
                 if (hero.nextElementSibling !== desktopDiscovery) {
                     hero.insertAdjacentElement('afterend', desktopDiscovery);
                 }
@@ -316,7 +380,7 @@ export const ExplorePage = {
                 closeDesktopDropdown();
                 container.classList.add('explore-mobile-flow');
                 container.classList.remove('explore-desktop-flow');
-                mobileDiscovery.append(searchCard, categoriesCard);
+                placeDiscoveryCards(mobileDiscovery);
                 if (hero.nextElementSibling !== mobileDiscovery) {
                     hero.insertAdjacentElement('afterend', mobileDiscovery);
                 }
@@ -328,7 +392,7 @@ export const ExplorePage = {
                 container.classList.remove('explore-mobile-flow');
                 container.classList.remove('explore-desktop-flow');
                 sidebar.classList.remove('explore-sidebar-empty');
-                sidebar.append(searchCard, categoriesCard);
+                placeDiscoveryCards(sidebar);
                 sectionsContainer.prepend(creatorsSection);
                 updateCreatorsVisibility();
             }
@@ -452,6 +516,7 @@ export const ExplorePage = {
 
                 // Update Load More button visibility
                 this._updateLoadMoreButton();
+                this._persistState(searchInput?.value || '', window.scrollY);
 
             } catch (err) {
                 console.warn('[Explore] Load error:', err);
@@ -493,6 +558,13 @@ export const ExplorePage = {
             newFilters.addEventListener('click', async (e) => {
                 const parentToggle = e.target.closest('.category-parent-toggle');
                 if (parentToggle) {
+                    this._currentCategory = 'all';
+                    this._currentGroup = parentToggle.dataset.groupFilter || null;
+                    this._currentTheme = null;
+                    this._displayCount = this._getBaseDisplayCount();
+                    syncDesktopActiveState(newFilters);
+                    updateCreatorsVisibility();
+
                     if (newFilters.closest('.explore-desktop-flow')) {
                         const targetGroup = parentToggle.dataset.group;
                         const targetWrapper = newFilters.querySelector(`.category-filter-group[data-group="${targetGroup}"]`);
@@ -503,10 +575,12 @@ export const ExplorePage = {
                         if (!targetWrapper) return;
                         if (!shouldExpand) {
                             closeDesktopDropdown(newFilters, dropdownLayer);
+                            await loadAllSections();
                             return;
                         }
 
                         openDesktopDropdown(targetWrapper, parentToggle, newFilters);
+                        await loadAllSections();
                         return;
                     }
 
@@ -523,6 +597,7 @@ export const ExplorePage = {
                         }
                     });
                     updateCreatorsVisibility();
+                    await loadAllSections();
                     return;
                 }
 
@@ -532,7 +607,7 @@ export const ExplorePage = {
                 closeDesktopDropdown(newFilters);
                 chip.classList.add('active');
                 this._currentCategory = chip.dataset.category;
-                this._currentGroup = null;
+                this._currentGroup = chip.closest('.category-filter-group')?.querySelector('.category-parent-toggle')?.dataset.groupFilter || null;
                 this._currentTheme = chip.dataset.theme || null;
                 this._displayCount = this._getBaseDisplayCount(); // reset on category change
                 updateCreatorsVisibility();
@@ -561,9 +636,10 @@ export const ExplorePage = {
                         sourceToggle.setAttribute('aria-expanded', 'false');
                     }
                     this._currentCategory = chip.dataset.category;
-                    this._currentGroup = null;
+                    this._currentGroup = sourceToggle?.dataset.groupFilter || null;
                     this._currentTheme = chip.dataset.theme || null;
                     this._displayCount = this._getBaseDisplayCount();
+                    syncDesktopActiveState(newFilters);
                     updateCreatorsVisibility();
                     await loadAllSections();
                 };
@@ -576,6 +652,26 @@ export const ExplorePage = {
         if (searchInput) {
             const newSearch = searchInput.cloneNode(true);
             searchInput.parentNode.replaceChild(newSearch, searchInput);
+            if (savedState?.search) {
+                newSearch.value = savedState.search;
+            }
+            const searchBox = newSearch.closest('.search-box-clay');
+            if (searchBox && searchBox.dataset.mobileSearchFocusBound !== 'true') {
+                const focusSearchFromShell = (event) => {
+                    if (!window.matchMedia('(max-width: 640px)').matches) return;
+                    if (event.target === newSearch) return;
+                    if (document.activeElement !== newSearch) {
+                        newSearch.focus({ preventScroll: true });
+                        if (typeof newSearch.setSelectionRange === 'function') {
+                            const end = newSearch.value.length;
+                            newSearch.setSelectionRange(end, end);
+                        }
+                    }
+                };
+                searchBox.addEventListener('pointerdown', focusSearchFromShell);
+                searchBox.addEventListener('touchstart', focusSearchFromShell, { passive: true });
+                searchBox.dataset.mobileSearchFocusBound = 'true';
+            }
             newSearch.addEventListener('focus', () => {
                 this._isSearchFocused = true;
                 updateCreatorsVisibility();
@@ -585,6 +681,7 @@ export const ExplorePage = {
                 updateCreatorsVisibility();
             });
             newSearch.addEventListener('input', () => {
+                this._persistState(newSearch.value);
                 updateCreatorsVisibility();
             });
             newSearch.addEventListener('input', UI.debounce(async () => {
@@ -598,6 +695,7 @@ export const ExplorePage = {
         if (loadMoreBtn) {
             loadMoreBtn.addEventListener('click', async () => {
                 this._displayCount += this._loadMoreStep;
+                this._persistState(getSearchInput()?.value || '');
                 loadMoreBtn.classList.add('loading');
                 loadMoreBtn.disabled = true;
                 await loadAllSections(true);
@@ -621,6 +719,22 @@ export const ExplorePage = {
 
         updateCreatorsVisibility();
         await loadAllSections();
+        syncDesktopActiveState(getCategoryFilters());
+
+        if (this._exploreScrollPersistenceHandler) {
+            window.removeEventListener('scroll', this._exploreScrollPersistenceHandler);
+        }
+        this._exploreScrollPersistenceHandler = UI.debounce(() => {
+            if (App.currentPage !== 'explore') return;
+            this._persistState(getSearchInput()?.value || '', window.scrollY);
+        }, 80);
+        window.addEventListener('scroll', this._exploreScrollPersistenceHandler, { passive: true });
+
+        if (savedState && shouldRestoreState) {
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: Math.max(0, Number(savedState.scrollY) || 0), behavior: 'auto' });
+            });
+        }
     },
 
     _renderGrid(gridEl, items, badgeObj, isImages) {
@@ -638,7 +752,278 @@ export const ExplorePage = {
         } else {
             gridEl.classList.remove('masonry-grid', 'image-feed-grid');
             gridEl.innerHTML = items.map(w => UI.renderCard(w, badgeObj)).join('');
+            this.setupAudioFeedCards(gridEl, items);
         }
+    },
+
+    pauseOtherAudioCards(activeAudio) {
+        document.querySelectorAll('.audio-feed-native').forEach((audioEl) => {
+            if (audioEl !== activeAudio && !audioEl.paused) {
+                audioEl.pause();
+            }
+        });
+    },
+
+    updateAudioFeedLikeState(submissionId, isLiked, likeCount) {
+        document.querySelectorAll(`.audio-feed-card[data-id="${submissionId}"]`).forEach((card) => {
+            const likeButton = card.querySelector('[data-audio-action="like"]');
+            const likeCountEl = card.querySelector('.audio-feed-like-count');
+            likeButton?.classList.toggle('is-active', !!isLiked);
+            likeButton?.setAttribute('aria-pressed', String(!!isLiked));
+            if (likeCountEl) likeCountEl.textContent = String(Math.max(0, Number(likeCount) || 0));
+        });
+    },
+
+    updateAudioFeedRatingState(submissionId, avgRating, activeRating = null) {
+        const roundedAverage = Math.round(Number(avgRating) || 0);
+        const selectedRating = activeRating ?? roundedAverage;
+
+        document.querySelectorAll(`.audio-feed-card[data-id="${submissionId}"]`).forEach((card) => {
+            const ratingValue = card.querySelector('.audio-feed-rating-value');
+            const stars = card.querySelectorAll('[data-audio-action="rate"]');
+
+            if (ratingValue) {
+                ratingValue.textContent = Number(avgRating || 0).toFixed(1);
+            }
+
+            stars.forEach((star) => {
+                const value = Number(star.dataset.rating || 0);
+                star.classList.toggle('is-active', value <= selectedRating);
+            });
+        });
+    },
+
+    setupAudioFeedCards(gridEl, items) {
+        if (!gridEl) return;
+
+        const submissionsById = new Map((items || []).map((item) => [String(item.id), item]));
+        const audioCards = gridEl.querySelectorAll('.audio-feed-card');
+        if (!audioCards.length) return;
+
+        audioCards.forEach((card) => {
+            const submission = submissionsById.get(String(card.dataset.id || ''));
+            const audio = card.querySelector('.audio-feed-native');
+            const playButton = card.querySelector('[data-audio-action="toggle"]');
+            const loopButton = card.querySelector('[data-audio-action="loop"]');
+            const likeButton = card.querySelector('[data-audio-action="like"]');
+            const rateButtons = card.querySelectorAll('[data-audio-action="rate"]');
+            const progressTrack = card.querySelector('[data-audio-action="seek"]');
+            const progressFill = card.querySelector('.audio-feed-progress-fill');
+            const shareLink = card.querySelector('.audio-feed-share');
+
+            if (!submission || !audio || !playButton || !loopButton || !progressTrack || !progressFill) return;
+
+            const stats = submission.submission_stats?.[0] || (submission.submission_stats = [{
+                avg_rating: 0,
+                like_count: 0,
+                view_count: 0
+            }])[0];
+
+            const markAudioAvailability = (isAvailable) => {
+                card.classList.toggle('is-audio-unavailable', !isAvailable);
+                playButton.disabled = !isAvailable;
+                playButton.setAttribute('aria-disabled', String(!isAvailable));
+                if (!isAvailable) {
+                    playButton.setAttribute('aria-label', 'Audio unavailable');
+                }
+            };
+
+            const ensurePlaybackSubmission = async () => {
+                if (submission.file_url || submission.file_path || submission.file_type || submission.storage_provider) {
+                    return submission;
+                }
+
+                if (!submission._audioFeedPlaybackPromise) {
+                    submission._audioFeedPlaybackPromise = API.getSubmissionPlaybackData(submission.id)
+                        .then(({ data, error }) => {
+                            if (error) throw error;
+                            if (data) Object.assign(submission, data);
+                            return submission;
+                        })
+                        .catch((error) => {
+                            console.warn('[Explore] Audio playback metadata lookup failed:', error);
+                            return submission;
+                        });
+                }
+
+                return submission._audioFeedPlaybackPromise;
+            };
+
+            const syncState = () => {
+                const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+                const currentTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+                const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+
+                card.classList.toggle('is-playing', !audio.paused && !audio.ended);
+                card.classList.toggle('is-looping', !!audio.loop);
+                progressFill.style.width = `${progress}%`;
+                progressTrack.setAttribute('aria-valuenow', String(Math.round(progress)));
+                playButton.setAttribute('aria-label', audio.paused ? 'Play audio' : 'Pause audio');
+                loopButton.setAttribute('aria-label', audio.loop ? 'Disable loop' : 'Enable loop');
+                loopButton.classList.toggle('is-active', !!audio.loop);
+            };
+
+            const ensureSource = async () => {
+                if (audio.dataset.sourceState === 'ready') {
+                    return audio.currentSrc || audio.src || null;
+                }
+
+                if (!audio._sourcePromise) {
+                    audio.dataset.sourceState = 'loading';
+                    audio._sourcePromise = (async () => {
+                        const playbackSubmission = await ensurePlaybackSubmission();
+                        const sourceUrl = await UI.resolveAudioSourceUrl(playbackSubmission);
+                        const fileType = playbackSubmission.file_type || playbackSubmission.mime_type || '';
+                        const looksPlayable = !fileType || fileType.startsWith('audio/');
+
+                        if (!sourceUrl || !looksPlayable) {
+                            audio.dataset.sourceState = 'missing';
+                            markAudioAvailability(false);
+                            return null;
+                        }
+
+                        audio.src = sourceUrl;
+                        audio.preload = 'metadata';
+                        audio.dataset.sourceState = 'ready';
+                        markAudioAvailability(true);
+                        return sourceUrl;
+                    })().catch((error) => {
+                        console.warn('[Explore] Audio source resolution failed:', error);
+                        audio.dataset.sourceState = 'missing';
+                        markAudioAvailability(false);
+                        return null;
+                    });
+                }
+
+                return audio._sourcePromise;
+            };
+
+            const seekToRatio = async (ratio) => {
+                const sourceUrl = await ensureSource();
+                if (!sourceUrl) return false;
+
+                const safeRatio = Math.max(0, Math.min(1, ratio));
+                const applySeek = () => {
+                    if (!Number.isFinite(audio.duration) || audio.duration <= 0) return false;
+                    audio.currentTime = audio.duration * safeRatio;
+                    syncState();
+                    return true;
+                };
+
+                if (applySeek()) return true;
+
+                audio.load();
+                audio.addEventListener('loadedmetadata', () => {
+                    applySeek();
+                }, { once: true });
+                return true;
+            };
+
+            playButton.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const sourceUrl = await ensureSource();
+                if (!sourceUrl) {
+                    return;
+                }
+
+                if (audio.paused) {
+                    this.pauseOtherAudioCards(audio);
+                    try {
+                        await audio.play();
+                    } catch (error) {
+                        console.warn('[Explore] Inline audio playback failed:', error);
+                        UI.showToast('Unable to play audio right now.', 'error');
+                    }
+                } else {
+                    audio.pause();
+                }
+
+                syncState();
+            });
+
+            loopButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                audio.loop = !audio.loop;
+                syncState();
+            });
+
+            progressTrack.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const rect = progressTrack.getBoundingClientRect();
+                if (rect.width <= 0) return;
+                const ratio = (event.clientX - rect.left) / rect.width;
+                await seekToRatio(ratio);
+            });
+
+            likeButton?.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const user = App.user;
+                if (!user) return UI.showToast('Please login to like', 'error');
+
+                const { action, error } = await API.toggleLike(submission.id, user.id);
+                if (error) {
+                    UI.showToast(error.message || 'Could not update like.', 'error');
+                    return;
+                }
+
+                const isLiked = action === 'liked';
+                submission._audioFeedIsLiked = isLiked;
+                stats.like_count = Math.max(0, Number(stats.like_count || 0) + (isLiked ? 1 : -1));
+                this.updateAudioFeedLikeState(submission.id, isLiked, stats.like_count);
+                UI.showToast(isLiked ? 'Liked!' : 'Unliked');
+            });
+
+            rateButtons.forEach((button) => {
+                button.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    const user = App.user;
+                    if (!user) return UI.showToast('Please login to rate', 'error');
+
+                    const rating = Number(button.dataset.rating || 0);
+                    const { data, error } = await API.rateSubmission(submission.id, user.id, rating);
+                    if (error || !data) {
+                        UI.showToast(error?.message || 'Could not save rating.', 'error');
+                        return;
+                    }
+
+                    stats.avg_rating = data.avgRating;
+                    submission._audioFeedUserRating = data.userRating;
+                    this.updateAudioFeedRatingState(submission.id, data.avgRating, data.userRating);
+                    UI.showToast('Rated!', 'success');
+                });
+            });
+
+            shareLink?.addEventListener('click', (event) => {
+                event.stopPropagation();
+            });
+
+            audio.addEventListener('loadedmetadata', syncState);
+            audio.addEventListener('timeupdate', syncState);
+            audio.addEventListener('play', syncState);
+            audio.addEventListener('pause', syncState);
+            audio.addEventListener('ended', () => {
+                if (!audio.loop) {
+                    audio.currentTime = 0;
+                }
+                syncState();
+            });
+
+            card.addEventListener('click', (event) => {
+                event.stopPropagation();
+            });
+
+            this.updateAudioFeedLikeState(submission.id, !!submission._audioFeedIsLiked, stats.like_count || 0);
+            this.updateAudioFeedRatingState(submission.id, stats.avg_rating || 0, submission._audioFeedUserRating);
+            syncState();
+        });
     },
 
     _updateLoadMoreButton() {
