@@ -3,6 +3,8 @@ import { UI } from '../assets/js/ui.js';
 import App from '../assets/js/app.js';
 
 export const ExplorePage = {
+    _stateStorageKey: 'edtechra_explore_state',
+    _restoreFlagKey: 'edtechra_explore_restore_once',
     _currentCategory: 'all',
     _currentGroup: null,
     _currentTheme: null,
@@ -21,6 +23,42 @@ export const ExplorePage = {
         return window.matchMedia('(min-width: 993px)').matches ? 4 : 6;
     },
 
+    _readSavedState() {
+        try {
+            const raw = sessionStorage.getItem(this._stateStorageKey);
+            return raw ? JSON.parse(raw) : null;
+        } catch (_) {
+            return null;
+        }
+    },
+
+    _persistState(searchValue = '', scrollY = window.scrollY) {
+        const payload = {
+            category: this._currentCategory || 'all',
+            group: this._currentGroup || null,
+            theme: this._currentTheme || null,
+            search: String(searchValue || ''),
+            displayCount: this._displayCount,
+            scrollY: Math.max(0, Number(scrollY) || 0)
+        };
+
+        try {
+            sessionStorage.setItem(this._stateStorageKey, JSON.stringify(payload));
+        } catch (_) {
+            // Ignore storage failures and keep Explore functional.
+        }
+    },
+
+    _consumeRestoreFlag() {
+        try {
+            const shouldRestore = sessionStorage.getItem(this._restoreFlagKey) === 'true';
+            sessionStorage.removeItem(this._restoreFlagKey);
+            return shouldRestore;
+        } catch (_) {
+            return false;
+        }
+    },
+
     async init() {
         this._currentCategory = 'all';
         this._currentGroup = null;
@@ -30,6 +68,17 @@ export const ExplorePage = {
         this._displayCount = this._getBaseDisplayCount();
         this._topCreators = [];
         this._isSearchFocused = false;
+        const shouldRestoreState = this._consumeRestoreFlag();
+        const savedState = shouldRestoreState ? this._readSavedState() : null;
+
+        if (savedState) {
+            this._currentCategory = savedState.category || 'all';
+            this._currentGroup = savedState.group || null;
+            this._currentTheme = savedState.theme || null;
+            this._displayCount = Number(savedState.displayCount) > 0
+                ? Number(savedState.displayCount)
+                : this._getBaseDisplayCount();
+        }
 
         // Always re-query DOM elements fresh (avoids stale reference from cloning)
         const getSearchInput = () => document.querySelector('#search-input');
@@ -47,6 +96,7 @@ export const ExplorePage = {
             const shouldShowCreators = !this._isSearchFocused
                 && !searchValue
                 && this._currentCategory === 'all'
+                && !this._currentGroup
                 && !this._currentTheme
                 && !hasExpandedCategoryGroup;
 
@@ -54,14 +104,19 @@ export const ExplorePage = {
             sectionsContainer?.classList.toggle('creators-hidden', !shouldShowCreators);
         };
         const syncDesktopActiveState = (filtersRoot = getCategoryFilters()) => {
-            if (!filtersRoot || !window.matchMedia('(min-width: 993px)').matches) return;
+            if (!filtersRoot) return;
 
             filtersRoot.querySelectorAll('.category-clay-item, .category-parent-toggle').forEach((item) => {
                 item.classList.remove('active');
             });
 
-            if (this._currentCategory === 'all' && !this._currentTheme) {
+            if (this._currentCategory === 'all' && !this._currentGroup && !this._currentTheme) {
                 filtersRoot.querySelector('.category-card-all')?.classList.add('active');
+                return;
+            }
+
+            if (this._currentGroup && this._currentCategory === 'all' && !this._currentTheme) {
+                filtersRoot.querySelector(`.category-parent-toggle[data-group-filter="${this._currentGroup}"]`)?.classList.add('active');
                 return;
             }
 
@@ -77,6 +132,7 @@ export const ExplorePage = {
             }
 
             const groupedChip = matchingChips[0];
+            groupedChip?.classList.add('active');
             const parentToggle = groupedChip?.closest('.category-filter-group')?.querySelector('.category-parent-toggle');
             parentToggle?.classList.add('active');
         };
@@ -295,11 +351,19 @@ export const ExplorePage = {
 
             const isMobile = window.matchMedia('(max-width: 640px)').matches;
             const isDesktop = window.matchMedia('(min-width: 993px)').matches;
+            const placeDiscoveryCards = (target) => {
+                if (!target) return;
+                [searchCard, categoriesCard].forEach((card, index) => {
+                    if (card.parentNode !== target || target.children[index] !== card) {
+                        target.appendChild(card);
+                    }
+                });
+            };
 
             if (isDesktop) {
                 container.classList.add('explore-desktop-flow');
                 container.classList.remove('explore-mobile-flow');
-                desktopDiscovery.append(searchCard, categoriesCard);
+                placeDiscoveryCards(desktopDiscovery);
                 if (hero.nextElementSibling !== desktopDiscovery) {
                     hero.insertAdjacentElement('afterend', desktopDiscovery);
                 }
@@ -316,7 +380,7 @@ export const ExplorePage = {
                 closeDesktopDropdown();
                 container.classList.add('explore-mobile-flow');
                 container.classList.remove('explore-desktop-flow');
-                mobileDiscovery.append(searchCard, categoriesCard);
+                placeDiscoveryCards(mobileDiscovery);
                 if (hero.nextElementSibling !== mobileDiscovery) {
                     hero.insertAdjacentElement('afterend', mobileDiscovery);
                 }
@@ -328,7 +392,7 @@ export const ExplorePage = {
                 container.classList.remove('explore-mobile-flow');
                 container.classList.remove('explore-desktop-flow');
                 sidebar.classList.remove('explore-sidebar-empty');
-                sidebar.append(searchCard, categoriesCard);
+                placeDiscoveryCards(sidebar);
                 sectionsContainer.prepend(creatorsSection);
                 updateCreatorsVisibility();
             }
@@ -452,6 +516,7 @@ export const ExplorePage = {
 
                 // Update Load More button visibility
                 this._updateLoadMoreButton();
+                this._persistState(searchInput?.value || '', window.scrollY);
 
             } catch (err) {
                 console.warn('[Explore] Load error:', err);
@@ -493,6 +558,14 @@ export const ExplorePage = {
             newFilters.addEventListener('click', async (e) => {
                 const parentToggle = e.target.closest('.category-parent-toggle');
                 if (parentToggle) {
+                    this._currentCategory = 'all';
+                    this._currentGroup = parentToggle.dataset.groupFilter || null;
+                    this._currentTheme = null;
+                    this._displayCount = this._getBaseDisplayCount();
+                    this._persistState(getSearchInput()?.value || '', window.scrollY);
+                    syncDesktopActiveState(newFilters);
+                    updateCreatorsVisibility();
+
                     if (newFilters.closest('.explore-desktop-flow')) {
                         const targetGroup = parentToggle.dataset.group;
                         const targetWrapper = newFilters.querySelector(`.category-filter-group[data-group="${targetGroup}"]`);
@@ -503,10 +576,12 @@ export const ExplorePage = {
                         if (!targetWrapper) return;
                         if (!shouldExpand) {
                             closeDesktopDropdown(newFilters, dropdownLayer);
+                            await loadAllSections();
                             return;
                         }
 
                         openDesktopDropdown(targetWrapper, parentToggle, newFilters);
+                        await loadAllSections();
                         return;
                     }
 
@@ -523,6 +598,7 @@ export const ExplorePage = {
                         }
                     });
                     updateCreatorsVisibility();
+                    await loadAllSections();
                     return;
                 }
 
@@ -532,9 +608,10 @@ export const ExplorePage = {
                 closeDesktopDropdown(newFilters);
                 chip.classList.add('active');
                 this._currentCategory = chip.dataset.category;
-                this._currentGroup = null;
+                this._currentGroup = chip.closest('.category-filter-group')?.querySelector('.category-parent-toggle')?.dataset.groupFilter || null;
                 this._currentTheme = chip.dataset.theme || null;
                 this._displayCount = this._getBaseDisplayCount(); // reset on category change
+                this._persistState(getSearchInput()?.value || '', window.scrollY);
                 updateCreatorsVisibility();
                 await loadAllSections();
             });
@@ -561,9 +638,11 @@ export const ExplorePage = {
                         sourceToggle.setAttribute('aria-expanded', 'false');
                     }
                     this._currentCategory = chip.dataset.category;
-                    this._currentGroup = null;
+                    this._currentGroup = sourceToggle?.dataset.groupFilter || null;
                     this._currentTheme = chip.dataset.theme || null;
                     this._displayCount = this._getBaseDisplayCount();
+                    this._persistState(getSearchInput()?.value || '', window.scrollY);
+                    syncDesktopActiveState(newFilters);
                     updateCreatorsVisibility();
                     await loadAllSections();
                 };
@@ -576,6 +655,9 @@ export const ExplorePage = {
         if (searchInput) {
             const newSearch = searchInput.cloneNode(true);
             searchInput.parentNode.replaceChild(newSearch, searchInput);
+            if (savedState?.search) {
+                newSearch.value = savedState.search;
+            }
             newSearch.addEventListener('focus', () => {
                 this._isSearchFocused = true;
                 updateCreatorsVisibility();
@@ -585,6 +667,7 @@ export const ExplorePage = {
                 updateCreatorsVisibility();
             });
             newSearch.addEventListener('input', () => {
+                this._persistState(newSearch.value);
                 updateCreatorsVisibility();
             });
             newSearch.addEventListener('input', UI.debounce(async () => {
@@ -598,6 +681,7 @@ export const ExplorePage = {
         if (loadMoreBtn) {
             loadMoreBtn.addEventListener('click', async () => {
                 this._displayCount += this._loadMoreStep;
+                this._persistState(getSearchInput()?.value || '');
                 loadMoreBtn.classList.add('loading');
                 loadMoreBtn.disabled = true;
                 await loadAllSections(true);
@@ -621,6 +705,22 @@ export const ExplorePage = {
 
         updateCreatorsVisibility();
         await loadAllSections();
+        syncDesktopActiveState(getCategoryFilters());
+
+        if (this._exploreScrollPersistenceHandler) {
+            window.removeEventListener('scroll', this._exploreScrollPersistenceHandler);
+        }
+        this._exploreScrollPersistenceHandler = UI.debounce(() => {
+            if (App.currentPage !== 'explore') return;
+            this._persistState(getSearchInput()?.value || '', window.scrollY);
+        }, 80);
+        window.addEventListener('scroll', this._exploreScrollPersistenceHandler, { passive: true });
+
+        if (savedState && shouldRestoreState) {
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: Math.max(0, Number(savedState.scrollY) || 0), behavior: 'auto' });
+            });
+        }
     },
 
     _renderGrid(gridEl, items, badgeObj, isImages) {
