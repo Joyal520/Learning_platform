@@ -1,193 +1,243 @@
 import { Auth } from './auth.js';
 import { UI } from './ui.js';
-import { UploadPage } from '../../pages/upload.js';
 import { MyUploadsPage } from '../../pages/my-uploads.js';
 import { ExplorePage } from '../../pages/explore.js';
 import { DetailPage } from '../../pages/detail.js';
 import { DashboardPage } from '../../pages/dashboard.js';
 import { StudentDashboardPage } from '../../pages/student-dashboard.js';
-import { API } from './api.js';
 
 const App = {
     user: null,
     profile: null,
     currentPage: 'home',
     isFirstLoad: true,
+    _profilePromise: null,
+    _profileUserId: null,
+    _bootstrappedUserId: null,
+    _lastUserId: null,
 
     async init() {
-        UI.showLoader();
+        UI.init();
+        this.renderNav();
+        this.initializePwaEnhancements();
+        this.handleAuthErrorsInUrl();
 
-        // ─── Phase 3: Reliable PWA Install Logic ───
+        try {
+            const session = await Auth.getSession();
+            this.user = session?.user || null;
+            this._bootstrappedUserId = this.user?.id || null;
+            this._lastUserId = this._bootstrappedUserId;
+            this.renderNav();
+            await this.route();
+        } catch (error) {
+            console.error('[App] Initial session bootstrap failed:', error);
+            await this.route();
+        } finally {
+            UI.hideLoader();
+            this.isFirstLoad = false;
+        }
+
+        this.syncProfileInBackground();
+        this.bindAuthStateChanges();
+
+        document.addEventListener('click', (e) => {
+            const link = e.target.closest('[data-link]');
+            if (!link) return;
+
+            e.preventDefault();
+            const page = link.getAttribute('data-link');
+            this.navigate(page);
+        });
+    },
+
+    initializePwaEnhancements() {
         let deferredPrompt = null;
 
-        // Step 2 & 6: Capture event and log
-        window.addEventListener("beforeinstallprompt", (e) => {
-            console.log("[PWA] beforeinstallprompt fired");
+        window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('[PWA] beforeinstallprompt fired');
             e.preventDefault();
             deferredPrompt = e;
-            console.log("[PWA] deferredPrompt stored");
+            console.log('[PWA] deferredPrompt stored');
 
-            const btn = document.getElementById("installBtn");
+            const btn = document.getElementById('installBtn');
             if (btn) {
-                btn.style.display = "block";
-                console.log("[PWA] install button displayed");
+                btn.style.display = 'block';
+                console.log('[PWA] install button displayed');
             }
         });
 
-        // Step 3 & 6: Click handler with logging
-        // Using delegation to ensure dynamic hero content is handled
         document.addEventListener('click', async (e) => {
             const btn = e.target.closest('#installBtn');
-            if (btn) {
-                console.log("[PWA] install button clicked");
-                if (!deferredPrompt) return;
-                
-                console.log("[PWA] install prompt opened");
-                deferredPrompt.prompt();
-                const result = await deferredPrompt.userChoice;
-                console.log("[PWA] user choice:", result.outcome);
-                deferredPrompt = null;
-                btn.style.display = "none";
-            }
+            if (!btn || !deferredPrompt) return;
+
+            console.log('[PWA] install button clicked');
+            deferredPrompt.prompt();
+            const result = await deferredPrompt.userChoice;
+            console.log('[PWA] user choice:', result.outcome);
+            deferredPrompt = null;
+            btn.style.display = 'none';
         });
 
-        // Step 4 & 6: Handle successful install
-        window.addEventListener("appinstalled", () => {
-            console.log("[PWA] appinstalled fired");
-            console.log("[PWA] App installed");
-            const btn = document.getElementById("installBtn");
-            if (btn) btn.style.display = "none";
+        window.addEventListener('appinstalled', () => {
+            console.log('[PWA] App installed');
+            const btn = document.getElementById('installBtn');
+            if (btn) btn.style.display = 'none';
         });
 
-        // Step 5: Detect already installed
-        if (window.matchMedia("(display-mode: standalone)").matches) {
-            console.log("[PWA] running in standalone mode");
-            const btn = document.getElementById("installBtn");
-            if (btn) btn.style.display = "none";
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            const btn = document.getElementById('installBtn');
+            if (btn) btn.style.display = 'none';
         }
 
-        // SW Registration & Manifest Tracking
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js?v=9').then(reg => {
-                    console.log('[PWA] service worker registered');
-                });
+                navigator.serviceWorker.register('/sw.js?v=9')
+                    .then(() => console.log('[PWA] service worker registered'))
+                    .catch((error) => console.warn('[PWA] service worker registration skipped:', error));
             });
         }
-        fetch('/manifest.json?v=3').then(res => {
-            if (res.ok) console.log('[PWA] manifest loaded');
-        });
 
-        // 🚨 FAILSAFE TIMER: If mobile data hangs, drop the loader after 3 seconds
-        this._failsafeTimer = setTimeout(() => {
-            if (this.isFirstLoad) {
-                console.warn("Failsafe triggered: Hiding loader. Auth or network may have timed out.");
-                UI.hideLoader();
-                this.isFirstLoad = false;
-                if (!document.getElementById('main-content').innerHTML.trim()) {
-                    this.route();
-                }
-            }
-        }, 3000);
+        setTimeout(() => {
+            fetch('/manifest.json?v=3')
+                .then((res) => {
+                    if (res.ok) console.log('[PWA] manifest loaded');
+                })
+                .catch((error) => console.warn('[PWA] manifest preload skipped:', error));
+        }, 0);
+    },
 
-        // Handle auth errors in URL (Search params or Fragments)
+    handleAuthErrorsInUrl() {
         const params = new URLSearchParams(window.location.search);
         const fragmentParams = new URLSearchParams(window.location.hash.substring(1));
         const errorMsg = params.get('error_description') || fragmentParams.get('error_description');
 
-        if (errorMsg) {
-            UI.showToast(errorMsg.replace(/\+/g, ' '), 'error');
-            // Clean up URL to prevent repeated toasts
-            window.history.replaceState(null, '', window.location.pathname);
-        }
+        if (!errorMsg) return;
 
-        // Listen for auth changes
+        UI.showToast(errorMsg.replace(/\+/g, ' '), 'error');
+        window.history.replaceState(null, '', window.location.pathname);
+    },
+
+    bindAuthStateChanges() {
         Auth.onAuthStateChange(async (event, session) => {
             console.log('Auth event:', event);
-            if (this._failsafeTimer) {
-                clearTimeout(this._failsafeTimer);
-                this._failsafeTimer = null;
-            }
 
             if (event === 'TOKEN_REFRESHED') return;
+            if (event === 'INITIAL_SESSION' && (session?.user?.id || null) === this._bootstrappedUserId) {
+                this.syncProfileInBackground();
+                return;
+            }
 
             const newUserId = session?.user?.id || null;
-            if (!this.isFirstLoad && this._lastUserId === newUserId && event !== 'USER_UPDATED') {
-                return; // Prevent unnecessary rerenders
+            if (this._lastUserId === newUserId && event !== 'USER_UPDATED') {
+                return;
             }
             this._lastUserId = newUserId;
 
             try {
                 this.user = session?.user || null;
 
-                if (this.user) {
-                    const { data } = await Auth.getProfile(this.user.id);
-                    this.profile = data;
-
-                    // OAuth Sync Logic: Sync role and name from onboarding
-                    const pendingRole = localStorage.getItem('edtechra_role');
-                    const pendingName = localStorage.getItem('edtechra_display_name');
-
-                    let profileUpdated = false;
-
-                    if (this.profile && pendingRole && this.profile.role === 'student' && pendingRole !== 'student') {
-                        await Auth.updateProfileRole(this.user.id, pendingRole);
-                        this.profile.role = pendingRole;
-                        localStorage.removeItem('edtechra_role');
-                        profileUpdated = true;
-                    }
-
-                    if (this.profile && pendingName && (!this.profile.display_name || this.profile.display_name === this.user.email)) {
-                        await Auth.updateProfile(this.user.id, { display_name: pendingName });
-                        this.profile.display_name = pendingName;
-                        localStorage.removeItem('edtechra_display_name');
-                        profileUpdated = true;
-                    }
-
-                    if (profileUpdated) {
-                        UI.showToast(`Account setup complete! Welcome, ${this.profile.display_name}!`, 'success');
-                    }
-
-                    // Auto-promote 'joel' accounts to admin
-                    if (this.profile && this.profile.role !== 'admin') {
-                        const email = this.user.email?.toLowerCase() || '';
-                        const name = this.profile.display_name?.toLowerCase() || '';
-                        if (email.includes('joel') || name === 'joel') {
-                            await Auth.updateProfileRole(this.user.id, 'admin');
-                            this.profile.role = 'admin';
-                            UI.showToast('Admin access granted!', 'success');
-                        }
-                    }
-                } else {
+                if (!this.user) {
                     this.profile = null;
+                    this._profilePromise = null;
+                    this._profileUserId = null;
+                } else {
+                    await this.ensureProfileLoaded({
+                        forceRefresh: event === 'USER_UPDATED',
+                        allowBackgroundSync: true
+                    });
                 }
 
                 this.renderNav();
                 await this.route();
             } catch (err) {
-                console.error("Auth/Routing Error during init:", err);
-            } finally {
-                if (this.isFirstLoad) {
-                    UI.hideLoader();
-                    this.isFirstLoad = false;
+                console.error('[App] Auth/Routing error:', err);
+            }
+        });
+    },
+
+    async ensureProfileLoaded({ forceRefresh = false, allowBackgroundSync = false } = {}) {
+        if (!this.user) {
+            this.profile = null;
+            return null;
+        }
+
+        if (!forceRefresh && this.profile && this._profileUserId === this.user.id) {
+            return this.profile;
+        }
+
+        if (!forceRefresh && this._profilePromise && this._profileUserId === this.user.id) {
+            return this._profilePromise;
+        }
+
+        this._profileUserId = this.user.id;
+        this._profilePromise = (async () => {
+            const { data } = await Auth.getProfile(this.user.id);
+            this.profile = data || null;
+
+            if (allowBackgroundSync) {
+                await this.applyPendingProfileUpdates();
+            }
+
+            return this.profile;
+        })();
+
+        try {
+            return await this._profilePromise;
+        } finally {
+            this._profilePromise = null;
+        }
+    },
+
+    syncProfileInBackground() {
+        if (!this.user) return;
+
+        this.ensureProfileLoaded({ allowBackgroundSync: true })
+            .then(() => {
+                this.renderNav();
+
+                if (['home', 'profile', 'admin-dashboard'].includes(this.currentPage)) {
+                    this.route();
                 }
+            })
+            .catch((error) => {
+                console.warn('[App] Background profile sync failed:', error);
+            });
+    },
+
+    async applyPendingProfileUpdates() {
+        if (!this.user || !this.profile) return;
+
+        const pendingRole = localStorage.getItem('edtechra_role');
+        const pendingName = localStorage.getItem('edtechra_display_name');
+        let profileUpdated = false;
+
+        if (pendingRole && this.profile.role === 'student' && pendingRole !== 'student') {
+            await Auth.updateProfileRole(this.user.id, pendingRole);
+            this.profile.role = pendingRole;
+            localStorage.removeItem('edtechra_role');
+            profileUpdated = true;
+        }
+
+        if (pendingName && (!this.profile.display_name || this.profile.display_name === this.user.email)) {
+            await Auth.updateProfile(this.user.id, { display_name: pendingName });
+            this.profile.display_name = pendingName;
+            localStorage.removeItem('edtechra_display_name');
+            profileUpdated = true;
+        }
+
+        if (profileUpdated) {
+            UI.showToast(`Account setup complete! Welcome, ${this.profile.display_name}!`, 'success');
+        }
+
+        if (this.profile.role !== 'admin') {
+            const email = this.user.email?.toLowerCase() || '';
+            const name = this.profile.display_name?.toLowerCase() || '';
+            if (email.includes('joel') || name === 'joel') {
+                await Auth.updateProfileRole(this.user.id, 'admin');
+                this.profile.role = 'admin';
+                UI.showToast('Admin access granted!', 'success');
             }
-        });
-
-        // Handle navigation clicks
-        document.addEventListener('click', (e) => {
-            const link = e.target.closest('[data-link]');
-            if (link) {
-                e.preventDefault();
-                const page = link.getAttribute('data-link');
-                this.navigate(page);
-            }
-
-            // Navigation delegation continues below...
-        });
-
-        // Initialize UI
-        UI.init();
+        }
     },
 
     navigate(page) {
@@ -201,25 +251,26 @@ const App = {
     async route() {
         const rawHash = window.location.hash.substring(1) || 'home';
 
-        // If the hash contains error info, it's not a valid page route
         if (rawHash.includes('error_description') || rawHash.includes('access_token')) {
             return this.navigate('home');
         }
 
-        // Handle cases like #/home or #explore
         const cleanHash = rawHash.startsWith('/') ? rawHash.substring(1) : rawHash;
-
-        // Strip out any trailing query parameters appended by sharing apps (like WhatsApp)
         const hashWithoutQuery = cleanHash.split('?')[0];
         const [page, id] = hashWithoutQuery.split('/');
 
         this.currentPage = page || 'home';
 
-        // Toggle light theme class on body for specific pages
         document.body.classList.toggle('explore-view', this.currentPage === 'explore');
         document.body.classList.toggle('light-dashboard', this.currentPage === 'student-dashboard' || this.currentPage === 'admin-dashboard');
 
-        // Force onboarding for first-time unauth visitors
+        const nav = document.querySelector('.main-nav');
+        const menuToggle = document.getElementById('menu-toggle');
+        if (window.innerWidth <= 768 && nav) {
+            nav.classList.remove('mobile-open');
+            menuToggle?.setAttribute('aria-expanded', 'false');
+        }
+
         const hasRole = localStorage.getItem('edtechra_role');
         if (!this.user && !hasRole && page !== 'login' && page !== 'onboarding' && page !== 'explore') {
             return this.navigate('onboarding');
@@ -256,11 +307,13 @@ const App = {
                 main.innerHTML = UI.pages.explore();
                 ExplorePage.init();
                 break;
-            case 'upload':
+            case 'upload': {
                 if (!this.user) return this.navigate('login');
                 main.innerHTML = UI.pages.upload();
+                const { UploadPage } = await import('../../pages/upload.js');
                 UploadPage.init();
                 break;
+            }
             case 'my-uploads':
                 if (!this.user) return this.navigate('login');
                 main.innerHTML = UI.pages.myUploads();
@@ -272,33 +325,38 @@ const App = {
                 break;
             case 'admin-dashboard':
                 if (!this.user) return this.navigate('login');
+                await this.ensureProfileLoaded({ allowBackgroundSync: true });
                 DashboardPage.init();
                 break;
             case 'detail':
                 if (id) DetailPage.init(id);
                 else this.navigate('explore');
                 break;
-            case 'edit':
+            case 'edit': {
                 if (!this.user) return this.navigate('login');
                 if (id) {
                     main.innerHTML = UI.pages.upload();
+                    const { UploadPage } = await import('../../pages/upload.js');
                     UploadPage.initEdit(id);
                 } else {
                     this.navigate('my-uploads');
                 }
                 break;
+            }
             default:
-                main.innerHTML = `<h1>404 Page Not Found</h1>`;
+                main.innerHTML = '<h1>404 Page Not Found</h1>';
         }
 
+        this.renderNav();
         this.updateNavActive();
     },
-
 
     renderNav() {
         const nav = document.querySelector('.main-nav');
         const navAuth = document.getElementById('nav-auth');
         const navLinks = document.getElementById('nav-links');
+        const mobileBottomNav = document.getElementById('mobile-bottom-nav');
+        if (!nav || !navAuth || !navLinks) return;
 
         if (this.user) {
             nav.classList.add('user-logged-in');
@@ -330,7 +388,7 @@ const App = {
             `;
 
             if (this.profile?.role === 'admin') {
-                navLinks.innerHTML += `<a href="#" class="nav-link" data-link="admin-dashboard">Admin Panel</a>`;
+                navLinks.innerHTML += '<a href="#" class="nav-link" data-link="admin-dashboard">Admin Panel</a>';
             }
         } else {
             nav.classList.remove('user-logged-in');
@@ -338,10 +396,9 @@ const App = {
                 <a href="#" class="btn btn-outline" data-link="login">Login</a>
                 <a href="#" class="btn btn-primary" data-link="signup">Sign Up</a>
             `;
-            navLinks.innerHTML = `<a href="#" class="nav-link" data-link="home">Home</a>`;
+            navLinks.innerHTML = '<a href="#" class="nav-link" data-link="home">Home</a>';
         }
 
-        // Close mobile menu when a nav link is clicked
         navLinks.querySelectorAll('[data-link]').forEach(link => {
             link.addEventListener('click', () => {
                 nav.classList.remove('mobile-open');
@@ -352,6 +409,50 @@ const App = {
                 nav.classList.remove('mobile-open');
             });
         });
+
+        if (mobileBottomNav) {
+            const shouldShowBottomNav = !['login', 'signup', 'onboarding'].includes(this.currentPage);
+            if (!shouldShowBottomNav) {
+                mobileBottomNav.className = 'mobile-bottom-nav';
+                mobileBottomNav.innerHTML = '';
+            } else {
+                mobileBottomNav.className = `mobile-bottom-nav ${this.profile?.role === 'admin' ? 'has-admin' : ''}`.trim();
+                mobileBottomNav.innerHTML = `
+                    <a href="#home" class="mobile-bottom-nav-item" data-link="home">
+                        <span class="mobile-bottom-nav-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9.5V21h14V9.5"></path></svg>
+                        </span>
+                        <span class="mobile-bottom-nav-label">Home</span>
+                    </a>
+                    <a href="#explore" class="mobile-bottom-nav-item" data-link="explore">
+                        <span class="mobile-bottom-nav-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+                        </span>
+                        <span class="mobile-bottom-nav-label">Explore</span>
+                    </a>
+                    <a href="#student-dashboard" class="mobile-bottom-nav-item" data-link="student-dashboard">
+                        <span class="mobile-bottom-nav-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="7" rx="2"></rect><rect x="14" y="4" width="7" height="7" rx="2"></rect><rect x="3" y="13" width="7" height="8" rx="2"></rect><rect x="14" y="13" width="7" height="8" rx="2"></rect></svg>
+                        </span>
+                        <span class="mobile-bottom-nav-label">Dashboard</span>
+                    </a>
+                    <a href="#profile" class="mobile-bottom-nav-item" data-link="profile">
+                        <span class="mobile-bottom-nav-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c1.8-3.6 5-5.5 8-5.5s6.2 1.9 8 5.5"></path></svg>
+                        </span>
+                        <span class="mobile-bottom-nav-label">Profile</span>
+                    </a>
+                    ${this.profile?.role === 'admin' ? `
+                    <a href="#admin-dashboard" class="mobile-bottom-nav-item" data-link="admin-dashboard">
+                        <span class="mobile-bottom-nav-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7v5c0 5 3.4 7.8 8 9 4.6-1.2 8-4 8-9V7l-8-4Z"></path><path d="M9.5 12 11 13.5 14.5 10"></path></svg>
+                        </span>
+                        <span class="mobile-bottom-nav-label">Admin</span>
+                    </a>
+                    ` : ''}
+                `;
+            }
+        }
     },
 
     updateNavActive() {
@@ -359,12 +460,16 @@ const App = {
             const linkPage = link.getAttribute('data-link');
             link.classList.toggle('active', linkPage === this.currentPage);
         });
+
+        document.querySelectorAll('.mobile-bottom-nav-item').forEach(link => {
+            const linkPage = link.getAttribute('data-link');
+            link.classList.toggle('active', linkPage === this.currentPage);
+        });
     }
 };
 
-// Global route listener
 window.addEventListener('hashchange', () => App.route());
 document.addEventListener('DOMContentLoaded', () => App.init());
 
-window.App = App; // Expose globally for cross-module access (e.g. profile save)
+window.App = App;
 export default App;

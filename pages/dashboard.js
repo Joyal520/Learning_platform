@@ -126,9 +126,15 @@ export const DashboardPage = {
         if (elBucket) elBucket.textContent = 'Bucket: --';
         if (elBreakdown) elBreakdown.textContent = 'Loading Cloudflare metrics...';
 
-        const { count: users } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-        const { count: pending } = await supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'pending');
-        const { count: approved } = await supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'approved');
+        const [
+            { count: users },
+            { count: pending },
+            { count: approved }
+        ] = await Promise.all([
+            supabase.from('profiles').select('*', { count: 'exact', head: true }),
+            supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+            supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'approved')
+        ]);
 
         let storageUnavailable = false;
         let metrics = null;

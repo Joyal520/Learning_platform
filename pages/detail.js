@@ -2,12 +2,15 @@
 import { supabase } from '../assets/js/supabase.js';
 import { UI } from '../assets/js/ui.js';
 import App from '../assets/js/app.js';
+import { AudioPlayer } from '../assets/js/audio-player.js';
 
 export const DetailPage = {
     async init(id) {
         const main = document.getElementById('main-content');
         console.log('[DETAIL] init called with id:', id);
         UI.showLoader();
+        this._audioPlayer?.destroy();
+        this._audioPlayer = null;
 
         try {
             // Step 1: Fetch submission data
@@ -75,6 +78,7 @@ export const DetailPage = {
             }
 
             // Step 3: Initial Render (Show content immediately)
+            sub.initialViewCount = Number(sub.submission_stats?.[0]?.view_count || 0);
             main.innerHTML = UI.pages.detail(sub, currentUser, userRole);
             this._currentSub = sub;
 
@@ -84,6 +88,8 @@ export const DetailPage = {
             const likeStatusPromise = this.checkIfLiked(sub.id);
 
             // Setup static UI elements
+            this.setupAudioPlayer(sub);
+            this.setupBackToExplore();
             this.setupInteractions(sub);
             this.setupEditButton(sub);
             this.setupPreviewFullscreen();
@@ -109,6 +115,8 @@ export const DetailPage = {
 
             // Clean up fullscreen state on navigation
             window.addEventListener('hashchange', () => {
+                this._audioPlayer?.destroy();
+                this._audioPlayer = null;
                 document.body.classList.remove('body-no-scroll');
                 document.querySelectorAll('.fullscreen-active').forEach(el => {
                     el.classList.remove('fullscreen-active');
@@ -120,6 +128,35 @@ export const DetailPage = {
             main.innerHTML = `<div style="padding:2rem;text-align:center"><h2>Error loading</h2><p>${err.message}</p></div>`;
             UI.hideLoader();
         }
+    },
+
+    setupAudioPlayer(sub) {
+        const mount = document.getElementById('audioPlayerMount');
+        if (!mount || !sub.file_type?.startsWith('audio/')) {
+            return;
+        }
+
+        this._audioPlayer?.destroy();
+        this._audioPlayer = new AudioPlayer(mount, sub);
+        this._audioPlayer.init();
+    },
+
+    setupBackToExplore() {
+        const backLink = document.querySelector('.back-link');
+        if (!backLink) return;
+
+        backLink.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            try {
+                sessionStorage.setItem('edtechra_explore_restore_once', 'true');
+            } catch (_) {
+                // Ignore storage failures and fall back to default Explore.
+            }
+
+            window.location.hash = 'explore';
+        });
     },
 
     setupPreviewFullscreen() {
@@ -348,6 +385,8 @@ export const DetailPage = {
             // Update view count display
             const viewCountSpan = document.getElementById('view-count');
             if (viewCountSpan) viewCountSpan.textContent = viewCount;
+            const audioViewCountSpan = document.getElementById('audio-player-view-count');
+            if (audioViewCountSpan) audioViewCountSpan.textContent = viewCount;
 
             // Update star visual AND re-attach listeners
             const starContainer = document.getElementById('rating-stars');

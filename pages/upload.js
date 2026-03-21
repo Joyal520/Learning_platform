@@ -10,13 +10,17 @@ export const UploadPage = {
     _imageThumbnailBlob: null,
     _imageMetadata: null,
     _imagePreviewUrl: null,
+    _isSubmitting: false,
 
     init() {
         const form = document.querySelector('#upload-form');
+        if (!form || form.dataset.uploadInitialized === 'true') return;
+        form.dataset.uploadInitialized = 'true';
         const fileGroup = document.querySelector('#file-input-group');
         const textGroup = document.querySelector('#text-input-group');
         const codeGroup = document.querySelector('#code-input-group');
         const imageGroup = document.querySelector('#image-input-group');
+        const thumbnailGroup = document.querySelector('#thumbnail-input-group');
         const modeRadios = document.querySelectorAll('input[name="content_mode"]');
         const thumbnailInput = document.getElementById('thumbnail-input');
         const thumbnailPreview = document.getElementById('thumbnail-preview');
@@ -29,65 +33,147 @@ export const UploadPage = {
         const imageFileInput = document.getElementById('image-file-input');
         const imageRemoveBtn = document.getElementById('image-remove-btn');
 
-        // Category (Content Type) dropdown logic - MAIN TOGGLE for Image-only flow
+        // Category (Content Type) dropdown logic
         const categorySelect = document.querySelector('select[name="category"]');
         const nonImageFields = document.getElementById('non-image-fields');
+        const fileInput = document.getElementById('file-input');
+        const imageInput = document.getElementById('image-file-input');
+        const fileLabel = fileGroup?.querySelector('label');
+        const themeLabel = document.querySelector('#theme-dropdown')?.closest('.form-group')?.querySelector('label');
+        const themeDropdown = document.getElementById('theme-dropdown');
+        const themeTags = document.getElementById('theme-tags');
+        const themeValidationMsg = document.getElementById('theme-msg');
+        const modeTabs = {
+            file: document.querySelector('input[name="content_mode"][value="file"]')?.closest('.mode-tab'),
+            text: document.querySelector('input[name="content_mode"][value="text"]')?.closest('.mode-tab'),
+            code: document.querySelector('input[name="content_mode"][value="code"]')?.closest('.mode-tab')
+        };
+        const modeInputs = {
+            file: document.querySelector('input[name="content_mode"][value="file"]'),
+            text: document.querySelector('input[name="content_mode"][value="text"]'),
+            code: document.querySelector('input[name="content_mode"][value="code"]')
+        };
+        const supportedProjectAccept = [
+            '.pdf', '.doc', '.docx', '.html', '.zip',
+            'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/html', 'application/zip', 'application/x-zip-compressed', 'application/octet-stream'
+        ].join(',');
+        const supportedAudioAccept = [
+            '.mp3', '.wav',
+            'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'
+        ].join(',');
 
-        categorySelect?.addEventListener('change', (e) => {
-            const isImages = e.target.value === 'images';
-            if (isImages) {
-                nonImageFields?.classList.add('hidden');
-                imageGroup?.classList.remove('hidden');
-                
-                // Clear and disable non-image fields to avoid validation errors
-                fileGroup?.classList.add('hidden');
-                textGroup?.classList.add('hidden');
-                codeGroup?.classList.add('hidden');
-                
-                fileGroup?.querySelector('input')?.removeAttribute('required');
-                textGroup?.querySelector('textarea')?.removeAttribute('required');
-                codeGroup?.querySelector('textarea')?.removeAttribute('required');
-            } else {
-                nonImageFields?.classList.remove('hidden');
-                imageGroup?.classList.add('hidden');
-                
-                // Re-trigger sub-mode logic
-                const activeMode = document.querySelector('input[name="content_mode"]:checked');
-                if (activeMode) activeMode.dispatchEvent(new Event('change'));
+        const syncThemeSelectionState = () => {
+            const checkboxes = document.querySelectorAll('input[name="themes"]');
+            const selected = document.querySelectorAll('input[name="themes"]:checked');
+            const selectedCount = selected.length;
+
+            themeValidationMsg?.classList.add('hidden');
+            checkboxes.forEach((checkbox) => {
+                if (!checkbox.checked) {
+                    checkbox.disabled = selectedCount >= 3;
+                }
+            });
+
+            this.renderThemeTags(themeTags, checkboxes);
+        };
+
+        const refreshThemeOptions = () => {
+            if (!themeDropdown) return;
+
+            const selectedCategory = categorySelect?.value || '';
+            const availableThemeSet = new Set(UI.getThemeOptionsForCategory(selectedCategory));
+            const preservedThemes = this.getSelectedThemes().filter((theme) => availableThemeSet.has(theme));
+            const isLessons = UI.normalizeCategoryValue(selectedCategory) === 'lessons';
+
+            if (themeLabel) {
+                themeLabel.innerHTML = `${isLessons ? 'Subject' : 'Theme'}* <span class="text-muted text-sm">(select up to 3)</span>`;
             }
-        });
+
+            themeDropdown.innerHTML = UI.renderThemeOptions(selectedCategory, preservedThemes);
+            this.setupThemeSelector();
+            syncThemeSelectionState();
+        };
+
+        const applyContentTypeRules = () => {
+            const selectedCategory = categorySelect?.value || '';
+            const modeOptions = UI.getContentModeOptions(selectedCategory);
+            const isImageCategory = modeOptions.useImageUploader;
+            const activeMode = document.querySelector('input[name="content_mode"]:checked')?.value;
+            const nextMode = modeOptions[activeMode] ? activeMode : (modeOptions.file ? 'file' : modeOptions.code ? 'code' : 'text');
+
+            refreshThemeOptions();
+
+            nonImageFields?.classList.toggle('hidden', isImageCategory);
+            imageGroup?.classList.toggle('hidden', !isImageCategory);
+            thumbnailGroup?.classList.toggle('hidden', isImageCategory);
+            fileGroup?.classList.add('hidden');
+            textGroup?.classList.add('hidden');
+            codeGroup?.classList.add('hidden');
+
+            fileInput?.removeAttribute('required');
+            textGroup?.querySelector('textarea')?.removeAttribute('required');
+            codeGroup?.querySelector('textarea')?.removeAttribute('required');
+            if (imageInput) imageInput.required = false;
+
+            Object.entries(modeTabs).forEach(([mode, tab]) => {
+                if (!tab || !modeInputs[mode]) return;
+                const isVisible = Boolean(modeOptions[mode]);
+                tab.classList.toggle('hidden', !isVisible);
+                modeInputs[mode].disabled = !isVisible;
+            });
+
+            if (modeInputs[nextMode] && !modeInputs[nextMode].checked) {
+                modeInputs[nextMode].checked = true;
+            }
+
+            if (isImageCategory) {
+                imageGroup?.classList.remove('hidden');
+                if (imageInput) imageInput.required = true;
+            } else if (nextMode === 'file') {
+                fileGroup?.classList.remove('hidden');
+                if (fileInput) fileInput.required = true;
+            } else if (nextMode === 'text') {
+                textGroup?.classList.remove('hidden');
+                const textInput = textGroup?.querySelector('textarea');
+                if (textInput) textInput.required = true;
+            } else if (nextMode === 'code') {
+                codeGroup?.classList.remove('hidden');
+                const codeInput = codeGroup?.querySelector('textarea');
+                if (codeInput) codeInput.required = true;
+            }
+
+            const isAudioCategory = UI.normalizeCategoryValue(selectedCategory) === 'songs';
+
+            if (fileInput) {
+                fileInput.accept = isAudioCategory ? supportedAudioAccept : supportedProjectAccept;
+            }
+            if (fileLabel) {
+                fileLabel.textContent = isAudioCategory
+                    ? 'File Upload* (MP3 or WAV - Max 50MB)'
+                    : 'Project Upload* (PDF, DOC, DOCX, HTML, or ZIP - Max 50MB)';
+            }
+
+            if (isImageCategory) {
+                if (thumbnailInput) {
+                    thumbnailInput._compressedBlob = null;
+                    thumbnailInput.value = '';
+                }
+                if (thumbnailPreview) {
+                    thumbnailPreview.innerHTML = '<span class="thumbnail-placeholder">ðŸ“· Click or drag to add a cover image</span>';
+                    thumbnailPreview.classList.remove('has-image');
+                }
+            }
+        };
+
+        categorySelect?.addEventListener('change', applyContentTypeRules);
 
         // Toggle file/text/code inputs (now only within #non-image-fields)
         modeRadios.forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                // If we are in Image category, ignore mode changes (UI is hidden anyway)
-                if (categorySelect?.value === 'images') return;
-
-                fileGroup?.classList.add('hidden');
-                textGroup?.classList.add('hidden');
-                codeGroup?.classList.add('hidden');
-                imageGroup?.classList.add('hidden');
-
-                // Remove all required
-                fileGroup?.querySelector('input')?.removeAttribute('required');
-                textGroup?.querySelector('textarea')?.removeAttribute('required');
-                codeGroup?.querySelector('textarea')?.removeAttribute('required');
-
-                if (e.target.value === 'file') {
-                    fileGroup?.classList.remove('hidden');
-                    const fileInput = fileGroup?.querySelector('input');
-                    if (fileInput) fileInput.required = true;
-                } else if (e.target.value === 'text') {
-                    textGroup?.classList.remove('hidden');
-                    const textInput = textGroup?.querySelector('textarea');
-                    if (textInput) textInput.required = true;
-                } else if (e.target.value === 'code') {
-                    codeGroup?.classList.remove('hidden');
-                    const codeInput = codeGroup?.querySelector('textarea');
-                    if (codeInput) codeInput.required = true;
-                }
-            });
+            radio.addEventListener('change', applyContentTypeRules);
         });
+
+        applyContentTypeRules();
 
         // ========== Image Dropzone Events (FIXED LOOP BUG) ==========
         if (imageDropZone && imageFileInput) {
@@ -131,7 +217,7 @@ export const UploadPage = {
         }
 
         // ========== Theme Multi-Select ==========
-        this.setupThemeSelector();
+        refreshThemeOptions();
 
         // Thumbnail preview & Compression prompt
         thumbnailInput?.addEventListener('change', async (e) => {
@@ -202,6 +288,13 @@ export const UploadPage = {
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            if (this._isSubmitting) {
+                return;
+            }
+
+            this._isSubmitting = true;
+            form.dataset.submitting = 'true';
+
             try {
                 const submitBtn = form.querySelector('button[type="submit"]');
                 if (submitBtn) {
@@ -226,7 +319,7 @@ export const UploadPage = {
                     return UI.showToast('File size exceeds 50MB limit.', 'error');
                 }
                 if (category !== 'images' && contentMode === 'file') {
-                    const validationError = this.validateProjectFile(file);
+                    const validationError = this.validateProjectFile(file, category);
                     if (validationError) {
                         UI.hideLoader();
                         submitBtn.disabled = false;
@@ -253,6 +346,8 @@ export const UploadPage = {
                     contentText = formData.get('content_text');
                 } else if (contentMode === 'code') {
                     contentText = formData.get('code_content');
+                    fileToUpload = this.buildHtmlProjectFile(formData.get('title'), contentText);
+                    finalFileSize = fileToUpload.size;
                     finalFileType = 'text/html';
                 } else if (contentMode === 'file') {
                     fileToUpload = file && file.size > 0 ? file : null;
@@ -297,7 +392,7 @@ export const UploadPage = {
                         mime_type: fullSizeImage?.type || 'image/webp',
                         status: 'pending', // Restore moderation flow - images must be approved first
                         themes: selectedThemes,
-                        audience_level: formData.get('audience_level')
+                        audience_level: this.normalizeAudienceLevel(formData.get('audience_level'))
                     };
 
                     const { error } = await API.uploadImagePost(
@@ -310,7 +405,7 @@ export const UploadPage = {
                         console.error('Image Upload error:', error);
                         UI.showToast(error.message || 'Image Upload failed.', 'error');
                     } else {
-                        UI.showToast('Image uploaded successfully! 🎉', 'success');
+                        UI.showToast('Thank you for uploading your work. Your submission has been received and is now pending review.', 'success');
                         this._resetImageSelection();
                         setTimeout(() => window.location.hash = '#my-uploads', 1500);
                     }
@@ -322,7 +417,7 @@ export const UploadPage = {
                         title: formData.get('title'),
                         category: formData.get('category'),
                         themes: selectedThemes,
-                        audience_level: formData.get('audience_level'),
+                        audience_level: this.normalizeAudienceLevel(formData.get('audience_level')),
                         description: formData.get('description') || '',
                         content_text: contentText,
                         file_type: finalFileType,
@@ -362,11 +457,16 @@ export const UploadPage = {
                     console.log('Submitting standard post:', submissionData);
                     const { error } = await API.uploadSubmission(submissionData, fileToUpload, thumbnailBlob, displayBlob);
 
+                    const fileExtension = fileToUpload?.name?.split('.')?.pop()?.toLowerCase() || '';
+                    const projectSuccessMessage = fileExtension === 'zip'
+                        ? 'Thank you. Your website package has been uploaded successfully.'
+                        : 'Thank you. Your project file has been uploaded successfully.';
+
                     if (error) {
                         console.error('Upload error:', error);
                         UI.showToast(error.message || 'Upload failed.', 'error');
                     } else {
-                        UI.showToast('Uploaded successfully! Waiting for review.', 'success');
+                        UI.showToast(fileToUpload && !fileToUpload.type?.startsWith('audio/') ? projectSuccessMessage : 'Thank you for uploading your work. Your submission has been received and is now pending review.', 'success');
                         setTimeout(() => window.location.hash = '#my-uploads', 1500);
                     }
                 }
@@ -374,6 +474,8 @@ export const UploadPage = {
                 console.error('Unexpected upload error:', err);
                 UI.showToast('Something went wrong. Check the console.', 'error');
             } finally {
+                this._isSubmitting = false;
+                delete form.dataset.submitting;
                 UI.hideLoader();
                 const submitBtn = form.querySelector('button[type="submit"]');
                 if (submitBtn) {
@@ -442,33 +544,63 @@ export const UploadPage = {
         return Array.from(document.querySelectorAll('input[name="themes"]:checked')).map(cb => cb.value);
     },
 
-    validateProjectFile(file) {
+    normalizeAudienceLevel(level) {
+        const value = String(level || '').trim();
+        const audienceMap = {
+            Kids: 'Beginner',
+            General: 'Intermediate',
+            Adult: 'Advanced'
+        };
+
+        return audienceMap[value] || value || 'Beginner';
+    },
+
+    buildHtmlProjectFile(title, code) {
+        const rawBaseName = String(title || 'project').trim() || 'project';
+        const safeBaseName = rawBaseName
+            .toLowerCase()
+            .replace(/\.html?$/i, '')
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 80) || 'project';
+        const htmlContent = String(code || '');
+
+        return new File([htmlContent], `${safeBaseName}.html`, { type: 'text/html' });
+    },
+
+    validateProjectFile(file, category = '') {
         if (!file) return 'Please select a file to upload.';
 
+        const normalizedCategory = UI.normalizeCategoryValue(category);
+        if (normalizedCategory === 'songs') {
+            const allowedAudioTypes = new Set(['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav']);
+            const allowedAudioExtensions = ['.mp3', '.wav'];
+            const lowerName = file.name?.toLowerCase?.() || '';
+            const hasAllowedAudioExtension = allowedAudioExtensions.some((ext) => lowerName.endsWith(ext));
+
+            if (!allowedAudioTypes.has(file.type) && !hasAllowedAudioExtension) {
+                return 'Unsupported audio type. Use MP3 or WAV.';
+            }
+
+            return null;
+        }
+
+        const projectAllowedExtensions = ['.pdf', '.doc', '.docx', '.html', '.zip'];
         const allowedTypes = new Set([
             'application/pdf',
-            'text/plain',
-            'application/zip',
-            'application/x-zip-compressed',
-            'audio/mpeg',
-            'audio/mp3',
-            'audio/wav',
-            'audio/x-wav',
-            'audio/ogg',
-            'audio/webm',
-            'audio/mp4',
-            'audio/x-m4a',
-            'audio/aac',
-            'application/json',
-            'text/csv',
             'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-powerpoint',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            'text/html',
+            'application/zip',
+            'application/x-zip-compressed',
+            'application/octet-stream'
         ]);
+        const allowedExtensions = projectAllowedExtensions;
+        const lowerName = file.name?.toLowerCase?.() || '';
+        const hasAllowedExtension = allowedExtensions.some((ext) => lowerName.endsWith(ext));
 
-        if (!allowedTypes.has(file.type)) {
-            return 'Unsupported file type. Use PDF, TXT, ZIP, DOCX, PPTX, JSON, CSV, or supported audio.';
+        if (!allowedTypes.has(file.type) && !hasAllowedExtension) {
+            return 'Unsupported project type. Use PDF, DOC, DOCX, HTML, or ZIP.';
         }
 
         return null;
@@ -516,20 +648,21 @@ export const UploadPage = {
             // Fill fields
             form.querySelector('input[name="title"]').value = sub.title || '';
             const categorySelect = form.querySelector('select[name="category"]');
-            categorySelect.value = sub.category || '';
+            categorySelect.value = UI.normalizeCategoryValue(sub.category, sub.content_type);
             
             // Trigger category change logic to show/hide correct groups
             categorySelect.dispatchEvent(new Event('change'));
 
             if (sub.category === 'images') {
                 // If it's an image post, category is 'images', content_type is 'image'
-                if (sub.thumbnail_url) {
+                const existingImagePreview = sub.image_url || sub.thumbnail_url || null;
+                if (existingImagePreview) {
                     const preview = document.getElementById('image-upload-preview');
                     const img = document.getElementById('image-preview-img');
                     const zone = document.getElementById('image-drop-zone');
                     
                     if (preview && img && zone) {
-                        img.src = sub.thumbnail_url;
+                        img.src = existingImagePreview;
                         preview.style.display = 'block';
                         zone.classList.add('has-file');
                         zone.querySelector('.drop-zone-content').style.display = 'none';
@@ -566,7 +699,7 @@ export const UploadPage = {
             }
             form.querySelector('textarea[name="description"]').value = sub.description || '';
             const audienceSelect = form.querySelector('select[name="audience_level"]');
-            if (audienceSelect) audienceSelect.value = sub.audience_level || 'General';
+            if (audienceSelect) audienceSelect.value = this.normalizeAudienceLevel(sub.audience_level);
 
             if (sub.themes && Array.isArray(sub.themes)) {
                 sub.themes.forEach(theme => {
@@ -611,15 +744,18 @@ export const UploadPage = {
             // New thumbnail change handler
             const thumbnailInput = document.getElementById('thumbnail-input');
             const thumbnailPreview = document.getElementById('thumbnail-preview');
+            const thumbnailGroup = document.getElementById('thumbnail-input-group');
 
             // Show existing thumbnail if available
             const existingThumb = sub.thumbnail_url
                 || (sub.storage_provider === 'r2' ? null : UI.resolveMediaUrl(sub.thumbnail_path))
-                || sub.image_url
-                || null;
-            if (existingThumb) {
+                || UI.getThumbnailFallbackUrl(sub);
+            if (sub.category !== 'images' && existingThumb) {
                 thumbnailPreview.innerHTML = `<img src="${existingThumb}" alt="Current thumbnail">`;
                 thumbnailPreview.classList.add('has-image');
+            }
+            if (sub.category === 'images') {
+                thumbnailGroup?.classList.add('hidden');
             }
 
             thumbnailInput?.addEventListener('change', async (e) => {
@@ -679,7 +815,7 @@ export const UploadPage = {
                         category: formData.get('category'),
                         description: formData.get('description') || '',
                         themes: this.getSelectedThemes(),
-                        audience_level: formData.get('audience_level') || 'General',
+                        audience_level: this.normalizeAudienceLevel(formData.get('audience_level')),
                         status: 'pending'
                     };
 
@@ -736,7 +872,7 @@ export const UploadPage = {
 
     async _handleImageSelect(file) {
         const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-        const maxSize = 15 * 1024 * 1024; // 15MB
+        const maxSize = 50 * 1024 * 1024; // 50MB
 
         // Validate type
         if (!allowedTypes.includes(file.type)) {
@@ -745,7 +881,7 @@ export const UploadPage = {
 
         // Validate size
         if (file.size > maxSize) {
-            return UI.showToast(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 15 MB.`, 'error');
+            return UI.showToast(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 50 MB.`, 'error');
         }
 
         this._imageFile = file;

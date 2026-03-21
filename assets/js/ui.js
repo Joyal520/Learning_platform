@@ -4,6 +4,52 @@ import { supabase } from './supabase.js';
 import { AvatarLibrary } from './avatars.js';
 
 export const UI = {
+    defaultThumbnailIcons: {
+        stories: '/assets/images/story.png',
+        writing: '/assets/images/writing.png',
+        literature: '/assets/images/literature.png',
+        lessons: '/assets/images/learning.png',
+        learning: '/assets/images/learning.png',
+        media: '/assets/images/media.png',
+        fun: '/assets/images/fun.png'
+    },
+    _audioR2PublicBaseUrlPromise: null,
+
+    contentTypeOptions: [
+        { value: 'short_stories', label: 'Short Story', navLabel: 'Short Stories', group: 'Stories' },
+        { value: 'long_stories', label: 'Long Story', navLabel: 'Long Stories', group: 'Stories' },
+        { value: 'essays', label: 'Essay', navLabel: 'Essays', group: 'Writing' },
+        { value: 'articles', label: 'Article', navLabel: 'Articles', group: 'Writing' },
+        { value: 'speech', label: 'Speech', navLabel: 'Speech', group: 'Writing' },
+        { value: 'poems', label: 'Poem', navLabel: 'Poems', group: 'Literature' },
+        { value: 'classroom_play', label: 'Classroom Play', navLabel: 'Classroom Plays', group: 'Literature' },
+        { value: 'conversations', label: 'Conversation', navLabel: 'Conversations', group: 'Literature' },
+        { value: 'lessons', label: 'Lessons', navLabel: 'Lessons', group: 'Lessons' },
+        { value: 'flashcards', label: 'Flashcards', navLabel: 'Flashcards', group: 'Learning Tools' },
+        { value: 'quiz', label: 'Quiz', navLabel: 'Quizzes', group: 'Learning Tools' },
+        { value: 'presentations', label: 'Presentation', navLabel: 'Presentations', group: 'Learning Tools' },
+        { value: 'puzzle', label: 'Puzzle', navLabel: 'Puzzles', group: 'Fun' },
+        { value: 'game', label: 'Game', navLabel: 'Games', group: 'Fun' },
+        { value: 'images', label: 'Image', navLabel: 'Images', group: 'Media' },
+        { value: 'songs', label: 'Audio', navLabel: 'Audio', group: 'Media' }
+    ],
+
+    themeOptions: [
+        'Motivational',
+        'Inspirational',
+        'Educational',
+        'Emotional',
+        'Fantasy',
+        'Mystery',
+        'Technology',
+        'Social Awareness',
+        'Other'
+    ],
+
+    lessonThemeOptions: ['Science', 'Maths', 'ICT', 'English'],
+
+    audienceLevels: ['Beginner', 'Intermediate', 'Advanced'],
+
     init() {
         this.setupMobileMenu();
 
@@ -42,6 +88,10 @@ export const UI = {
         };
 
         const handleToggle = (source) => {
+            if (window.innerWidth <= 768) {
+                setMenuState(false);
+                return;
+            }
             const isOpen = !nav.classList.contains('mobile-open');
             console.log(`[Mobile Nav] hamburger clicked (${source})`);
             setMenuState(isOpen);
@@ -63,7 +113,7 @@ export const UI = {
         });
 
         window.addEventListener('resize', () => {
-            if (window.innerWidth > 768 && nav.classList.contains('mobile-open')) {
+            if (nav.classList.contains('mobile-open')) {
                 setMenuState(false);
             }
         });
@@ -74,6 +124,10 @@ export const UI = {
     // Hero Animations: Cycling Subtitle + Confetti Dots
     // =============================================
     initHeroAnimations() {
+        if (this._cyclingSubtitleInterval) {
+            clearInterval(this._cyclingSubtitleInterval);
+            this._cyclingSubtitleInterval = null;
+        }
         this._initCyclingSubtitle();
         this._initHeroEffects();
     },
@@ -135,7 +189,7 @@ export const UI = {
 
     _initHeroFullscreen(hero) {
         const btn = hero.querySelector('.hero-fullscreen-btn');
-        if (!btn) return;
+        if (!btn || btn.dataset.fullscreenBound === 'true') return;
 
         btn.addEventListener('click', () => {
             if (!document.fullscreenElement) {
@@ -150,12 +204,20 @@ export const UI = {
         });
 
         // Update icon based on state
-        document.addEventListener('fullscreenchange', () => {
-            const isFull = !!document.fullscreenElement;
-            btn.innerHTML = isFull ?
-                `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>` :
-                `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>`;
-        });
+        if (!this._heroFullscreenChangeHandler) {
+            this._heroFullscreenChangeHandler = () => {
+                const activeBtn = document.querySelector('.hero-fullscreen-btn');
+                if (!activeBtn) return;
+
+                const isFull = !!document.fullscreenElement;
+                activeBtn.innerHTML = isFull ?
+                    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>` :
+                    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>`;
+            };
+            document.addEventListener('fullscreenchange', this._heroFullscreenChangeHandler);
+        }
+
+        btn.dataset.fullscreenBound = 'true';
     },
 
 
@@ -237,12 +299,13 @@ export const UI = {
         const TRANSITION_MS = 400;        // ms for fade transition
         let index = 0;
 
-        setInterval(() => {
+        this._cyclingSubtitleInterval = setInterval(() => {
             // Fade out
             el.style.opacity = '0';
             el.style.transform = 'translateY(10px)';
 
             setTimeout(() => {
+                if (!document.body.contains(el)) return;
                 index = (index + 1) % phrases.length;
                 el.textContent = phrases[index];
                 // Fade in
@@ -262,6 +325,321 @@ export const UI = {
 
     showLoader() { document.getElementById('loader')?.classList.remove('hidden'); },
     hideLoader() { document.getElementById('loader')?.classList.add('hidden'); },
+
+    normalizeCategoryValue(category = '', contentType = '') {
+        const raw = String(category || contentType || '').trim().toLowerCase();
+        const aliasMap = {
+            short_story: 'short_stories',
+            long_story: 'long_stories',
+            comic: 'short_stories',
+            comics: 'short_stories',
+            essay: 'essays',
+            article: 'articles',
+            poem: 'poems',
+            classroom_plays: 'classroom_play',
+            conversation: 'conversations',
+            lesson: 'lessons',
+            presentation: 'presentations',
+            puzzles: 'puzzle',
+            games: 'game',
+            image: 'images',
+            audio: 'songs',
+            audios: 'songs',
+            song: 'songs',
+            songs: 'songs'
+        };
+
+        return aliasMap[raw] || raw || 'songs';
+    },
+
+    getContentTypeOption(category, contentType = '') {
+        const normalized = this.normalizeCategoryValue(category, contentType);
+        return this.contentTypeOptions.find((option) => option.value === normalized) || null;
+    },
+
+    getContentTypeLabel(category, contentType = '') {
+        const option = this.getContentTypeOption(category, contentType);
+        if (option) return option.label;
+
+        const raw = String(category || contentType || '').trim();
+        return raw ? raw.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) : 'Audio';
+    },
+
+    getCategoryNavLabel(category, contentType = '') {
+        return this.getContentTypeOption(category, contentType)?.navLabel || this.getContentTypeLabel(category, contentType);
+    },
+
+    getCategoryColor(category, contentType = '') {
+        const normalized = this.normalizeCategoryValue(category, contentType);
+        const colorMap = {
+            short_stories: '#6366f1',
+            long_stories: '#8b5cf6',
+            essays: '#14b8a6',
+            articles: '#f59e0b',
+            speech: '#38bdf8',
+            poems: '#a855f7',
+            classroom_play: '#fb7185',
+            conversations: '#06b6d4',
+            flashcards: '#f59e0b',
+            lessons: '#0ea5e9',
+            quiz: '#8b5cf6',
+            presentations: '#7c3aed',
+            puzzle: '#f97316',
+            game: '#10b981',
+            images: '#22c55e',
+            songs: '#64748b'
+        };
+
+        return colorMap[normalized] || '#64748b';
+    },
+
+    getCategoryEmoji(category, contentType = '') {
+        const normalized = this.normalizeCategoryValue(category, contentType);
+        const map = {
+            short_stories: '📖',
+            long_stories: '📖',
+            essays: '📝',
+            articles: '📰',
+            speech: '🎤',
+            poems: '📜',
+            classroom_play: '🎭',
+            conversations: '💬',
+            flashcards: '🧠',
+            lessons: '📘',
+            quiz: '📊',
+            presentations: '🖥️',
+            puzzle: '🧩',
+            game: '🎮',
+            images: '🖼️',
+            songs: '🎵'
+        };
+
+        return map[normalized] || '📄';
+    },
+
+    getCategoryFallbackKey(category, contentType = '') {
+        const normalized = this.normalizeCategoryValue(category, contentType);
+        const fallbackCategoryMap = {
+            short_stories: 'stories',
+            long_stories: 'stories',
+            essays: 'writing',
+            articles: 'writing',
+            speech: 'writing',
+            poems: 'literature',
+            classroom_play: 'literature',
+            conversations: 'literature',
+            flashcards: 'learning',
+            lessons: 'lessons',
+            quiz: 'learning',
+            presentations: 'learning',
+            puzzle: 'fun',
+            game: 'fun',
+            songs: 'media',
+            images: 'media'
+        };
+
+        return fallbackCategoryMap[normalized] || String(category || '').toLowerCase();
+    },
+
+    getThumbnailFallbackPath(category, contentType = '') {
+        const categoryKey = this.getCategoryFallbackKey(category, contentType);
+        return this.defaultThumbnailIcons[categoryKey] || '/assets/images/default.png';
+    },
+
+    getThumbnailFallbackUrl(sub) {
+        return this.resolveMediaUrl(this.getThumbnailFallbackPath(sub?.category, sub?.content_type));
+    },
+
+    getContentModeOptions(category, contentType = '') {
+        const normalized = this.normalizeCategoryValue(category, contentType);
+        const writingTypes = new Set([
+            'short_stories',
+            'long_stories',
+            'essays',
+            'articles',
+            'speech',
+            'poems',
+            'classroom_play',
+            'conversations'
+        ]);
+        const toolTypes = new Set([
+            'flashcards',
+            'lessons',
+            'quiz',
+            'presentations',
+            'puzzle',
+            'game'
+        ]);
+
+        if (normalized === 'images') {
+            return { file: true, text: false, code: false, useImageUploader: true };
+        }
+        if (normalized === 'songs') {
+            return { file: true, text: false, code: false, useImageUploader: false };
+        }
+        if (toolTypes.has(normalized)) {
+            return { file: true, text: false, code: true, useImageUploader: false };
+        }
+        if (writingTypes.has(normalized)) {
+            return { file: true, text: true, code: true, useImageUploader: false };
+        }
+
+        return { file: true, text: true, code: true, useImageUploader: false };
+    },
+
+    getExploreCategoryMeta() {
+        const lessonsChildren = this.lessonThemeOptions.map((theme) => ({
+            label: theme,
+            category: 'lessons',
+            theme
+        }));
+        const learningToolChildren = this.contentTypeOptions
+            .filter((option) => option.group === 'Learning Tools')
+            .map((option) => ({
+                label: option.navLabel,
+                category: option.value
+            }));
+
+        return [
+            { type: 'all', label: 'All Works', category: 'all', icon: 'grid' },
+            { type: 'group', label: 'Stories', group: 'Stories', icon: 'book', badgeClass: 'stories' },
+            { type: 'group', label: 'Writing', group: 'Writing', icon: 'pen', badgeClass: 'writing' },
+            { type: 'group', label: 'Literature', group: 'Literature', icon: 'library', badgeClass: 'literature' },
+            { type: 'group', label: 'Lessons', group: 'Lessons', icon: 'book', badgeClass: 'lessons', children: lessonsChildren },
+            { type: 'group', label: 'Learning Tools', group: 'Learning Tools', icon: 'lightbulb', badgeClass: 'learning', children: learningToolChildren },
+            { type: 'group', label: 'Fun', group: 'Fun', icon: 'sparkles', badgeClass: 'fun' },
+            { type: 'group', label: 'Media', group: 'Media', icon: 'play', badgeClass: 'media' }
+        ];
+    },
+
+    renderExploreCategoryIcon(iconName) {
+        const icons = {
+            grid: `
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                    <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                    <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+                    <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                </svg>
+            `,
+            book: `
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4.5 5.5A2.5 2.5 0 0 1 7 3h4.5a3.5 3.5 0 0 1 3 1.7A3.5 3.5 0 0 1 17.5 3H20a1 1 0 0 1 1 1v13.5a1 1 0 0 1-1 1h-2.5a3.5 3.5 0 0 0-3 1.7 3.5 3.5 0 0 0-3-1.7H7A2.5 2.5 0 0 1 4.5 16V5.5Z"></path>
+                    <path d="M12 4.5v14"></path>
+                    <path d="M8 8h2.5"></path>
+                    <path d="M15.5 8H18"></path>
+                </svg>
+            `,
+            pen: `
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m4 20 3.2-.8L18.4 8a2.2 2.2 0 0 0-3.1-3.1L4.1 16.1 4 20Z"></path>
+                    <path d="m13.5 6.5 4 4"></path>
+                    <path d="M4 20 9.5 18.5"></path>
+                </svg>
+            `,
+            library: `
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 20h16"></path>
+                    <path d="M6 18V7.2a1.2 1.2 0 0 1 1.2-1.2H9v12"></path>
+                    <path d="M10 18V5.2A1.2 1.2 0 0 1 11.2 4H14v14"></path>
+                    <path d="M15 18V8.2A1.2 1.2 0 0 1 16.2 7H18v11"></path>
+                </svg>
+            `,
+            lightbulb: `
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M9 18h6"></path>
+                    <path d="M10 22h4"></path>
+                    <path d="M12 2v2"></path>
+                    <path d="M5.6 5.6 7 7"></path>
+                    <path d="M18.4 5.6 17 7"></path>
+                    <path d="M4 12h2"></path>
+                    <path d="M18 12h2"></path>
+                    <path d="M9 18v-1.5c0-.9-.4-1.8-1.1-2.4A5.5 5.5 0 1 1 16.1 14c-.7.6-1.1 1.5-1.1 2.4V18"></path>
+                </svg>
+            `,
+            sparkles: `
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m12 3 1.3 3.7L17 8l-3.7 1.3L12 13l-1.3-3.7L7 8l3.7-1.3L12 3Z"></path>
+                    <path d="m5 14 .8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14Z"></path>
+                    <path d="m19 13 .9 2.6L22.5 17l-2.6.9L19 20.5l-.9-2.6L15.5 17l2.6-.9L19 13Z"></path>
+                </svg>
+            `,
+            play: `
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="3" y="3" width="18" height="18" rx="6"></rect>
+                    <path d="m10 8 6 4-6 4V8Z"></path>
+                </svg>
+            `,
+            chevron: `
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m9 6 6 6-6 6"></path>
+                </svg>
+            `
+        };
+
+        return icons[iconName] || icons.grid;
+    },
+
+    renderExploreCategoryFilters() {
+        return this.getExploreCategoryMeta().map((item) => {
+            if (item.type === 'all') {
+                return `
+                    <button class="clay-btn category-card category-clay-item category-card-all active" data-category="all">
+                        <span class="category-card-icon category-icon-grid">${this.renderExploreCategoryIcon(item.icon)}</span>
+                        <span class="category-card-name">${item.label.toUpperCase()}</span>
+                        <span class="category-card-arrow">${this.renderExploreCategoryIcon('chevron')}</span>
+                    </button>
+                `;
+            }
+
+            const options = item.children || this.contentTypeOptions
+                .filter((option) => option.group === item.group)
+                .map((option) => ({
+                    label: option.navLabel,
+                    category: option.value
+                }));
+            const groupId = item.group.toLowerCase().replace(/\s+/g, '-');
+
+            return `
+                <div class="category-filter-group" data-group="${groupId}">
+                    <button class="clay-btn category-card category-parent-toggle" type="button" data-group="${groupId}" data-group-filter="${item.group}" aria-expanded="false">
+                        <span class="category-card-icon category-icon-${item.icon}">${this.renderExploreCategoryIcon(item.icon)}</span>
+                        <span class="category-card-name">${item.label.toUpperCase()}</span>
+                        <span class="category-count category-count-${item.badgeClass}">${options.length}</span>
+                    </button>
+                    <div class="category-children" data-group-children="${groupId}">
+                        ${options.map((option) => `
+                            <button class="clay-btn category-clay-item category-child-item" data-category="${option.category}"${option.theme ? ` data-theme="${option.theme}"` : ''}>
+                                <span class="category-child-label">${option.label}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    renderContentTypeOptions() {
+        return this.contentTypeOptions.map((option) =>
+            `<option value="${option.value}">${option.label}</option>`
+        ).join('');
+    },
+
+    getThemeOptionsForCategory(category = '', contentType = '') {
+        const normalized = this.normalizeCategoryValue(category, contentType);
+        return normalized === 'lessons' ? this.lessonThemeOptions : this.themeOptions;
+    },
+
+    renderThemeOptions(category = '', selectedThemes = []) {
+        const selectedThemeSet = new Set(selectedThemes);
+        return this.getThemeOptionsForCategory(category).map((theme) =>
+            `<div class="theme-option"><label><input type="checkbox" name="themes" value="${theme}"${selectedThemeSet.has(theme) ? ' checked' : ''}> ${theme}</label></div>`
+        ).join('');
+    },
+
+    renderAudienceOptions() {
+        return this.audienceLevels.map((level) => `<option value="${level}">${level}</option>`).join('');
+    },
 
     wrapCodeForPreview(code) {
         if (!code) return '';
@@ -401,7 +779,7 @@ export const UI = {
                     </div>`;
         }
 
-        if (sub.file_type?.startsWith('audio/')) return `<audio controls class="preview-audio"><source src="${sub.public_url}" type="${sub.file_type}"></audio>`;
+        if (sub.file_type?.startsWith('audio/')) return `<div class="audio-player-host" id="audioPlayerMount"></div>`;
         return `<div class="file-placeholder">📄 This content is a ${sub.file_type || 'file'} and can be downloaded below.</div>`;
     },
 
@@ -414,6 +792,9 @@ export const UI = {
     resolveMediaUrl(pathOrUrl) {
         if (!pathOrUrl) return null;
         if (pathOrUrl.startsWith('data:') || pathOrUrl.startsWith('http')) return pathOrUrl;
+        if (pathOrUrl.startsWith('/assets/') || pathOrUrl.startsWith('assets/')) {
+            return pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`;
+        }
 
         const { data } = supabase.storage.from('approved_public').getPublicUrl(pathOrUrl);
         return data.publicUrl;
@@ -425,34 +806,87 @@ export const UI = {
     },
 
     getSubmissionImageUrls(sub) {
-        const previewUrl = this.appendCacheBust(
-            this.resolveMediaUrl(sub.thumbnail_url || sub.thumbnail_path || sub.image_url || sub.public_url),
-            sub
-        );
-        const fullUrl = this.appendCacheBust(
-            this.resolveMediaUrl(sub.image_url || sub.public_url || sub.thumbnail_url || sub.thumbnail_path),
-            sub
-        );
+        const normalized = this.normalizeCategoryValue(sub?.category, sub?.content_type);
+        const thumbnailValue = String(
+            sub?.thumbnail
+            || sub?.thumbnail_url
+            || sub?.thumbnail_path
+            || ''
+        ).trim();
+        const customThumbnailUrl = thumbnailValue !== '' ? this.resolveMediaUrl(thumbnailValue) : null;
+        const uploadedImageUrl = this.resolveMediaUrl(sub?.image_url || sub?.public_url || sub?.file_url || sub?.file_path);
+        const defaultThumbnailUrl = this.getThumbnailFallbackUrl(sub);
+        const category = this.getCategoryFallbackKey(sub?.category, sub?.content_type);
+
+        const imageSrc = thumbnailValue !== ''
+            ? customThumbnailUrl
+            : this.defaultThumbnailIcons[category] || '/assets/images/default.png';
+
+        console.log('Thumbnail used:', imageSrc);
+
+        const previewUrl = imageSrc || defaultThumbnailUrl;
+
+        const fullUrl = uploadedImageUrl || customThumbnailUrl || defaultThumbnailUrl;
 
         return {
-            previewUrl,
-            fullUrl: fullUrl || previewUrl
+            previewUrl: this.appendCacheBust(previewUrl, sub),
+            fullUrl: this.appendCacheBust(fullUrl || previewUrl, sub)
         };
+    },
+
+    async getAudioR2PublicBaseUrl() {
+        if (!this._audioR2PublicBaseUrlPromise) {
+            this._audioR2PublicBaseUrlPromise = fetch('/api/r2-public-config')
+                .then(async (response) => {
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || !payload.publicBaseUrl) {
+                        throw new Error(payload.error || 'R2 public URL not available.');
+                    }
+                    return String(payload.publicBaseUrl).replace(/\/+$/, '');
+                });
+        }
+
+        return this._audioR2PublicBaseUrlPromise;
+    },
+
+    async resolveAudioSourceUrl(submission) {
+        if (submission?.file_url) {
+            return submission.file_url;
+        }
+
+        if (submission?.storage_provider === 'r2' && submission?.file_path && !/^https?:\/\//i.test(submission.file_path)) {
+            try {
+                const publicBaseUrl = await this.getAudioR2PublicBaseUrl();
+                return `${publicBaseUrl}/${String(submission.file_path).replace(/^\/+/, '')}`;
+            } catch (error) {
+                console.warn('[UI] Falling back from R2 audio source lookup:', error);
+            }
+        }
+
+        if (submission?.file_path && !/^https?:\/\//i.test(submission.file_path)) {
+            return this.resolveMediaUrl(submission.file_path);
+        }
+
+        return submission?.public_url || submission?.file_path || null;
+    },
+
+    renderAudioVisualizerMarkup() {
+        const barHeights = [16, 30, 56, 74, 48, 22, 12, 18, 36, 58, 26, 12, 18, 34, 54, 42, 24, 68, 38, 22, 30, 48, 34];
+        return barHeights.map((height, index) => `
+            <span class="audio-feed-wave-bar" style="--bar-height:${height}px; --bar-index:${index};"></span>
+        `).join('');
     },
 
     renderCard(sub, badgeObj = null) {
         const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
-        const categoryColors = {
-            short_stories: '#6366f1', long_stories: '#8b5cf6', comics: '#ec4899',
-            essays: '#14b8a6', articles: '#f59e0b', classroom_play: '#fb7185',
-            speech: '#38bdf8', conversations: '#06b6d4', poems: '#a855f7',
-            images: '#22c55e', songs: '#f97316', presentations: '#8b5cf6',
-            flashcards: '#f59e0b'
-        };
-        const color = categoryColors[sub.category] || '#6366f1';
+        const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
+        const color = this.getCategoryColor(sub.category, sub.content_type);
+        const categoryLabel = this.getContentTypeLabel(sub.category, sub.content_type);
+        const title = sub.title || 'Untitled';
 
         const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
         const thumbnailUrl = previewUrl;
+        const fallbackThumbnailUrl = this.getThumbnailFallbackUrl(sub);
 
         const thumbnailHtml = thumbnailUrl
             ? `<div class="card-thumbnail-container">
@@ -460,15 +894,15 @@ export const UI = {
                       class="card-thumbnail-img" 
                       loading="lazy" 
                       decoding="async" 
-                      alt="${sub.title}"
-                      onerror="this.style.opacity='0'; this.parentElement.querySelector('.card-thumb-gradient').style.display='flex';">
+                      alt="${title}"
+                      onerror="if(this.dataset.fallbackApplied==='true'){this.style.opacity='0'; this.parentElement.querySelector('.card-thumb-gradient').style.display='flex'; return;} this.dataset.fallbackApplied='true'; this.src='${fallbackThumbnailUrl}';">
                  <div class="card-thumbnail card-thumb-gradient" style="display:none; background:linear-gradient(135deg, ${color}22, ${color}44); position:absolute; top:0; left:0;">
-                    <span class="thumb-emoji">${this.categoryEmoji(sub.category)}</span>
+                    <span class="thumb-emoji">${this.getCategoryEmoji(sub.category, sub.content_type)}</span>
                  </div>
                </div>`
             : `<div class="card-thumbnail-container">
                 <div class="card-thumbnail card-thumb-gradient" style="background:linear-gradient(135deg, ${color}22, ${color}44)">
-                    <span class="thumb-emoji">${this.categoryEmoji(sub.category)}</span>
+                    <span class="thumb-emoji">${this.getCategoryEmoji(sub.category, sub.content_type)}</span>
                 </div>
                </div>`;
 
@@ -478,8 +912,128 @@ export const UI = {
             </div>
         ` : '';
 
+        if (normalizedCategory === 'songs' || sub.content_type === 'audio' || sub.file_type?.startsWith('audio/')) {
+            const authorName = sub.profiles?.display_name || 'Anonymous';
+            const initials = authorName.charAt(0).toUpperCase();
+            const shareUrl = this.createWhatsAppShareUrl(title, sub.id);
+            const audioArtworkUrl = previewUrl || fullUrl || fallbackThumbnailUrl;
+            const activeRating = Math.round(Number(stats.avg_rating) || 0);
+            const ratingControls = Array.from({ length: 5 }, (_, index) => {
+                const value = index + 1;
+                return `
+                    <button class="audio-feed-rate-star ${value <= activeRating ? 'is-active' : ''}"
+                            type="button"
+                            data-audio-action="rate"
+                            data-rating="${value}"
+                            aria-label="Rate ${value} star${value === 1 ? '' : 's'}">★</button>
+                `;
+            }).join('');
+
+            return `
+                <article class="content-card clay-card audio-feed-card animate-fade-in" data-id="${sub.id}">
+                    <div class="audio-feed-shell">
+                        <div class="audio-feed-creator-row">
+                            <div class="audio-feed-avatar">
+                                ${sub.profiles?.avatar_url
+                                    ? `<img src="${sub.profiles.avatar_url}" alt="${authorName}" class="audio-feed-avatar-img">`
+                                    : `<span class="audio-feed-avatar-fallback">${initials}</span>`}
+                            </div>
+                            <div class="audio-feed-creator-copy">
+                                <h3 class="audio-feed-creator-name">${authorName}</h3>
+                            </div>
+                        </div>
+
+                        <div class="audio-feed-media">
+                            <img src="${audioArtworkUrl}"
+                                 class="audio-feed-cover"
+                                 loading="lazy"
+                                 decoding="async"
+                                 alt="${title}"
+                                 onerror="if(this.dataset.fallbackApplied==='true'){return;} this.dataset.fallbackApplied='true'; this.src='${fallbackThumbnailUrl}';">
+                            <div class="audio-feed-media-overlay"></div>
+                            <div class="audio-feed-media-sheen"></div>
+                            <span class="audio-feed-badge">${categoryLabel}</span>
+
+                            <div class="audio-feed-wave" aria-hidden="true">
+                                ${this.renderAudioVisualizerMarkup()}
+                            </div>
+
+                            <button class="audio-feed-play" type="button" data-audio-action="toggle" aria-label="Play audio">
+                                <span class="audio-feed-play-icon audio-feed-play-icon-play">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M8 6.5v11l9-5.5z"></path>
+                                    </svg>
+                                </span>
+                                <span class="audio-feed-play-icon audio-feed-play-icon-pause">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M8 6h3.5v12H8z"></path>
+                                        <path d="M12.5 6H16v12h-3.5z"></path>
+                                    </svg>
+                                </span>
+                            </button>
+
+                            <button class="audio-feed-loop" type="button" data-audio-action="loop" aria-label="Enable loop">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M17 1l4 4-4 4"></path>
+                                    <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                                    <path d="M7 23l-4-4 4-4"></path>
+                                    <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+                                </svg>
+                            </button>
+
+                            <div class="audio-feed-progress" data-audio-action="seek" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                <div class="audio-feed-progress-fill"></div>
+                            </div>
+
+                            <audio class="audio-feed-native" preload="none"></audio>
+                        </div>
+
+                        <div class="audio-feed-footer">
+                            <div class="audio-feed-meta">
+                                <h3 class="card-title audio-feed-card-title">${title}</h3>
+                                <div class="audio-feed-stats">
+                                    <span class="audio-feed-stat audio-feed-stat-rating">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="m12 2.5 2.9 5.87 6.48.94-4.69 4.57 1.11 6.47L12 17.32 6.2 20.35l1.11-6.47L2.62 9.31l6.48-.94Z"></path>
+                                        </svg>
+                                        <span class="audio-feed-rating-value">${Number(stats.avg_rating).toFixed(1)}</span>
+                                    </span>
+                                    <button class="audio-feed-stat audio-feed-like-btn" type="button" data-audio-action="like" aria-label="Like audio">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="m12 21-1.45-1.32C5.4 15.02 2 11.93 2 8.13 2 5.04 4.42 2.5 7.5 2.5c1.74 0 3.41.81 4.5 2.09A5.94 5.94 0 0 1 16.5 2.5C19.58 2.5 22 5.04 22 8.13c0 3.8-3.4 6.89-8.55 11.55Z"></path>
+                                        </svg>
+                                        <span class="audio-feed-like-count">${stats.like_count || 0}</span>
+                                    </button>
+                                    <span class="audio-feed-stat">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M1.5 12s3.8-7 10.5-7 10.5 7 10.5 7-3.8 7-10.5 7S1.5 12 1.5 12Z"></path>
+                                            <circle cx="12" cy="12" r="3.2"></circle>
+                                        </svg>
+                                        ${stats.view_count || 0}
+                                    </span>
+                                </div>
+
+                                <div class="audio-feed-rating-row">
+                                    <span class="audio-feed-rating-label">Rate</span>
+                                    <div class="audio-feed-rating-stars" aria-label="Rate this audio">
+                                        ${ratingControls}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="audio-feed-share" title="Share on WhatsApp" aria-label="Share on WhatsApp">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.08.54 4.11 1.56 5.9L0 24l6.37-1.67a11.86 11.86 0 0 0 5.69 1.45h.01c6.55 0 11.89-5.34 11.9-11.9a11.82 11.82 0 0 0-3.45-8.4Zm-8.46 18.3h-.01a9.87 9.87 0 0 1-5.04-1.38l-.36-.22-3.78.99 1.01-3.69-.24-.38a9.82 9.82 0 0 1-1.52-5.24c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.11 1.03 6.98 2.9a9.82 9.82 0 0 1 2.89 6.99c0 5.46-4.44 9.9-9.89 9.9Zm5.42-7.4c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.29-.76.96-.94 1.16-.17.2-.35.22-.64.07-.3-.14-1.26-.46-2.39-1.47-.89-.79-1.49-1.76-1.66-2.06-.18-.29-.02-.45.13-.6.13-.14.3-.35.45-.53.15-.17.2-.29.3-.49.1-.2.05-.37-.03-.53-.07-.14-.67-1.61-.91-2.2-.24-.58-.49-.5-.67-.51h-.58c-.19 0-.5.07-.76.37-.27.29-1.03 1-1.03 2.44 0 1.44 1.05 2.83 1.2 3.03.15.2 2.07 3.16 5.02 4.43.7.31 1.25.49 1.68.63.72.23 1.38.2 1.89.12.58-.08 1.76-.72 2.01-1.41.25-.69.25-1.28.17-1.41-.07-.12-.27-.2-.56-.34Z"></path>
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
+                </article>
+            `;
+        }
+
         // NEW: Image-First Feed Card for 'images' category
-        if (sub.category === 'images' || sub.content_type === 'image') {
+        if (normalizedCategory === 'images' || sub.content_type === 'image') {
             return `
                 <div class="content-card clay-card image-feed-card animate-fade-in" data-id="${sub.id}">
                     ${badgeHtml}
@@ -488,14 +1042,14 @@ export const UI = {
                              class="feed-img" 
                              loading="lazy" 
                              decoding="async" 
-                             alt="${sub.title}"
-                             onerror="this.src='${fullUrl || ''}';">
+                             alt="${title}"
+                             onerror="if(this.dataset.fallbackApplied==='true'){this.src='${fallbackThumbnailUrl}'; return;} this.dataset.fallbackApplied='true'; this.src='${fullUrl || fallbackThumbnailUrl}';">
                         <div class="image-overlay-category">
-                            <span class="badge badge-category" style="--cat-color:${color}">${this.categoryEmoji(sub.category)} ${sub.category.replace('_', ' ')}</span>
+                            <span class="badge badge-category" style="--cat-color:${color}">${this.getCategoryEmoji(sub.category, sub.content_type)} ${categoryLabel}</span>
                         </div>
                     </div>
                     <div class="card-body feed-body">
-                        <h3 class="card-title">${sub.title}</h3>
+                        <h3 class="card-title">${title}</h3>
                         ${sub.description ? `<p class="feed-description">${sub.description}</p>` : ''}
                         
                         <div class="feed-author-row">
@@ -533,8 +1087,8 @@ export const UI = {
                 ${badgeHtml}
                 ${thumbnailHtml}
                 <div class="card-body">
-                    <span class="badge badge-category" style="--cat-color:${color}">${sub.category.replace('_', ' ')}</span>
-                    <h3 class="card-title">${sub.title}</h3>
+                    <span class="badge badge-category" style="--cat-color:${color}">${categoryLabel}</span>
+                    <h3 class="card-title">${title}</h3>
                     <p class="card-author">By ${sub.profiles?.display_name || 'Anonymous'}</p>
                     <div class="card-footer">
                         <div class="card-stats">
@@ -567,39 +1121,97 @@ export const UI = {
         const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
         const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
         const thumbUrl = previewUrl || fullUrl;
+        const fallbackThumbnailUrl = this.getThumbnailFallbackUrl(sub);
         const avatarUrl = sub.profiles?.avatar_url;
+        const authorName = sub.profiles?.display_name || 'Anonymous';
         const initials = (sub.profiles?.display_name || 'U').charAt(0).toUpperCase();
+        const imageUrl = fullUrl || thumbUrl || fallbackThumbnailUrl;
+        const shareUrl = this.createWhatsAppShareUrl(sub.title, sub.id);
 
         return `
             <div class="masonry-item animate-fade-in" data-id="${sub.id}" data-full-url="${fullUrl || ''}" data-preview-url="${thumbUrl || ''}">
                 <div class="masonry-card">
-                    <div class="masonry-image-wrapper">
-                        <img src="${thumbUrl}" class="masonry-img" loading="lazy" decoding="async" alt="${sub.title}">
-                        <div class="masonry-overlay"></div>
-                    </div>
-                    <div class="masonry-meta-slim">
+                    <div class="masonry-card-header">
                         <div class="masonry-author-stub" onclick="window.location.hash='#detail/${sub.id}'">
                             <div class="masonry-avatar-mini">
-                                ${avatarUrl ? `<img src="${avatarUrl}" alt="${sub.profiles.display_name}">` : initials}
+                                ${avatarUrl ? `<img src="${avatarUrl}" alt="${authorName}">` : initials}
                             </div>
-                            <span class="masonry-author-name">${sub.profiles?.display_name || 'Anonymous'}</span>
-                        </div>
-                        <div class="masonry-actions-mini">
-                            <a href="${this.createWhatsAppShareUrl(sub.title, sub.id)}" target="_blank" rel="noopener noreferrer" class="action-mini btn-share" title="Share on WhatsApp">
-                                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                            </a>
-                            <div class="action-mini btn-like interaction-btn ${stats.user_has_liked ? 'liked' : ''}" data-id="${sub.id}">
-                                <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                                <span>${stats.like_count || 0}</span>
-                            </div>
-                            <div class="action-mini btn-save interaction-btn ${stats.user_has_bookmarked ? 'bookmarked' : ''}" data-id="${sub.id}">
-                                <svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                            <div class="masonry-header-copy">
+                                <h3 class="masonry-feed-title">${sub.title}</h3>
+                                <p class="masonry-author-name">by ${authorName}</p>
                             </div>
                         </div>
+                    </div>
+                    <div class="masonry-image-wrapper">
+                        <img src="${imageUrl}" class="masonry-img" loading="lazy" decoding="async" alt="${sub.title}" onerror="this.src='${fallbackThumbnailUrl}'">
+                        <div class="masonry-overlay"></div>
+                    </div>
+                    <div class="masonry-actions-row">
+                        <div class="action-mini btn-like interaction-btn ${stats.user_has_liked ? 'liked' : ''}" data-id="${sub.id}" title="Like">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                            <span class="action-label">Like</span>
+                            <span class="like-count">${stats.like_count || 0}</span>
+                        </div>
+                        <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="action-mini btn-share" title="Share on WhatsApp" aria-label="Share on WhatsApp">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.08.54 4.11 1.56 5.9L0 24l6.37-1.67a11.86 11.86 0 0 0 5.69 1.45h.01c6.55 0 11.89-5.34 11.9-11.9a11.82 11.82 0 0 0-3.45-8.4Zm-8.46 18.3h-.01a9.87 9.87 0 0 1-5.04-1.38l-.36-.22-3.78.99 1.01-3.69-.24-.38a9.82 9.82 0 0 1-1.52-5.24c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.11 1.03 6.98 2.9a9.82 9.82 0 0 1 2.89 6.99c0 5.46-4.44 9.9-9.89 9.9Zm5.42-7.4c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.29-.76.96-.94 1.16-.17.2-.35.22-.64.07-.3-.14-1.26-.46-2.39-1.47-.89-.79-1.49-1.76-1.66-2.06-.18-.29-.02-.45.13-.6.13-.14.3-.35.45-.53.15-.17.2-.29.3-.49.1-.2.05-.37-.03-.53-.07-.14-.67-1.61-.91-2.2-.24-.58-.49-.5-.67-.51h-.58c-.19 0-.5.07-.76.37-.27.29-1.03 1-1.03 2.44 0 1.44 1.05 2.83 1.2 3.03.15.2 2.07 3.16 5.02 4.43.7.31 1.25.49 1.68.63.72.23 1.38.2 1.89.12.58-.08 1.76-.72 2.01-1.41.25-.69.25-1.28.17-1.41-.07-.12-.27-.2-.56-.34Z"></path></svg>
+                            <span class="action-label">Share</span>
+                        </a>
+                        <div class="action-mini btn-save interaction-btn ${stats.user_has_bookmarked ? 'bookmarked' : ''}" data-id="${sub.id}" title="Bookmark">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                            <span class="action-label">Bookmark</span>
+                        </div>
+                        <a href="${imageUrl}" class="action-mini btn-download" target="_blank" rel="noopener noreferrer" download data-filename="${this.buildDownloadFileName(sub.title, imageUrl)}" title="Download image">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+                            <span class="action-label">Download</span>
+                        </a>
                     </div>
                 </div>
             </div>
         `;
+    },
+
+    buildDownloadFileName(title = 'image', sourceUrl = '', fallbackExt = 'jpg') {
+        const safeTitle = String(title || 'image')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'image';
+
+        let ext = fallbackExt;
+        try {
+            const pathname = new URL(sourceUrl, window.location.href).pathname;
+            const match = pathname.match(/\.([a-zA-Z0-9]+)$/);
+            if (match?.[1]) {
+                ext = match[1].toLowerCase();
+            }
+        } catch (_) {
+            const match = String(sourceUrl || '').match(/\.([a-zA-Z0-9]+)(?:\?|#|$)/);
+            if (match?.[1]) {
+                ext = match[1].toLowerCase();
+            }
+        }
+
+        return `${safeTitle}.${ext}`;
+    },
+
+    buildDownloadProxyUrl(url, filename = 'download') {
+        const params = new URLSearchParams({
+            url,
+            filename
+        });
+        return `/api/download-file?${params.toString()}`;
+    },
+
+    downloadFile(url, filename = 'download') {
+        if (!url) return;
+
+        const link = document.createElement('a');
+        link.href = this.buildDownloadProxyUrl(url, filename);
+        link.download = filename;
+        link.target = '_self';
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
     },
 
     showImageLightbox(imageUrl, title) {
@@ -607,16 +1219,37 @@ export const UI = {
         // Remove existing if any
         document.querySelector('.lightbox-overlay')?.remove();
 
+        const downloadName = this.buildDownloadFileName(title, imageUrl);
+
         const overlay = document.createElement('div');
         overlay.className = 'lightbox-overlay animate-fade-in';
         overlay.innerHTML = `
             <div class="lightbox-content">
-                <button class="lightbox-close" aria-label="Close Lightbox">&times;</button>
-                <div class="lightbox-img-container">
-                    <img src="${imageUrl}" class="lightbox-img" alt="${title}" loading="eager" decoding="sync" fetchpriority="high">
-                </div>
-                <div class="lightbox-caption">
-                    <h3 class="lightbox-title">${title}</h3>
+                <div class="lightbox-shell">
+                    <div class="lightbox-toolbar" role="toolbar" aria-label="Image viewer controls">
+                        <div class="lightbox-toolbar-group">
+                            <button class="lightbox-control" type="button" data-action="zoom-out" aria-label="Zoom out" title="Zoom out">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>
+                            </button>
+                            <button class="lightbox-control" type="button" data-action="zoom-reset" aria-label="Reset zoom" title="Reset zoom">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.708"></path><path d="M3 3v6h6"></path></svg>
+                            </button>
+                            <button class="lightbox-control" type="button" data-action="zoom-in" aria-label="Zoom in" title="Zoom in">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                            </button>
+                            <button class="lightbox-control lightbox-control-download" type="button" data-action="download" aria-label="Download image" title="Download image">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+                            </button>
+                            <button class="lightbox-control lightbox-close" type="button" aria-label="Close viewer" title="Close viewer">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12"></path><path d="M18 6 6 18"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="lightbox-stage">
+                        <div class="lightbox-img-container">
+                            <img src="${imageUrl}" class="lightbox-img" alt="${title}" loading="eager" decoding="sync" fetchpriority="high">
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -624,7 +1257,76 @@ export const UI = {
         document.body.appendChild(overlay);
         document.body.classList.add('body-no-scroll');
 
+        const image = overlay.querySelector('.lightbox-img');
+        const imageContainer = overlay.querySelector('.lightbox-img-container');
+        const zoomOutBtn = overlay.querySelector('[data-action="zoom-out"]');
+        const zoomResetBtn = overlay.querySelector('[data-action="zoom-reset"]');
+        const zoomInBtn = overlay.querySelector('[data-action="zoom-in"]');
+        const downloadBtn = overlay.querySelector('[data-action="download"]');
+
+        let scale = 1;
+        let translateX = 0;
+        let translateY = 0;
+        let isPointerDown = false;
+        let startX = 0;
+        let startY = 0;
+        let pointerId = null;
+
+        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+        const getPanLimits = () => {
+            const rect = imageContainer.getBoundingClientRect();
+            const overflowX = Math.max(0, ((rect.width * scale) - rect.width) / 2);
+            const overflowY = Math.max(0, ((rect.height * scale) - rect.height) / 2);
+            return { x: overflowX, y: overflowY };
+        };
+
+        const applyTransform = () => {
+            const limits = getPanLimits();
+            if (scale <= 1) {
+                translateX = 0;
+                translateY = 0;
+            } else {
+                translateX = clamp(translateX, -limits.x, limits.x);
+                translateY = clamp(translateY, -limits.y, limits.y);
+            }
+
+            image.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+            imageContainer.classList.toggle('is-zoomed', scale > 1);
+            zoomOutBtn.disabled = scale <= 1;
+            zoomResetBtn.disabled = scale === 1 && translateX === 0 && translateY === 0;
+            zoomInBtn.disabled = scale >= 4;
+        };
+
+        const setScale = (nextScale) => {
+            scale = clamp(Number(nextScale.toFixed(2)), 1, 4);
+            applyTransform();
+        };
+
+        const handlePointerMove = (event) => {
+            if (!isPointerDown || scale <= 1 || event.pointerId !== pointerId) return;
+            translateX += event.clientX - startX;
+            translateY += event.clientY - startY;
+            startX = event.clientX;
+            startY = event.clientY;
+            applyTransform();
+        };
+
+        const endPointerPan = () => {
+            isPointerDown = false;
+            pointerId = null;
+            imageContainer.classList.remove('is-panning');
+        };
+
+        const handleKeydown = (event) => {
+            if (event.key === 'Escape') {
+                close();
+            }
+        };
+
         const close = () => {
+            endPointerPan();
+            window.removeEventListener('keydown', handleKeydown);
             overlay.classList.remove('animate-fade-in');
             overlay.classList.add('animate-fade-out');
             setTimeout(() => {
@@ -633,9 +1335,55 @@ export const UI = {
             }, 300);
         };
 
+        zoomOutBtn.onclick = () => setScale(scale - 0.25);
+        zoomResetBtn.onclick = () => {
+            scale = 1;
+            translateX = 0;
+            translateY = 0;
+            applyTransform();
+        };
+        zoomInBtn.onclick = () => setScale(scale + 0.25);
+        downloadBtn.onclick = async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            await this.downloadFile(imageUrl, downloadName);
+        };
+
+        imageContainer.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            const delta = event.deltaY < 0 ? 0.2 : -0.2;
+            setScale(scale + delta);
+        }, { passive: false });
+
+        imageContainer.addEventListener('pointerdown', (event) => {
+            if (scale <= 1 || event.button > 0) return;
+            isPointerDown = true;
+            pointerId = event.pointerId;
+            startX = event.clientX;
+            startY = event.clientY;
+            imageContainer.classList.add('is-panning');
+            imageContainer.setPointerCapture?.(event.pointerId);
+        });
+
+        imageContainer.addEventListener('pointermove', handlePointerMove);
+        imageContainer.addEventListener('pointerup', endPointerPan);
+        imageContainer.addEventListener('pointercancel', endPointerPan);
+        imageContainer.addEventListener('pointerleave', endPointerPan);
+
         overlay.querySelector('.lightbox-close').onclick = close;
         overlay.onclick = (e) => { if (e.target === overlay) close(); };
-        window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); }, { once: true });
+        window.addEventListener('keydown', handleKeydown);
+
+        image.addEventListener('load', () => {
+            scale = 1;
+            translateX = 0;
+            translateY = 0;
+            applyTransform();
+        }, { once: true });
+
+        if (image.complete) {
+            applyTransform();
+        }
     },
 
     createWhatsAppShareUrl(title, workId) {
@@ -854,7 +1602,7 @@ export const UI = {
                     </div>
 
                     <form id="profile-form">
-                        <div class="form-group">
+                        <div class="form-group" id="thumbnail-input-group">
                             <label>Display Name</label>
                             <input type="text" name="display_name" class="form-control" value="${user.display_name || user.email?.split('@')[0] || ''}" placeholder="How should we call you?">
                         </div>
@@ -957,17 +1705,7 @@ export const UI = {
                             <label>Content Type*</label>
                             <select name="category" class="form-control" required>
                                 <option value="" disabled selected>Select content type</option>
-                                <option value="short_stories">Short Story</option>
-                                <option value="long_stories">Long Story</option>
-                                <option value="poems">Poem</option>
-                                <option value="essays">Essay</option>
-                                <option value="articles">Article</option>
-                                <option value="conversations">Conversation</option>
-                                <option value="classroom_play">Classroom Play</option>
-                                <option value="speech">Speech</option>
-                                <option value="images">Image</option>
-                                <option value="presentations">Presentations</option>
-                                <option value="flashcards">Flashcards</option>
+                                ${UI.renderContentTypeOptions()}
                             </select>
                         </div>
                     </div>
@@ -977,16 +1715,7 @@ export const UI = {
                         <label>Theme* <span class="text-muted text-sm">(select up to 3)</span></label>
                         <div class="theme-selected-tags" id="theme-tags"></div>
                         <div class="theme-dropdown" id="theme-dropdown">
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Motivational"> Motivational</label></div>
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Emotional"> Emotional</label></div>
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Funny"> Funny</label></div>
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Friendship"> Friendship</label></div>
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Fantasy"> Fantasy</label></div>
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Mystery"> Mystery</label></div>
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Adventure"> Adventure</label></div>
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Science"> Science</label></div>
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Technology"> Technology</label></div>
-                            <div class="theme-option"><label><input type="checkbox" name="themes" value="Social Awareness"> Social Awareness</label></div>
+                            ${UI.renderThemeOptions()}
                         </div>
                         <p class="theme-validation-msg hidden" id="theme-msg">Maximum 3 themes allowed.</p>
                     </div>
@@ -996,9 +1725,7 @@ export const UI = {
                         <label>Audience Level*</label>
                         <select name="audience_level" class="form-control" required>
                             <option value="" disabled selected>Select audience</option>
-                            <option value="Kids">Kids</option>
-                            <option value="Adult">Adult</option>
-                            <option value="General">General</option>
+                            ${UI.renderAudienceOptions()}
                         </select>
                     </div>
 
@@ -1053,7 +1780,7 @@ export const UI = {
 
                     <!-- Independent Image Flow Container -->
                     <div id="image-input-group" class="form-group hidden">
-                        <label>Image Upload* (JPG, PNG, WEBP - Max 15MB)</label>
+                        <label>Image Upload* (JPG, PNG, WEBP - Max 50MB)</label>
                         <p class="text-muted text-sm mb-10">Images over 100 KB are automatically compressed for speed and storage.</p>
                         <div class="image-drop-zone" id="image-drop-zone">
                             <div class="drop-zone-content">
@@ -1094,31 +1821,29 @@ export const UI = {
             <div class="explore-container light-theme-explore animate-fade-in">
                 <!-- Sidebar: Search & Filters -->
                 <aside class="explore-sidebar">
-                    <div class="clay-card">
+                    <div class="clay-card explore-sidebar-card" data-mobile-slot="search">
                         <h4 class="mb-15">Search</h4>
                         <div class="clay-inset search-box-clay">
-                            <span>🔍</span>
+                            <span class="search-box-icon">&#128270;</span>
                             <input type="text" id="search-input" placeholder="Search by title or author...">
                         </div>
                     </div>
 
-                    <div class="clay-card">
+                    <div class="clay-card explore-sidebar-card" data-mobile-slot="categories">
                         <h4 class="mb-15">Categories</h4>
-                        <div class="category-sidebar-list" id="category-filters">
-                            <button class="clay-btn category-clay-item btn-snake active" data-category="all"><span></span><span></span><span></span><span></span>All Works</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="short_stories"><span></span><span></span><span></span><span></span>Short Stories</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="long_stories"><span></span><span></span><span></span><span></span>Long Stories</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="comics"><span></span><span></span><span></span><span></span>Comics</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="essays"><span></span><span></span><span></span><span></span>Essays</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="articles"><span></span><span></span><span></span><span></span>Articles</button>
-                             <button class="clay-btn category-clay-item btn-snake" data-category="classroom_play"><span></span><span></span><span></span><span></span>Classroom Play</button>
-                             <button class="clay-btn category-clay-item btn-snake" data-category="speech"><span></span><span></span><span></span><span></span>Speech</button>
-                             <button class="clay-btn category-clay-item btn-snake" data-category="conversations"><span></span><span></span><span></span><span></span>Conversations</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="poems"><span></span><span></span><span></span><span></span>Poems</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="images"><span></span><span></span><span></span><span></span>Images</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="songs"><span></span><span></span><span></span><span></span>Songs</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="presentations"><span></span><span></span><span></span><span></span>Presentations</button>
-                            <button class="clay-btn category-clay-item btn-snake" data-category="flashcards"><span></span><span></span><span></span><span></span>Flashcards</button>
+                        <div class="explore-chip-bar">
+                            <button type="button" class="explore-chip-scroll explore-chip-scroll-left" data-chip-scroll="left" aria-label="Scroll categories left">
+                                <span aria-hidden="true">‹</span>
+                            </button>
+                            <div class="explore-chip-viewport" id="explore-chip-viewport">
+                                <div class="category-sidebar-list" id="category-filters">
+                                    ${UI.renderExploreCategoryFilters()}
+                                </div>
+                            </div>
+                            <button type="button" class="explore-chip-scroll explore-chip-scroll-right" data-chip-scroll="right" aria-label="Scroll categories right">
+                                <span aria-hidden="true">›</span>
+                            </button>
+                            <div class="explore-chip-dropdown-layer" id="explore-chip-dropdown-layer" aria-hidden="true"></div>
                         </div>
                     </div>
                 </aside>
@@ -1126,39 +1851,79 @@ export const UI = {
                 <!-- Main Content Area -->
                 <main class="explore-main">
                     <!-- Explore Hero -->
-                    <div class="explore-hero">
+                    <section class="explore-hero">
+                        <div class="explore-hero-glow explore-hero-glow-left"></div>
+                        <div class="explore-hero-glow explore-hero-glow-right"></div>
+                        <div class="explore-hero-stars" aria-hidden="true"></div>
                         <div class="explore-hero-content">
-                            <h1 class="explore-hero-title">Creative Works</h1>
-                            <p class="explore-hero-subtitle">Discover and learn from student creators around the world.</p>
+                            <div class="explore-hero-heading">
+                                <span class="explore-hero-kicker">EDTECHRA Spotlight</span>
+                                <h1 class="explore-hero-title">Creative Works</h1>
+                            </div>
+                            <div class="explore-hero-copy">
+                                <p class="explore-hero-subtitle">Discover and learn from diverse and inspiring creations, from digital art and writing to fun and educational projects.</p>
+                                <div class="explore-hero-actions">
+                                    <button type="button" class="btn explore-hero-cta" id="explore-hero-cta">Get Inspired by Student Creators</button>
+                                </div>
+                            </div>
                         </div>
-                        <img src="assets/images/clay-hero.png" alt="Clay Illustration" class="explore-hero-image" loading="lazy">
+                        <div class="explore-hero-visual" aria-hidden="true">
+                            <div class="explore-hero-visual-glow explore-hero-visual-glow-primary"></div>
+                            <div class="explore-hero-visual-glow explore-hero-visual-glow-secondary"></div>
+                            <img src="assets/images/clay-hero.png" alt="Creative works illustration" class="explore-hero-image" loading="lazy">
+                        </div>
+                    </section>
+                    <div class="explore-flow-shell">
+                        <div class="explore-desktop-discovery" aria-hidden="false"></div>
+                        <div class="explore-mobile-discovery" aria-hidden="false"></div>
+
+                        <div class="explore-sections-container">
+                            <section class="explore-row-section explore-creators-section">
+                                <div class="explore-section-heading">
+                                    <h2 class="explore-row-title">Trending Creators</h2>
+                                    <p class="explore-row-copy">Meet standout learners and makers inspiring the community right now.</p>
+                                </div>
+                                <div class="trending-creators-row" id="trending-creators-row">
+                                    <div class="creator-skeleton"></div>
+                                    <div class="creator-skeleton"></div>
+                                    <div class="creator-skeleton"></div>
+                                </div>
+                            </section>
+
+                            <section class="explore-row-section explore-creations-section" id="trending-creations">
+                                <div class="explore-section-heading">
+                                    <h2 class="explore-row-title">Trending Creations</h2>
+                                    <p class="explore-row-copy">A refreshed view of the most loved student work, with all existing Explore functionality preserved.</p>
+                                </div>
+                                <div class="explore-row-grid" id="grid-trending"></div>
+                            </section>
+
+                            <section class="explore-row-section">
+                                <div class="explore-section-heading">
+                                    <h2 class="explore-row-title">Newly Submitted</h2>
+                                    <p class="explore-row-copy">Fresh ideas and new uploads from across the learning community.</p>
+                                </div>
+                                <div class="explore-row-grid" id="grid-new"></div>
+                            </section>
+
+                            <section class="explore-row-section">
+                                <div class="explore-section-heading">
+                                    <h2 class="explore-row-title">Top Rated Creations</h2>
+                                    <p class="explore-row-copy">Highly rated creative work that learners keep coming back to.</p>
+                                </div>
+                                <div class="explore-row-grid" id="grid-top"></div>
+                            </section>
+                        </div>
+
+                        <div class="explore-load-more-container">
+                            <button id="explore-load-more" style="display: none;">
+                                <span class="load-more-spinner"></span>
+                                <span class="load-more-text">Load More</span>
+                            </button>
+                        </div>
+
+                        <div id="explore-loader" class="loader-inline hidden"><div class="spinner"></div></div>
                     </div>
-
-                    <div class="explore-sections-container">
-                        <section class="explore-row-section">
-                            <h2 class="explore-row-title">🔥 Trending Creations</h2>
-                            <div class="explore-row-grid" id="grid-trending"></div>
-                        </section>
-
-                        <section class="explore-row-section">
-                            <h2 class="explore-row-title">✨ Newly Submitted</h2>
-                            <div class="explore-row-grid" id="grid-new"></div>
-                        </section>
-
-                        <section class="explore-row-section">
-                            <h2 class="explore-row-title">⭐ Top Rated Creations</h2>
-                            <div class="explore-row-grid" id="grid-top"></div>
-                        </section>
-                    </div>
-
-                    <div class="explore-load-more-container">
-                        <button id="explore-load-more" style="display: none;">
-                            <span class="load-more-spinner"></span>
-                            <span class="load-more-text">Load More</span>
-                        </button>
-                    </div>
-
-                    <div id="explore-loader" class="loader-inline hidden"><div class="spinner"></div></div>
                 </main>
             </div>
         `,
@@ -1186,6 +1951,13 @@ export const UI = {
                         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18" height="18" alt="Google">
                         Continue with Google
                     </button>
+
+                    ${window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? `
+                    <button type="button" class="btn btn-secondary w-100 btn-snake mt-10" id="dev-auto-login" style="margin-top: 10px; border: 2px dashed #6366f1;">
+                        <span></span><span></span><span></span><span></span>
+                        🛠️ DEV: Auto-Login Test User
+                    </button>
+                    ` : ''}
 
                     <p class="auth-footer">Don't have an account? <a href="#" data-link="onboarding">Sign Up</a></p>
                 </form>
@@ -1224,6 +1996,13 @@ export const UI = {
                     </button>
                     `}
 
+
+                    ${window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? `
+                    <button type="button" class="btn btn-secondary w-100 btn-snake mt-10" id="dev-auto-signup" style="margin-top: 10px; border: 2px dashed #6366f1;">
+                        <span></span><span></span><span></span><span></span>
+                        🛠️ DEV: Auto-Signup Test User
+                    </button>
+                    ` : ''}
 
                     <p class="auth-footer">Already have an account? <a href="#" data-link="login">Login</a></p>
                 </form>
@@ -1350,12 +2129,14 @@ export const UI = {
             <div class="student-dashboard animate-fade-in">
                 <!-- Welcome Section -->
                 <div class="sd-welcome glass-card animate-slide-up stagger-1">
-                    <div class="sd-welcome-info">
-                        <h1 class="sd-welcome-title">Welcome back, ${profile?.display_name || 'Creator'} 👋</h1>
-                        <p class="sd-welcome-subtitle">Showcase your creativity and explore what other students created.</p>
-                    </div>
-                    <div class="sd-welcome-avatar">
-                        ${profile?.avatar_url ? `<img src="${profile.avatar_url}" class="profile-avatar-img">` : (profile?.display_name || 'C').charAt(0).toUpperCase()}
+                    <div class="sd-welcome-panel">
+                        <div class="sd-welcome-avatar">
+                            ${profile?.avatar_url ? `<img src="${profile.avatar_url}" class="profile-avatar-img">` : (profile?.display_name || 'C').charAt(0).toUpperCase()}
+                        </div>
+                        <div class="sd-welcome-info">
+                            <h1 class="sd-welcome-title">Welcome back, ${profile?.display_name || 'Creator'} 👋</h1>
+                            <p class="sd-welcome-subtitle">Showcase your creativity and explore what other students created.</p>
+                        </div>
                     </div>
                 </div>
 
@@ -1429,9 +2210,9 @@ export const UI = {
                     <!-- Premium Leaderboard Section -->
                     <div class="sd-leaderboard glass-card">
                         <div class="sd-lb-header">
-                            <h3 class="sd-lb-title">🏆 Top Creators This Week</h3>
+                            <h3 class="sd-lb-title">🏆 Top Creators</h3>
                             <div class="sd-lb-meta">
-                                <span class="sd-lb-badge">Weekly Reset</span>
+                                <span class="sd-lb-badge">Shared Rankings</span>
                                 <span class="sd-user-rank-lite" id="sd-user-rank-badge">#--</span>
                             </div>
                         </div>
@@ -1509,13 +2290,14 @@ export const UI = {
 
         renderSavedCard: (sub) => {
             const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
-            const thumbUrl = sub.thumbnail_url || 'assets/images/placeholder.png';
-            const category = (sub.category || 'Work').replace('_', ' ');
+            const thumbUrl = UI.getSubmissionImageUrls(sub).previewUrl || UI.getThumbnailFallbackUrl(sub);
+            const fallbackThumbUrl = UI.getThumbnailFallbackUrl(sub);
+            const category = UI.getContentTypeLabel(sub.category, sub.content_type);
 
             return `
                 <div class="sd-saved-card animate-fade-in" onclick="window.location.hash='#detail/${sub.id}'">
                     <div class="sd-sc-thumb">
-                        <img src="${thumbUrl}" alt="${sub.title}" loading="lazy" onerror="this.src='assets/images/placeholder.png'">
+                        <img src="${thumbUrl}" alt="${sub.title}" loading="lazy" onerror="this.src='${fallbackThumbUrl}'">
                         <span class="sd-sc-badge">${category}</span>
                     </div>
                     <div class="sd-sc-info">
@@ -1895,6 +2677,43 @@ export const UI = {
             if (error) UI.showToast(error.message, 'error');
             UI.hideLoader();
         });
+
+        // DEV Auto Auth Listener (Localhost Only)
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            const devBtn = document.getElementById(type === 'login' ? 'dev-auto-login' : 'dev-auto-signup');
+            devBtn?.addEventListener('click', async () => {
+                UI.showLoader();
+                const testEmail = 'dev.test.user@edtechra.local';
+                const testPass = 'DevTest123!';
+                const tempRole = localStorage.getItem('edtechra_role') || 'admin';
+                
+                let result;
+                if (type === 'login') {
+                    result = await Auth.signIn(testEmail, testPass);
+                    if (result.error && (result.error.message.includes('Invalid login credentials') || result.error.message.includes('not found') || result.error.status === 400 || (result.error.message || '').includes('rate limit') === false)) {
+                        UI.showToast('Test user missing, attempting signup...', 'info');
+                        result = await Auth.signUp(testEmail, testPass, 'Dev Auto Tester', tempRole);
+                    }
+                } else {
+                    result = await Auth.signUp(testEmail, testPass, 'Dev Auto Tester', tempRole);
+                    if (result.error && (result.error.message.includes('already registered') || result.error.status === 400 || (result.error.message || '').includes('rate limit') === false)) {
+                        UI.showToast('Test user exists, attempting login...', 'info');
+                        result = await Auth.signIn(testEmail, testPass);
+                    }
+                }
+                
+                if (result.error) {
+                    UI.showToast('Auth error: ' + result.error.message, 'error');
+                } else {
+                    UI.showToast('DEV: Test account authenticated.', 'success');
+                    localStorage.removeItem('edtechra_role');
+                    localStorage.removeItem('edtechra_display_name');
+                    window.location.hash = 'home';
+                    setTimeout(() => window.location.reload(), 500);
+                }
+                UI.hideLoader();
+            });
+        }
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
