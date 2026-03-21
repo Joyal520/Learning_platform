@@ -877,6 +877,26 @@ export const UI = {
         `).join('');
     },
 
+    looksLikeAudioAsset(value = '') {
+        const raw = String(value || '').trim().toLowerCase();
+        if (!raw) return false;
+        if (raw.startsWith('audio/')) return true;
+        return /\.(mp3|wav|ogg|webm|m4a|aac)(?:$|[?#])/i.test(raw);
+    },
+
+    isAudioSubmission(sub = {}) {
+        const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
+        const normalizedContentType = this.normalizeCategoryValue(sub.content_type, sub.category);
+
+        return normalizedCategory === 'songs'
+            || normalizedContentType === 'songs'
+            || this.looksLikeAudioAsset(sub.file_type)
+            || this.looksLikeAudioAsset(sub.mime_type)
+            || this.looksLikeAudioAsset(sub.file_path)
+            || this.looksLikeAudioAsset(sub.file_url)
+            || this.looksLikeAudioAsset(sub.public_url);
+    },
+
     renderCard(sub, badgeObj = null) {
         const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
         const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
@@ -912,7 +932,7 @@ export const UI = {
             </div>
         ` : '';
 
-        if (normalizedCategory === 'songs' || sub.content_type === 'audio' || sub.file_type?.startsWith('audio/')) {
+        if (this.isAudioSubmission(sub)) {
             const authorName = sub.profiles?.display_name || 'Anonymous';
             const initials = authorName.charAt(0).toUpperCase();
             const shareUrl = this.createWhatsAppShareUrl(title, sub.id);
