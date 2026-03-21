@@ -1,7 +1,7 @@
 // assets/js/ui.js
-import { Auth } from './auth.js';
-import { supabase } from './supabase.js';
-import { AvatarLibrary } from './avatars.js';
+import { Auth } from './auth.js?v=10';
+import { supabase } from './supabase.js?v=10';
+import { AvatarLibrary } from './avatars.js?v=10';
 
 export const UI = {
     defaultThumbnailIcons: {

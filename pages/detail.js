@@ -1,8 +1,8 @@
 // pages/detail.js
-import { supabase } from '../assets/js/supabase.js';
-import { UI } from '../assets/js/ui.js';
-import App from '../assets/js/app.js';
-import { AudioPlayer } from '../assets/js/audio-player.js';
+import { supabase } from '../assets/js/supabase.js?v=10';
+import { UI } from '../assets/js/ui.js?v=10';
+import App from '../assets/js/app.js?v=10';
+import { AudioPlayer } from '../assets/js/audio-player.js?v=10';
 
 export const DetailPage = {
     async init(id) {

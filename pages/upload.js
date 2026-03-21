@@ -1,8 +1,8 @@
-import { API } from '../assets/js/api.js';
-import { UI } from '../assets/js/ui.js';
-import { supabase } from '../assets/js/supabase.js';
-import { ImageUtils } from '../assets/js/image-utils.js';
-import App from '../assets/js/app.js';
+import { API } from '../assets/js/api.js?v=10';
+import { UI } from '../assets/js/ui.js?v=10';
+import { supabase } from '../assets/js/supabase.js?v=10';
+import { ImageUtils } from '../assets/js/image-utils.js?v=10';
+import App from '../assets/js/app.js?v=10';
 
 export const UploadPage = {
     _imageFile: null,
