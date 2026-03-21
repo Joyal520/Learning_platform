@@ -1,8 +1,8 @@
 // pages/student-dashboard.js
-import { supabase } from '../assets/js/supabase.js';
-import { UI } from '../assets/js/ui.js';
-import App from '../assets/js/app.js';
-import { API } from '../assets/js/api.js';
+import { supabase } from '../assets/js/supabase.js?v=11';
+import { UI } from '../assets/js/ui.js?v=11';
+import App from '../assets/js/app.js?v=11';
+import { API } from '../assets/js/api.js?v=11';
 
 export const StudentDashboardPage = {
     async init() {

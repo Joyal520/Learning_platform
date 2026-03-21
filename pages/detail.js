@@ -1,8 +1,8 @@
 // pages/detail.js
-import { supabase } from '../assets/js/supabase.js';
-import { UI } from '../assets/js/ui.js';
-import App from '../assets/js/app.js';
-import { AudioPlayer } from '../assets/js/audio-player.js';
+import { supabase } from '../assets/js/supabase.js?v=11';
+import { UI } from '../assets/js/ui.js?v=11';
+import App from '../assets/js/app.js?v=11';
+import { AudioPlayer } from '../assets/js/audio-player.js?v=11';
 
 export const DetailPage = {
     async init(id) {
@@ -89,6 +89,7 @@ export const DetailPage = {
 
             // Setup static UI elements
             this.setupAudioPlayer(sub);
+            this.setupBackToExplore();
             this.setupInteractions(sub);
             this.setupEditButton(sub);
             this.setupPreviewFullscreen();
@@ -138,6 +139,24 @@ export const DetailPage = {
         this._audioPlayer?.destroy();
         this._audioPlayer = new AudioPlayer(mount, sub);
         this._audioPlayer.init();
+    },
+
+    setupBackToExplore() {
+        const backLink = document.querySelector('.back-link');
+        if (!backLink) return;
+
+        backLink.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            try {
+                sessionStorage.setItem('edtechra_explore_restore_once', 'true');
+            } catch (_) {
+                // Ignore storage failures and fall back to default Explore.
+            }
+
+            window.location.hash = 'explore';
+        });
     },
 
     setupPreviewFullscreen() {

@@ -1,10 +1,24 @@
-const CACHE_NAME = 'edtechra-v5';
+const FRONTEND_ASSET_VERSION = '11';
+const CACHE_NAME = `edtechra-v${FRONTEND_ASSET_VERSION}`;
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
-  '/manifest.json',
-  '/assets/css/styles.css',
-  '/assets/css/explore_recovered.css',
+  '/manifest.json?v=3',
+  `/assets/css/styles.css?v=${FRONTEND_ASSET_VERSION}`,
+  `/assets/css/explore_recovered.css?v=${FRONTEND_ASSET_VERSION}`,
+  `/assets/js/supabase.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/assets/js/ui.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/assets/js/auth.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/assets/js/api.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/assets/js/app.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/pages/my-uploads.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/pages/explore.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/pages/detail.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/pages/dashboard.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/pages/student-dashboard.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/pages/upload.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/assets/js/audio-player.js?v=${FRONTEND_ASSET_VERSION}`,
+  `/assets/js/image-utils.js?v=${FRONTEND_ASSET_VERSION}`,
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/public/favicon.ico?v=3',

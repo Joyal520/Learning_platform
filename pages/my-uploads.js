@@ -1,6 +1,6 @@
-import { supabase } from '../assets/js/supabase.js';
-import { API } from '../assets/js/api.js';
-import { UI } from '../assets/js/ui.js';
+import { supabase } from '../assets/js/supabase.js?v=11';
+import { API } from '../assets/js/api.js?v=11';
+import { UI } from '../assets/js/ui.js?v=11';
 
 export const MyUploadsPage = {
     async init() {

@@ -1,8 +1,8 @@
-import { API } from '../assets/js/api.js';
-import { UI } from '../assets/js/ui.js';
-import { supabase } from '../assets/js/supabase.js';
-import { ImageUtils } from '../assets/js/image-utils.js';
-import App from '../assets/js/app.js';
+import { API } from '../assets/js/api.js?v=11';
+import { UI } from '../assets/js/ui.js?v=11';
+import { supabase } from '../assets/js/supabase.js?v=11';
+import { ImageUtils } from '../assets/js/image-utils.js?v=11';
+import App from '../assets/js/app.js?v=11';
 
 export const UploadPage = {
     _imageFile: null,
@@ -381,7 +381,7 @@ export const UploadPage = {
                         author_id: user.id,
                         title: formData.get('title'),
                         description: formData.get('description') || '',
-                        category: this.normalizeSubmissionCategory(formData.get('category')),
+                        category: formData.get('category'),
                         content_type: 'image',
                         file_type: fullSizeImage?.type || 'image/webp',
                         file_size: fullSizeImage?.size || 0,
@@ -415,7 +415,7 @@ export const UploadPage = {
                     const submissionData = {
                         author_id: user.id,
                         title: formData.get('title'),
-                        category: this.normalizeSubmissionCategory(formData.get('category')),
+                        category: formData.get('category'),
                         themes: selectedThemes,
                         audience_level: this.normalizeAudienceLevel(formData.get('audience_level')),
                         description: formData.get('description') || '',
@@ -542,12 +542,6 @@ export const UploadPage = {
 
     getSelectedThemes() {
         return Array.from(document.querySelectorAll('input[name="themes"]:checked')).map(cb => cb.value);
-    },
-
-    normalizeSubmissionCategory(category) {
-        const rawValue = String(category || '').trim();
-        if (!rawValue) return null;
-        return UI.normalizeCategoryValue(rawValue);
     },
 
     normalizeAudienceLevel(level) {
@@ -818,7 +812,7 @@ export const UploadPage = {
 
                     const updateData = {
                         title: formData.get('title'),
-                        category: this.normalizeSubmissionCategory(formData.get('category')),
+                        category: formData.get('category'),
                         description: formData.get('description') || '',
                         themes: this.getSelectedThemes(),
                         audience_level: this.normalizeAudienceLevel(formData.get('audience_level')),

@@ -1,4 +1,5 @@
 const {
+    getR2ConfigErrorPayload,
     json,
     readJsonBody,
     validateR2Config,
@@ -14,7 +15,7 @@ module.exports = async function handler(req, res) {
 
     const missingEnvVars = validateR2Config({ log: true });
     if (missingEnvVars.length > 0) {
-        return json(res, 500, { error: `${missingEnvVars[0]} environment variable not configured` });
+        return json(res, 500, getR2ConfigErrorPayload(missingEnvVars));
     }
 
     try {
