@@ -4466,7 +4466,30 @@ body.explore-view .main-nav {
     }
 
     .light-theme-explore.explore-mobile-flow .search-box-clay {
+        position: relative;
+        display: block;
         min-height: 54px;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .light-theme-explore.explore-mobile-flow .search-box-icon {
+        position: absolute;
+        top: 50%;
+        left: 16px;
+        transform: translateY(-50%);
+        z-index: 1;
+        pointer-events: none;
+    }
+
+    .light-theme-explore.explore-mobile-flow .search-box-clay input {
+        display: block;
+        width: 100%;
+        padding: 0 16px 0 46px;
+        position: relative;
+        z-index: 2;
+        min-height: 54px;
+        pointer-events: auto;
     }
 
     .light-theme-explore.explore-mobile-flow .category-sidebar-list {
