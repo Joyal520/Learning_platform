@@ -412,7 +412,7 @@ export const UI = {
 
         // NEW: Image-First Feed Card for 'images' category
         if (sub.category === 'images' || sub.content_type === 'image') {
-            const displayUrl = sub.public_url || thumbnailUrl;
+            const displayUrl = sub.image_url || sub.public_url || thumbnailUrl;
             return `
                 <div class="content-card clay-card image-feed-card animate-fade-in" data-id="${sub.id}">
                     ${badgeHtml}
@@ -434,7 +434,9 @@ export const UI = {
                         <div class="feed-author-row">
                              <div class="author-info">
                                 <div class="mini-avatar" style="background: linear-gradient(135deg, ${color}, var(--secondary))">
-                                    ${(sub.profiles?.display_name || 'U').charAt(0).toUpperCase()}
+                                    ${sub.profiles?.avatar_url 
+                                        ? `<img src="${sub.profiles.avatar_url}" alt="${sub.profiles.display_name}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">` 
+                                        : (sub.profiles?.display_name || 'U').charAt(0).toUpperCase()}
                                 </div>
                                 <span class="author-name">By ${sub.profiles?.display_name || 'Anonymous'}</span>
                              </div>
@@ -496,15 +498,16 @@ export const UI = {
 
     renderMasonryCard(sub) {
         const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
-        const imageUrl = sub.image_url || sub.public_url || sub.thumbnail_url;
+        const thumbUrl = sub.thumbnail_url || sub.image_url || sub.public_url;
+        const fullUrl = sub.image_url || sub.public_url || sub.thumbnail_url;
         const avatarUrl = sub.profiles?.avatar_url;
         const initials = (sub.profiles?.display_name || 'U').charAt(0).toUpperCase();
 
         return `
-            <div class="masonry-item animate-fade-in" data-id="${sub.id}" data-full-url="${sub.image_url || sub.thumbnail_url}">
+            <div class="masonry-item animate-fade-in" data-id="${sub.id}" data-full-url="${fullUrl}">
                 <div class="masonry-card">
                     <div class="masonry-image-wrapper">
-                        <img src="${imageUrl}" class="masonry-img" loading="lazy" decoding="async" alt="${sub.title}">
+                        <img src="${thumbUrl}" class="masonry-img" loading="lazy" decoding="async" alt="${sub.title}">
                         <div class="masonry-overlay"></div>
                     </div>
                     <div class="masonry-meta-slim">
@@ -515,6 +518,9 @@ export const UI = {
                             <span class="masonry-author-name">${sub.profiles?.display_name || 'Anonymous'}</span>
                         </div>
                         <div class="masonry-actions-mini">
+                            <a href="${this.createWhatsAppShareUrl(sub.title, sub.id)}" target="_blank" rel="noopener noreferrer" class="action-mini btn-share" title="Share on WhatsApp">
+                                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                            </a>
                             <div class="action-mini btn-like interaction-btn ${stats.user_has_liked ? 'liked' : ''}" data-id="${sub.id}">
                                 <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
                                 <span>${stats.like_count || 0}</span>
@@ -540,7 +546,7 @@ export const UI = {
             <div class="lightbox-content">
                 <button class="lightbox-close" aria-label="Close Lightbox">&times;</button>
                 <div class="lightbox-img-container">
-                    <img src="${imageUrl}" class="lightbox-img presentation-mode" alt="${title}">
+                    <img src="${imageUrl}" class="lightbox-img" alt="${title}">
                 </div>
                 <div class="lightbox-caption">
                     <h3 class="lightbox-title">${title}</h3>
@@ -1076,6 +1082,13 @@ export const UI = {
                             <h2 class="explore-row-title">⭐ Top Rated Creations</h2>
                             <div class="explore-row-grid" id="grid-top"></div>
                         </section>
+                    </div>
+
+                    <div class="explore-load-more-container">
+                        <button id="explore-load-more" style="display: none;">
+                            <span class="load-more-spinner"></span>
+                            <span class="load-more-text">Load More</span>
+                        </button>
                     </div>
 
                     <div id="explore-loader" class="loader-inline hidden"><div class="spinner"></div></div>
