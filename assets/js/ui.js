@@ -881,17 +881,25 @@ export const UI = {
         const raw = String(value || '').trim().toLowerCase();
         if (!raw) return false;
         if (raw.startsWith('audio/')) return true;
-        return /\.(mp3|wav|ogg|webm|m4a|aac)(?:$|[?#])/i.test(raw);
+        return /\.(mp3|wav|m4a|aac|ogg|oga|webm|opus|flac)(?:$|[?#])/i.test(raw);
     },
 
     isAudioSubmission(sub = {}) {
+        const rawCategory = String(sub.category || '').trim().toLowerCase();
+        const rawContentType = String(sub.content_type || '').trim().toLowerCase();
         const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
         const normalizedContentType = this.normalizeCategoryValue(sub.content_type, sub.category);
+        const fileName = sub.file_name || sub.filename || '';
 
-        return normalizedCategory === 'songs'
+        return rawContentType === 'audio'
+            || rawContentType.includes('audio')
+            || rawCategory.includes('audio')
+            || rawCategory.includes('song')
+            || normalizedCategory === 'songs'
             || normalizedContentType === 'songs'
             || this.looksLikeAudioAsset(sub.file_type)
             || this.looksLikeAudioAsset(sub.mime_type)
+            || this.looksLikeAudioAsset(fileName)
             || this.looksLikeAudioAsset(sub.file_path)
             || this.looksLikeAudioAsset(sub.file_url)
             || this.looksLikeAudioAsset(sub.public_url);
