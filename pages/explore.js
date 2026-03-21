@@ -1,6 +1,6 @@
-import { API } from '../assets/js/api.js?v=10';
-import { UI } from '../assets/js/ui.js?v=10';
-import App from '../assets/js/app.js?v=10';
+import { API } from '../assets/js/api.js?v=11';
+import { UI } from '../assets/js/ui.js?v=11';
+import App from '../assets/js/app.js?v=11';
 
 export const ExplorePage = {
     _stateStorageKey: 'edtechra_explore_state',

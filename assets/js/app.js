@@ -1,10 +1,10 @@
-import { Auth } from './auth.js?v=10';
-import { UI } from './ui.js?v=10';
-import { MyUploadsPage } from '../../pages/my-uploads.js?v=10';
-import { ExplorePage } from '../../pages/explore.js?v=10';
-import { DetailPage } from '../../pages/detail.js?v=10';
-import { DashboardPage } from '../../pages/dashboard.js?v=10';
-import { StudentDashboardPage } from '../../pages/student-dashboard.js?v=10';
+import { Auth } from './auth.js?v=11';
+import { UI } from './ui.js?v=11';
+import { MyUploadsPage } from '../../pages/my-uploads.js?v=11';
+import { ExplorePage } from '../../pages/explore.js?v=11';
+import { DetailPage } from '../../pages/detail.js?v=11';
+import { DashboardPage } from '../../pages/dashboard.js?v=11';
+import { StudentDashboardPage } from '../../pages/student-dashboard.js?v=11';
 
 const App = {
     user: null,
@@ -91,7 +91,7 @@ const App = {
 
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js?v=10')
+                navigator.serviceWorker.register('/sw.js?v=11')
                     .then(() => console.log('[PWA] service worker registered'))
                     .catch((error) => console.warn('[PWA] service worker registration skipped:', error));
             });

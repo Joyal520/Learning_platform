@@ -1,5 +1,5 @@
 // assets/js/auth.js
-import { supabase } from './supabase.js?v=10';
+import { supabase } from './supabase.js?v=11';
 
 export const Auth = {
     async signUp(email, password, displayName, role = 'student') {

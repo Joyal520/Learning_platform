@@ -1,5 +1,5 @@
 // assets/js/api.js
-import { supabase } from './supabase.js?v=10';
+import { supabase } from './supabase.js?v=11';
 
 function withTimeout(promise, ms, label) {
     return Promise.race([

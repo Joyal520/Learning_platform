@@ -1,4 +1,4 @@
-const FRONTEND_ASSET_VERSION = '10';
+const FRONTEND_ASSET_VERSION = '11';
 const CACHE_NAME = `edtechra-v${FRONTEND_ASSET_VERSION}`;
 const ASSETS_TO_CACHE = [
   '/',
