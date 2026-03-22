@@ -641,6 +641,19 @@ export const UI = {
         return this.audienceLevels.map((level) => `<option value="${level}">${level}</option>`).join('');
     },
 
+    getProjectFileLabel(sub = {}) {
+        const fileReference = String(sub.file_path || sub.file_url || '').toLowerCase();
+        const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
+
+        if (fileReference.endsWith('.zip') || fileType.includes('zip')) return 'Website project (ZIP)';
+        if (fileReference.endsWith('.html') || fileType === 'text/html') return 'HTML website project';
+        if (fileReference.endsWith('.pdf') || fileType === 'application/pdf') return 'PDF document';
+        if (fileReference.endsWith('.pptx') || fileType.includes('presentationml')) return 'PowerPoint presentation';
+        if (fileReference.endsWith('.doc') || fileType === 'application/msword') return 'Word document';
+        if (fileReference.endsWith('.docx') || fileType.includes('wordprocessingml')) return 'Word document';
+        return sub.file_type || 'file';
+    },
+
     wrapCodeForPreview(code) {
         if (!code) return '';
         const trimmed = code.trim();
@@ -780,7 +793,7 @@ export const UI = {
         }
 
         if (sub.file_type?.startsWith('audio/')) return `<div class="audio-player-host" id="audioPlayerMount"></div>`;
-        return `<div class="file-placeholder">📄 This content is a ${sub.file_type || 'file'} and can be downloaded below.</div>`;
+        return `<div class="file-placeholder">📄 This content is a ${this.getProjectFileLabel(sub)} and can be downloaded below.</div>`;
     },
 
     renderStars(rating) {
@@ -1758,7 +1771,7 @@ export const UI = {
                         </div>
 
                         <div id="file-input-group" class="form-group">
-                            <label>File Upload* (PDF, TXT, MP3, ZIP - Max 50MB)</label>
+                            <label>File Upload* (PDF, PPTX, DOC, DOCX, HTML, ZIP, MP3, or WAV - Max 50MB)</label>
                             <input type="file" name="file" class="form-control" id="file-input" required>
                         </div>
 

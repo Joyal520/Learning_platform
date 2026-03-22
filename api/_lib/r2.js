@@ -18,15 +18,15 @@ const AUDIO_TYPES = new Set([
 ]);
 const PROJECT_TYPES = new Set([
     'application/pdf',
-    'text/plain',
-    'application/zip',
-    'application/x-zip-compressed',
-    'application/json',
-    'text/csv',
+    'text/html',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'application/vnd.ms-powerpoint',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    'application/zip',
+    'application/x-zip-compressed',
+    'multipart/x-zip',
+    'application/octet-stream'
 ]);
 
 const MAX_SIZE_BY_ASSET = {
@@ -37,7 +37,7 @@ const MAX_SIZE_BY_ASSET = {
     project: 50 * 1024 * 1024
 };
 
-const REQUIRED_R2_ENV_NAMES = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
+const REQUIRED_R2_ENV_NAMES = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_URL'];
 const METRICS_PREFIXES = ['images/', 'audio/', 'projects/', 'thumbnails/', 'thumbs/'];
 const R2_METRICS_CACHE_TTL_MS = 45000;
 const r2MetricsCache = {
@@ -69,10 +69,28 @@ function clearR2MetricsCache() {
     r2MetricsCache.summary = null;
 }
 
+function createMissingEnvError(missingEnvNames) {
+    const missing = Array.from(new Set((missingEnvNames || []).filter(Boolean)));
+    const error = new Error(`Missing required environment variable${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`);
+    error.code = 'R2_CONFIG_MISSING';
+    error.statusCode = 500;
+    error.missingEnv = missing;
+    return error;
+}
+
+function getR2ConfigErrorPayload(missingEnvNames) {
+    const missing = Array.from(new Set((missingEnvNames || []).filter(Boolean)));
+    return {
+        error: `Upload is not configured correctly on this environment. Missing ${missing.join(', ')}.`,
+        code: 'R2_CONFIG_MISSING',
+        missingEnv: missing
+    };
+}
+
 function getRequiredEnv(name) {
     const value = process.env[name];
     if (!value) {
-        throw new Error(`${name} environment variable not configured`);
+        throw createMissingEnvError([name]);
     }
     return value;
 }
@@ -237,6 +255,10 @@ function inferExtension(filename = '', contentType = '') {
     if (contentType.includes('png')) return 'png';
     if (contentType.includes('webp')) return 'webp';
     if (contentType.includes('pdf')) return 'pdf';
+    if (contentType.includes('msword')) return 'doc';
+    if (contentType.includes('wordprocessingml')) return 'docx';
+    if (contentType.includes('presentationml') || contentType.includes('powerpoint')) return 'pptx';
+    if (contentType.includes('html')) return 'html';
     if (contentType.includes('plain')) return 'txt';
     if (contentType.includes('zip')) return 'zip';
     if (contentType.includes('mpeg') || contentType.includes('mp3')) return 'mp3';
@@ -247,7 +269,21 @@ function inferExtension(filename = '', contentType = '') {
     return 'bin';
 }
 
-function validateAsset({ assetType, contentType, size }) {
+function getProjectExtension(filename = '', contentType = '') {
+    const extension = inferExtension(filename, contentType);
+    return ['pdf', 'pptx', 'doc', 'docx', 'html', 'zip'].includes(extension) ? extension : null;
+}
+
+function sanitizeProjectFilename(filename = '', extension = 'bin') {
+    const raw = String(filename || '').trim();
+    const normalizedExtension = sanitizeSegment(extension) || 'bin';
+    const withoutPath = raw.split(/[\\/]/).pop() || `upload.${normalizedExtension}`;
+    const withoutExtension = withoutPath.replace(/\.[^.]+$/, '');
+    const safeStem = sanitizeSegment(withoutExtension) || 'upload';
+    return `${safeStem}.${normalizedExtension}`;
+}
+
+function validateAsset({ assetType, contentType, size, filename = '' }) {
     const maxSize = MAX_SIZE_BY_ASSET[assetType];
     if (!maxSize) {
         throw new Error(`Unsupported asset type: ${assetType}`);
@@ -273,8 +309,11 @@ function validateAsset({ assetType, contentType, size }) {
         throw new Error('Unsupported audio type. Use MP3, WAV, OGG, WEBM, AAC, or M4A.');
     }
 
-    if (assetType === 'project' && !(PROJECT_TYPES.has(contentType) || AUDIO_TYPES.has(contentType))) {
-        throw new Error('Unsupported file type. Use PDF, TXT, ZIP, DOCX, PPTX, JSON, CSV, or supported audio.');
+    if (assetType === 'project') {
+        const extension = getProjectExtension(filename, contentType);
+        if (!extension || !PROJECT_TYPES.has(contentType)) {
+            throw new Error('Unsupported file type. Upload PDF, PPTX, DOC, DOCX, HTML, or ZIP files only.');
+        }
     }
 }
 
@@ -292,8 +331,15 @@ function buildObjectKey({ assetType, submissionId, userId, filename, contentType
             return `images/${cleanUserId}/${cleanSubmissionId}-source.${ext}`;
         case 'audio':
             return `audio/${cleanUserId}/${cleanSubmissionId}.${ext}`;
-        case 'project':
-            return `projects/${cleanUserId}/${cleanSubmissionId}.${ext}`;
+        case 'project': {
+            const projectExt = getProjectExtension(filename, contentType);
+            if (!projectExt) {
+                throw new Error('Unsupported file type. Upload PDF, PPTX, DOC, DOCX, HTML, or ZIP files only.');
+            }
+
+            const safeFileName = sanitizeProjectFilename(filename, projectExt);
+            return `projects/${cleanUserId}/${safeFileName}`;
+        }
         default:
             throw new Error(`Unsupported asset type: ${assetType}`);
     }
@@ -302,7 +348,7 @@ function buildObjectKey({ assetType, submissionId, userId, filename, contentType
 function buildPublicUrl(objectKey) {
     const { publicBaseUrl } = getConfig();
     if (!publicBaseUrl) {
-        throw new Error('Missing required environment variable: R2_PUBLIC_URL');
+        throw createMissingEnvError(['R2_PUBLIC_URL']);
     }
     return `${publicBaseUrl}/${objectKey}`;
 }
@@ -587,6 +633,56 @@ async function doesObjectExist(objectKey) {
     return true;
 }
 
+async function getObjectHead(objectKey) {
+    if (!objectKey) {
+        throw new Error('Missing objectKey.');
+    }
+
+    const signed = signRequest({ method: 'HEAD', objectKey });
+    const response = await fetch(`${signed.endpoint}/${signed.bucket}/${objectKey.split('/').map(encodeRfc3986).join('/')}`, {
+        method: 'HEAD',
+        headers: signed.headers
+    });
+
+    if (response.status === 404) {
+        return null;
+    }
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`R2 head failed: ${response.status} ${errorText}`.trim());
+    }
+
+    return {
+        contentLength: Number(response.headers.get('content-length')) || 0,
+        contentType: response.headers.get('content-type') || ''
+    };
+}
+
+async function fetchObjectBytes(objectKey, { start = 0, end = null } = {}) {
+    if (!objectKey) {
+        throw new Error('Missing objectKey.');
+    }
+
+    const signed = signRequest({ method: 'GET', objectKey });
+    const headers = { ...signed.headers };
+    if (Number.isFinite(start) && Number.isFinite(end)) {
+        headers.Range = `bytes=${Math.max(0, start)}-${Math.max(start, end)}`;
+    }
+
+    const response = await fetch(`${signed.endpoint}/${signed.bucket}/${objectKey.split('/').map(encodeRfc3986).join('/')}`, {
+        method: 'GET',
+        headers
+    });
+
+    if (!response.ok && response.status !== 206) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`R2 get failed: ${response.status} ${errorText}`.trim());
+    }
+
+    return new Uint8Array(await response.arrayBuffer());
+}
+
 async function verifyObjectAvailability(objectKey) {
     const exists = await doesObjectExist(objectKey);
     if (!exists) {
@@ -671,10 +767,14 @@ module.exports = {
     buildPresignedUpload,
     buildPublicUrl,
     clearR2MetricsCache,
+    createMissingEnvError,
     deleteObjects,
     doesObjectExist,
+    fetchObjectBytes,
     getConfig,
     getCachedR2Metrics,
+    getObjectHead,
+    getR2ConfigErrorPayload,
     getMissingR2EnvVars,
     getR2Identity,
     groupObjectsByFolder,

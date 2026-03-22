@@ -1,6 +1,16 @@
 // assets/js/api.js
 import { supabase } from './supabase.js';
 
+const PROJECT_MIME_BY_EXTENSION = {
+    pdf: 'application/pdf',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    html: 'text/html',
+    htm: 'text/html',
+    zip: 'application/zip'
+};
+
 function withTimeout(promise, ms, label) {
     return Promise.race([
         promise,
@@ -36,6 +46,15 @@ function resolveApiUrl(path) {
     return new URL(normalizedPath, window.location.origin).toString();
 }
 
+function formatServerApiError(payload, response) {
+    const missingEnv = Array.isArray(payload?.missingEnv) ? payload.missingEnv.filter(Boolean) : [];
+    if (payload?.code === 'R2_CONFIG_MISSING' && missingEnv.length > 0) {
+        return `Upload is not configured correctly on this environment. Missing ${missingEnv.join(', ')}.`;
+    }
+
+    return payload?.error || `Request failed with status ${response.status}.`;
+}
+
 async function callServerApi(path, options = {}) {
     const accessToken = await getAccessToken();
     if (!accessToken) {
@@ -53,24 +72,55 @@ async function callServerApi(path, options = {}) {
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-        const error = new Error(payload.error || `Request failed with status ${response.status}.`);
+        const error = new Error(formatServerApiError(payload, response));
         error.status = response.status;
         error.url = apiUrl;
+        error.code = payload?.code || null;
+        error.missingEnv = Array.isArray(payload?.missingEnv) ? payload.missingEnv : [];
         throw error;
     }
 
     return payload;
 }
 
+function getFileExtension(filename = '') {
+    const match = String(filename || '').trim().toLowerCase().match(/\.([a-z0-9]+)$/i);
+    return match ? match[1] : '';
+}
+
+function resolveUploadContentType(filename = '', contentType = '') {
+    const normalizedType = String(contentType || '').trim().toLowerCase();
+    if (normalizedType) {
+        return normalizedType;
+    }
+
+    return PROJECT_MIME_BY_EXTENSION[getFileExtension(filename)] || 'application/octet-stream';
+}
+
+async function validateUploadedProject({ objectKey, filename, contentType }) {
+    return callServerApi('/api/r2-validate-project', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            objectKey,
+            filename,
+            contentType: resolveUploadContentType(filename, contentType)
+        })
+    });
+}
+
 async function uploadAssetToR2({ submissionId, assetType, file, filename = file?.name, contentType = file?.type }) {
     if (!file) return null;
+    const resolvedContentType = resolveUploadContentType(filename, contentType);
 
     console.log('[API] R2 upload requested:', {
         submissionId,
         assetType,
         originalFilename: filename,
         originalFileSize: file.size,
-        contentType
+        contentType: resolvedContentType
     });
 
     const signedUpload = await callServerApi('/api/r2-sign-upload', {
@@ -82,16 +132,32 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
             submissionId,
             assetType,
             filename,
-            contentType,
+            contentType: resolvedContentType,
             size: file.size
         })
     });
+
+    if (assetType === 'project') {
+        console.log('[API] Project signed upload ready:', {
+            originalFilename: filename,
+            objectKey: signedUpload.objectKey,
+            publicUrl: signedUpload.publicUrl
+        });
+    }
 
     const uploadResponse = await fetch(signedUpload.uploadUrl, {
         method: 'PUT',
         headers: signedUpload.headers,
         body: file
     });
+
+    if (assetType === 'project') {
+        console.log('[API] Project PUT completed:', {
+            objectKey: signedUpload.objectKey,
+            status: uploadResponse.status,
+            ok: uploadResponse.ok
+        });
+    }
 
     if (!uploadResponse.ok) {
         throw new Error(`Upload failed for ${assetType}: ${uploadResponse.status} ${uploadResponse.statusText}`);
@@ -121,7 +187,45 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
         throw new Error(`Upload verification failed for ${assetType}: ${signedUpload.objectKey}`);
     }
 
+    if (assetType === 'project') {
+        console.log('[API] Project upload verified in R2:', {
+            objectKey: signedUpload.objectKey,
+            exists: verification.exists,
+            listed: verification.listed
+        });
+    }
+
     return signedUpload;
+}
+
+function createUploadPreflightId() {
+    if (globalThis.crypto?.randomUUID) {
+        return globalThis.crypto.randomUUID();
+    }
+
+    return `preflight-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function preflightR2Upload({ assetType, file, filename = file?.name, contentType = file?.type }) {
+    if (!file) return null;
+    const resolvedContentType = resolveUploadContentType(filename, contentType);
+
+    await callServerApi('/api/r2-sign-upload', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            submissionId: createUploadPreflightId(),
+            assetType,
+            filename,
+            contentType: resolvedContentType,
+            size: file.size,
+            preflight: true
+        })
+    });
+
+    return true;
 }
 
 async function deleteR2Assets(keysOrUrls, submissionId) {
@@ -268,6 +372,31 @@ export const API = {
             const payloadStr = JSON.stringify(submissionData);
             console.log(`[API] Payload size: ${(payloadStr.length / 1024).toFixed(2)} KB`);
 
+            if (thumbnailBlob) {
+                await preflightR2Upload({
+                    assetType: 'thumbnail',
+                    file: thumbnailBlob,
+                    filename: 'thumbnail-preflight.webp',
+                    contentType: thumbnailBlob.type || 'image/webp'
+                });
+            }
+
+            if (displayBlob) {
+                await preflightR2Upload({
+                    assetType: 'display',
+                    file: displayBlob,
+                    filename: 'display-preflight.webp',
+                    contentType: displayBlob.type || 'image/webp'
+                });
+            }
+
+            if (file) {
+                await preflightR2Upload({
+                    assetType: file.type?.startsWith('audio/') ? 'audio' : 'project',
+                    file
+                });
+            }
+
             console.log('[API] Sending insert request...');
             const { data: sub, error: insertError } = await withTimeout(
                 supabase.from('submissions').insert([submissionData]).select('id').single(),
@@ -326,9 +455,20 @@ export const API = {
                     file
                 });
                 uploadedKeys.push(fileUpload.objectKey);
+
+                if (assetType === 'project') {
+                    await validateUploadedProject({
+                        objectKey: fileUpload.objectKey,
+                        filename: file.name,
+                        contentType: file.type
+                    });
+                }
+
+                const resolvedFileType = resolveUploadContentType(file.name, file.type);
                 updateObject.file_path = fileUpload.objectKey;
                 updateObject.file_url = fileUpload.publicUrl;
-                updateObject.file_type = file.type;
+                updateObject.file_type = resolvedFileType;
+                updateObject.mime_type = resolvedFileType;
                 updateObject.file_size = file.size;
                 updateObject.storage_provider = 'r2';
             }
