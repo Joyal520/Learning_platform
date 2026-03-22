@@ -642,16 +642,182 @@ export const UI = {
     },
 
     getProjectFileLabel(sub = {}) {
-        const fileReference = String(sub.file_path || sub.file_url || '').toLowerCase();
+        const fileReference = String(sub.file_url || sub.public_url || sub.file_path || '').toLowerCase();
         const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
 
         if (fileReference.endsWith('.zip') || fileType.includes('zip')) return 'Website project (ZIP)';
         if (fileReference.endsWith('.html') || fileType === 'text/html') return 'HTML website project';
         if (fileReference.endsWith('.pdf') || fileType === 'application/pdf') return 'PDF document';
+        if (fileReference.endsWith('.ppt') || fileType.includes('powerpoint')) return 'PowerPoint presentation';
         if (fileReference.endsWith('.pptx') || fileType.includes('presentationml')) return 'PowerPoint presentation';
         if (fileReference.endsWith('.doc') || fileType === 'application/msword') return 'Word document';
         if (fileReference.endsWith('.docx') || fileType.includes('wordprocessingml')) return 'Word document';
         return sub.file_type || 'file';
+    },
+
+    getSubmissionFileUrl(sub = {}) {
+        return this.resolveMediaUrl(sub.public_url || sub.file_url || sub.file_path || '') || null;
+    },
+
+    getSubmissionFileExtension(sub = {}) {
+        const reference = String(sub.file_url || sub.public_url || sub.file_path || '').toLowerCase();
+        const match = reference.match(/\.([a-z0-9]+)(?:\?|#|$)/i);
+        return match?.[1] || '';
+    },
+
+    isPdfSubmission(sub = {}) {
+        const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
+        const extension = this.getSubmissionFileExtension(sub);
+        return fileType === 'application/pdf' || extension === 'pdf';
+    },
+
+    isPowerPointSubmission(sub = {}) {
+        const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
+        const extension = this.getSubmissionFileExtension(sub);
+        return fileType.includes('presentationml') || fileType.includes('powerpoint') || extension === 'pptx' || extension === 'ppt';
+    },
+
+    canEmbedOfficePresentation(fileUrl = '') {
+        if (!fileUrl || !/^https:\/\//i.test(fileUrl)) return false;
+
+        try {
+            const url = new URL(fileUrl, window.location.href);
+            const hostname = String(url.hostname || '').toLowerCase();
+            const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.local');
+            const isPrivateHost = /^10\./.test(hostname)
+                || /^192\.168\./.test(hostname)
+                || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
+            const hasSignedParams = url.searchParams.has('token')
+                || url.searchParams.has('x-amz-signature')
+                || url.searchParams.has('x-amz-credential')
+                || url.searchParams.has('x-amz-security-token');
+            const hasPrivateStoragePath = url.pathname.includes('/object/sign/') || url.pathname.includes('/storage/v1/object/sign/');
+
+            return !isLocalHost && !isPrivateHost && !hasSignedParams && !hasPrivateStoragePath;
+        } catch (_) {
+            return false;
+        }
+    },
+
+    getOfficePresentationViewerUrl(fileUrl = '') {
+        if (!this.canEmbedOfficePresentation(fileUrl)) return null;
+        return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`;
+    },
+
+    renderPreviewToolbar({ label, actions = [] } = {}) {
+        return `<div class="preview-header document-preview-toolbar">
+                    <div class="preview-dots"><span></span><span></span><span></span></div>
+                    <div class="preview-label">${label || 'DOCUMENT PREVIEW'}</div>
+                    <div class="preview-action-group">
+                        ${actions.filter(Boolean).join('')}
+                    </div>
+                </div>`;
+    },
+
+    renderPreviewActionLink({ href, label, title, download = null, target = '_blank' } = {}) {
+        if (!href || !label) return '';
+
+        const downloadAttr = download ? ` download="${download}"` : '';
+        const targetAttr = target ? ` target="${target}"` : '';
+        const relAttr = target === '_blank' ? ' rel="noopener noreferrer"' : '';
+
+        return `<a href="${href}" class="preview-action-link" title="${title || label}" aria-label="${label}"${targetAttr}${relAttr}${downloadAttr}>${label}</a>`;
+    },
+
+    renderPdfPreview(sub = {}) {
+        const fileUrl = this.getSubmissionFileUrl(sub);
+        if (!fileUrl) {
+            return `<div class="file-placeholder">📄 This PDF is unavailable for inline viewing right now. Please use the download button below.</div>`;
+        }
+
+        const downloadName = this.buildDownloadFileName(sub.title || 'document', fileUrl, 'pdf');
+        const openAction = this.renderPreviewActionLink({
+            href: fileUrl,
+            label: 'Open in new tab'
+        });
+        const downloadAction = this.renderPreviewActionLink({
+            href: this.buildDownloadProxyUrl(fileUrl, downloadName),
+            label: 'Download',
+            download: downloadName,
+            target: '_self'
+        });
+
+        return `<div class="document-preview-shell">
+                    ${this.renderPreviewToolbar({
+                        label: 'PDF PREVIEW',
+                        actions: [openAction, downloadAction]
+                    })}
+                    <object class="document-preview-frame pdf-preview-frame" data="${fileUrl}" type="application/pdf" aria-label="PDF document preview">
+                        <div class="document-preview-fallback">
+                            <p>Inline PDF viewing is unavailable in this browser, but you can still open or download the file.</p>
+                            <div class="document-preview-fallback-actions">
+                                ${openAction}
+                                ${downloadAction}
+                            </div>
+                        </div>
+                    </object>
+                </div>`;
+    },
+
+    renderPresentationPreview(sub = {}) {
+        const fileUrl = this.getSubmissionFileUrl(sub);
+        const extension = this.getSubmissionFileExtension(sub) || 'pptx';
+        const downloadName = this.buildDownloadFileName(sub.title || 'presentation', fileUrl || '', extension);
+        const downloadLabel = extension === 'ppt' ? 'Download PPT' : 'Download PPTX';
+
+        if (!fileUrl) {
+            return `<div class="file-placeholder">📽️ This presentation is unavailable for inline viewing right now. Please use the download button below.</div>`;
+        }
+
+        const openAction = this.renderPreviewActionLink({
+            href: fileUrl,
+            label: 'Open Presentation'
+        });
+        const downloadAction = this.renderPreviewActionLink({
+            href: this.buildDownloadProxyUrl(fileUrl, downloadName),
+            label: downloadLabel,
+            download: downloadName,
+            target: '_self'
+        });
+        const officeViewerUrl = this.getOfficePresentationViewerUrl(fileUrl);
+
+        if (!officeViewerUrl) {
+            return `<div class="presentation-preview-shell presentation-fallback-shell">
+                        ${this.renderPreviewToolbar({
+                            label: 'PRESENTATION MODE',
+                            actions: [openAction, downloadAction]
+                        })}
+                        <div class="presentation-fallback-panel">
+                            <p class="presentation-fallback-title">Interactive preview is unavailable for this file, but presentation mode can be opened externally.</p>
+                            <p class="presentation-fallback-note">Use the options below to open the presentation in a new tab or download the original file.</p>
+                            <div class="presentation-fallback-actions">
+                                ${openAction}
+                                ${downloadAction}
+                            </div>
+                        </div>
+                    </div>`;
+        }
+
+        const presentAction = this.renderPreviewActionLink({
+            href: officeViewerUrl,
+            label: 'Present Fullscreen'
+        });
+
+        return `<div class="presentation-preview-shell">
+                    ${this.renderPreviewToolbar({
+                        label: 'PRESENTATION MODE',
+                        actions: [openAction, presentAction, downloadAction]
+                    })}
+                    <div class="presentation-frame-shell">
+                        <iframe
+                            class="presentation-preview-frame"
+                            src="${officeViewerUrl}"
+                            title="PowerPoint presentation preview"
+                            loading="lazy"
+                            allowfullscreen
+                        ></iframe>
+                    </div>
+                </div>`;
     },
 
     wrapCodeForPreview(code) {
@@ -793,6 +959,8 @@ export const UI = {
         }
 
         if (sub.file_type?.startsWith('audio/')) return `<div class="audio-player-host" id="audioPlayerMount"></div>`;
+        if (this.isPdfSubmission(sub)) return this.renderPdfPreview(sub);
+        if (this.isPowerPointSubmission(sub)) return this.renderPresentationPreview(sub);
         return `<div class="file-placeholder">📄 This content is a ${this.getProjectFileLabel(sub)} and can be downloaded below.</div>`;
     },
 

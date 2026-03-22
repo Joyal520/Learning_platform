@@ -1378,6 +1378,124 @@ body.explore-view .btn-outline:hover {
     transition: height 0.3s ease;
 }
 
+.document-preview-shell,
+.presentation-preview-shell {
+    background: linear-gradient(180deg, rgba(8, 15, 28, 0.96), rgba(8, 12, 22, 0.92));
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: 0 20px 45px rgba(2, 6, 23, 0.35);
+}
+
+.document-preview-toolbar {
+    gap: 16px;
+}
+
+.preview-action-group {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.preview-action-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(99, 102, 241, 0.28);
+    background: rgba(15, 23, 42, 0.55);
+    color: var(--text-main);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 700;
+    transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.preview-action-link:hover {
+    transform: translateY(-1px);
+    border-color: rgba(99, 102, 241, 0.65);
+    background: rgba(99, 102, 241, 0.18);
+}
+
+.document-preview-frame,
+.presentation-preview-frame {
+    width: 100%;
+    border: none;
+    display: block;
+    background: #111827;
+}
+
+.document-preview-frame {
+    height: min(75vh, 980px);
+    min-height: 460px;
+}
+
+.presentation-frame-shell {
+    background: radial-gradient(circle at top, rgba(71, 85, 105, 0.12), transparent 52%), #050816;
+    padding: 18px;
+}
+
+.presentation-preview-frame {
+    height: min(72vh, 860px);
+    min-height: 420px;
+    aspect-ratio: 16 / 9;
+    border-radius: calc(var(--radius) - 4px);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.document-preview-fallback,
+.presentation-fallback-panel {
+    padding: 28px 24px 32px;
+    color: var(--text-main);
+}
+
+.document-preview-fallback {
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 18px;
+    background: linear-gradient(180deg, rgba(11, 18, 32, 0.92), rgba(15, 23, 42, 0.86));
+}
+
+.document-preview-fallback p,
+.presentation-fallback-note {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.7;
+}
+
+.document-preview-fallback-actions,
+.presentation-fallback-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.presentation-fallback-shell {
+    background: linear-gradient(160deg, rgba(5, 8, 22, 0.98), rgba(14, 20, 34, 0.95));
+}
+
+.presentation-fallback-panel {
+    min-height: 360px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 18px;
+    text-align: center;
+}
+
+.presentation-fallback-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
 /* ========== Fullscreen Mode ========== */
 .code-preview-container.fullscreen-active {
     position: fixed !important;
@@ -2261,6 +2379,7 @@ select.form-control option {
         flex-wrap: wrap;
         gap: 8px 10px;
         padding: 10px 12px;
+        align-items: flex-start;
     }
 
     .preview-dots {
@@ -2314,6 +2433,29 @@ select.form-control option {
     .main-actions .btn {
         width: 100%;
         justify-content: center;
+    }
+
+    .preview-action-group {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .preview-action-link {
+        flex: 1 1 140px;
+    }
+
+    .document-preview-frame {
+        height: 60vh;
+        min-height: 320px;
+    }
+
+    .presentation-frame-shell {
+        padding: 12px;
+    }
+
+    .presentation-preview-frame {
+        height: 58vh;
+        min-height: 300px;
     }
 }
 
