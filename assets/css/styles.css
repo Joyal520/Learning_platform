@@ -1415,10 +1415,39 @@ body.explore-view .btn-outline:hover {
     transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
+.preview-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(99, 102, 241, 0.28);
+    background: rgba(15, 23, 42, 0.55);
+    color: var(--text-main);
+    font-size: 0.82rem;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
 .preview-action-link:hover {
     transform: translateY(-1px);
     border-color: rgba(99, 102, 241, 0.65);
     background: rgba(99, 102, 241, 0.18);
+}
+
+.preview-action-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(99, 102, 241, 0.65);
+    background: rgba(99, 102, 241, 0.18);
+}
+
+.preview-action-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .document-preview-frame,
@@ -1432,6 +1461,115 @@ body.explore-view .btn-outline:hover {
 .document-preview-frame {
     height: min(75vh, 980px);
     min-height: 460px;
+}
+
+.pdf-workspace-shell {
+    width: 100%;
+}
+
+.pdf-toolbar-controls,
+.pdf-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.pdf-page-indicator {
+    min-width: 110px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.pdf-stage {
+    position: relative;
+    min-height: min(82vh, 1100px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 20px 28px;
+    overflow: auto;
+    background:
+        radial-gradient(circle at top, rgba(71, 85, 105, 0.15), transparent 44%),
+        linear-gradient(180deg, #060b16 0%, #0b1220 100%);
+}
+
+.pdf-loading {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.pdf-preview-canvas {
+    max-width: 100%;
+    height: auto;
+    border-radius: 18px;
+    background: white;
+    box-shadow:
+        0 22px 60px rgba(2, 6, 23, 0.45),
+        0 0 0 1px rgba(148, 163, 184, 0.18);
+}
+
+.pdf-present-overlay-control {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%);
+    z-index: 1000015;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    border-radius: 999px;
+    background: rgba(2, 6, 23, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: 0 18px 48px rgba(2, 6, 23, 0.42);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+.pdf-overlay-button {
+    min-height: 40px;
+}
+
+.pdf-overlay-indicator {
+    color: #e2e8f0;
+}
+
+.pdf-workspace-shell.pdf-present-active {
+    position: fixed;
+    inset: 0;
+    z-index: 1000010;
+    border-radius: 0;
+    border: none;
+    width: 100vw;
+    height: 100vh;
+    background: #020617;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.pdf-workspace-shell.pdf-present-active .document-preview-toolbar {
+    display: none;
+}
+
+.pdf-workspace-shell.pdf-present-active .pdf-stage {
+    flex: 1;
+    min-height: 100vh;
+    padding: 34px;
+    background: #020617;
+}
+
+.pdf-workspace-shell.pdf-present-active .pdf-preview-canvas {
+    box-shadow:
+        0 28px 80px rgba(0, 0, 0, 0.55),
+        0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .presentation-frame-shell {
@@ -2444,9 +2582,43 @@ select.form-control option {
         flex: 1 1 140px;
     }
 
+    .preview-action-button {
+        flex: 1 1 120px;
+    }
+
     .document-preview-frame {
         height: 60vh;
         min-height: 320px;
+    }
+
+    .pdf-toolbar-controls,
+    .pdf-toolbar-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .pdf-page-indicator {
+        flex: 1 1 100%;
+        min-width: 0;
+        text-align: left;
+    }
+
+    .pdf-stage {
+        min-height: 68vh;
+        padding: 14px;
+    }
+
+    .pdf-present-overlay-control {
+        left: 16px;
+        right: 16px;
+        bottom: 18px;
+        transform: none;
+        justify-content: center;
+        border-radius: 24px;
+    }
+
+    .pdf-workspace-shell.pdf-present-active .pdf-stage {
+        padding: 18px;
     }
 
     .presentation-frame-shell {

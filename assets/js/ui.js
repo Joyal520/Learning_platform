@@ -724,6 +724,12 @@ export const UI = {
         return `<a href="${href}" class="preview-action-link" title="${title || label}" aria-label="${label}"${targetAttr}${relAttr}${downloadAttr}>${label}</a>`;
     },
 
+    renderPreviewActionButton({ id, label, title, hidden = false, disabled = false, className = '' } = {}) {
+        if (!id || !label) return '';
+
+        return `<button type="button" id="${id}" class="preview-action-button ${className} ${hidden ? 'hidden' : ''}" title="${title || label}" aria-label="${label}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+    },
+
     renderPdfPreview(sub = {}) {
         const fileUrl = this.getSubmissionFileUrl(sub);
         if (!fileUrl) {
@@ -731,6 +737,11 @@ export const UI = {
         }
 
         const downloadName = this.buildDownloadFileName(sub.title || 'document', fileUrl, 'pdf');
+        const presentAction = this.renderPreviewActionButton({
+            id: 'pdfPresentBtn',
+            label: 'Present',
+            hidden: true
+        });
         const openAction = this.renderPreviewActionLink({
             href: fileUrl,
             label: 'Open in new tab'
@@ -742,20 +753,42 @@ export const UI = {
             target: '_self'
         });
 
-        return `<div class="document-preview-shell">
+        return `<div class="document-preview-shell pdf-workspace-shell" id="pdfViewerRoot" data-pdf-url="${fileUrl}" data-download-url="${this.buildDownloadProxyUrl(fileUrl, downloadName)}" data-file-name="${downloadName}">
                     ${this.renderPreviewToolbar({
-                        label: 'PDF PREVIEW',
-                        actions: [openAction, downloadAction]
+                        label: 'PDF WORKSPACE',
+                        actions: [
+                            `<div class="preview-action-group pdf-toolbar-controls">
+                                ${this.renderPreviewActionButton({ id: 'pdfPrevBtn', label: 'Previous', disabled: true })}
+                                <span class="pdf-page-indicator" id="pdfPageIndicator" aria-live="polite">Page 1 / --</span>
+                                ${this.renderPreviewActionButton({ id: 'pdfNextBtn', label: 'Next', disabled: true })}
+                                ${this.renderPreviewActionButton({ id: 'pdfZoomOutBtn', label: '−', title: 'Zoom out', disabled: true, className: 'pdf-zoom-button' })}
+                                ${this.renderPreviewActionButton({ id: 'pdfZoomInBtn', label: '+', title: 'Zoom in', disabled: true, className: 'pdf-zoom-button' })}
+                                ${this.renderPreviewActionButton({ id: 'pdfFitBtn', label: 'Fit', title: 'Fit page', disabled: true, className: 'pdf-fit-button' })}
+                            </div>`,
+                            `<div class="preview-action-group pdf-toolbar-actions">
+                                ${presentAction}
+                                ${openAction}
+                                ${downloadAction}
+                            </div>`
+                        ]
                     })}
-                    <object class="document-preview-frame pdf-preview-frame" data="${fileUrl}" type="application/pdf" aria-label="PDF document preview">
-                        <div class="document-preview-fallback">
+                    <div class="pdf-stage" id="pdfStage" tabindex="0" aria-label="PDF viewer">
+                        <div class="pdf-loading" id="pdfLoading">Loading PDF…</div>
+                        <div class="document-preview-fallback hidden" id="pdfFallback">
                             <p>Inline PDF viewing is unavailable in this browser, but you can still open or download the file.</p>
                             <div class="document-preview-fallback-actions">
                                 ${openAction}
                                 ${downloadAction}
                             </div>
                         </div>
-                    </object>
+                        <canvas class="document-preview-frame pdf-preview-canvas hidden" id="pdfCanvas" aria-label="PDF page preview"></canvas>
+                    </div>
+                    <div class="pdf-present-overlay-control hidden" id="pdfPresentOverlayControls">
+                        ${this.renderPreviewActionButton({ id: 'pdfOverlayPrevBtn', label: 'Previous', className: 'pdf-overlay-button' })}
+                        <span class="pdf-page-indicator pdf-overlay-indicator" id="pdfOverlayPageIndicator" aria-live="polite">Page 1 / --</span>
+                        ${this.renderPreviewActionButton({ id: 'pdfOverlayNextBtn', label: 'Next', className: 'pdf-overlay-button' })}
+                        ${this.renderPreviewActionButton({ id: 'pdfExitPresentBtn', label: 'Exit Present Mode', className: 'pdf-overlay-button pdf-exit-button' })}
+                    </div>
                 </div>`;
     },
 

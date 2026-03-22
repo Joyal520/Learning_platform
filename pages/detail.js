@@ -8,6 +8,7 @@ export const DetailPage = {
         const main = document.getElementById('main-content');
         console.log('[DETAIL] init called with id:', id);
         UI.showLoader();
+        this.teardownPdfViewer();
 
         try {
             // Step 1: Fetch submission data
@@ -85,6 +86,7 @@ export const DetailPage = {
 
             // Setup static UI elements
             this.setupInteractions(sub);
+            this.setupPdfViewer(sub);
             this.setupEditButton(sub);
             this.setupPreviewFullscreen();
             this.setupBookmark(sub);
@@ -109,6 +111,7 @@ export const DetailPage = {
 
             // Clean up fullscreen state on navigation
             window.addEventListener('hashchange', () => {
+                this.teardownPdfViewer();
                 document.body.classList.remove('body-no-scroll');
                 document.querySelectorAll('.fullscreen-active').forEach(el => {
                     el.classList.remove('fullscreen-active');
@@ -120,6 +123,388 @@ export const DetailPage = {
             main.innerHTML = `<div style="padding:2rem;text-align:center"><h2>Error loading</h2><p>${err.message}</p></div>`;
             UI.hideLoader();
         }
+    },
+
+    async ensurePdfJsLoaded() {
+        if (window.pdfjsLib) {
+            return window.pdfjsLib;
+        }
+
+        if (!this._pdfJsLoadPromise) {
+            this._pdfJsLoadPromise = new Promise((resolve, reject) => {
+                const existingScript = document.querySelector('script[data-pdfjs-lib="true"]');
+                if (existingScript) {
+                    existingScript.addEventListener('load', () => resolve(window.pdfjsLib));
+                    existingScript.addEventListener('error', () => reject(new Error('PDF viewer script failed to load.')));
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+                script.async = true;
+                script.dataset.pdfjsLib = 'true';
+                script.onload = () => resolve(window.pdfjsLib);
+                script.onerror = () => reject(new Error('PDF viewer script failed to load.'));
+                document.head.appendChild(script);
+            }).then((pdfjsLib) => {
+                if (!pdfjsLib) {
+                    throw new Error('PDF viewer is unavailable.');
+                }
+
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                return pdfjsLib;
+            });
+        }
+
+        return this._pdfJsLoadPromise;
+    },
+
+    async setupPdfViewer(sub) {
+        const root = document.getElementById('pdfViewerRoot');
+        if (!root) return;
+
+        const stage = document.getElementById('pdfStage');
+        const canvas = document.getElementById('pdfCanvas');
+        const loading = document.getElementById('pdfLoading');
+        const fallback = document.getElementById('pdfFallback');
+        const presentBtn = document.getElementById('pdfPresentBtn');
+        const prevBtn = document.getElementById('pdfPrevBtn');
+        const nextBtn = document.getElementById('pdfNextBtn');
+        const zoomOutBtn = document.getElementById('pdfZoomOutBtn');
+        const zoomInBtn = document.getElementById('pdfZoomInBtn');
+        const fitBtn = document.getElementById('pdfFitBtn');
+        const exitBtn = document.getElementById('pdfExitPresentBtn');
+        const overlayPrevBtn = document.getElementById('pdfOverlayPrevBtn');
+        const overlayNextBtn = document.getElementById('pdfOverlayNextBtn');
+        const pageIndicator = document.getElementById('pdfPageIndicator');
+        const overlayIndicator = document.getElementById('pdfOverlayPageIndicator');
+        const overlayControls = document.getElementById('pdfPresentOverlayControls');
+
+        if (!root || !stage || !canvas || !loading || !fallback || !presentBtn) return;
+
+        const state = {
+            sub,
+            root,
+            stage,
+            canvas,
+            loading,
+            fallback,
+            presentBtn,
+            prevBtn,
+            nextBtn,
+            zoomOutBtn,
+            zoomInBtn,
+            fitBtn,
+            exitBtn,
+            overlayPrevBtn,
+            overlayNextBtn,
+            pageIndicator,
+            overlayIndicator,
+            overlayControls,
+            fileUrl: root.dataset.pdfUrl || sub.public_url || sub.file_url || null,
+            pdfDoc: null,
+            renderTask: null,
+            currentPage: 1,
+            pageCount: 0,
+            zoomFactor: 1,
+            isPresenting: false,
+            usingNativeFullscreen: false,
+            ready: false
+        };
+
+        this._pdfViewerState = state;
+
+        const setControlsEnabled = (enabled) => {
+            [presentBtn, prevBtn, nextBtn, zoomOutBtn, zoomInBtn, fitBtn, exitBtn, overlayPrevBtn, overlayNextBtn]
+                .filter(Boolean)
+                .forEach((button) => {
+                    button.disabled = !enabled;
+                });
+        };
+
+        setControlsEnabled(false);
+        presentBtn.classList.add('hidden');
+
+        try {
+            const pdfjsLib = await this.ensurePdfJsLoaded();
+            if (this._pdfViewerState !== state || !state.fileUrl) return;
+
+            const loadingTask = pdfjsLib.getDocument({
+                url: state.fileUrl,
+                withCredentials: false
+            });
+            state.loadingTask = loadingTask;
+
+            const pdfDoc = await loadingTask.promise;
+            if (this._pdfViewerState !== state) return;
+
+            state.pdfDoc = pdfDoc;
+            state.pageCount = pdfDoc.numPages || 1;
+            state.ready = true;
+
+            const renderPage = async ({ fitMode = state.isPresenting ? 'page' : 'width', force = false } = {}) => {
+                if (!state.ready || !state.pdfDoc) return;
+
+                const stageRect = state.stage.getBoundingClientRect();
+                if (!force && (stageRect.width < 40 || stageRect.height < 40)) return;
+
+                const page = await state.pdfDoc.getPage(state.currentPage);
+                if (state.renderTask) {
+                    try {
+                        state.renderTask.cancel();
+                    } catch (_) {
+                        // Ignore render cancellation noise.
+                    }
+                }
+
+                const unscaledViewport = page.getViewport({ scale: 1 });
+                const widthPadding = state.isPresenting ? 48 : 40;
+                const heightPadding = state.isPresenting ? 48 : 24;
+                const fitWidthScale = Math.max(0.25, (stageRect.width - widthPadding) / unscaledViewport.width);
+                const fitPageScale = Math.max(0.25, Math.min(
+                    (stageRect.width - widthPadding) / unscaledViewport.width,
+                    (stageRect.height - heightPadding) / unscaledViewport.height
+                ));
+                const scale = state.isPresenting
+                    ? fitPageScale
+                    : (fitMode === 'page' ? fitPageScale : fitWidthScale * state.zoomFactor);
+
+                const viewport = page.getViewport({ scale });
+                const outputScale = window.devicePixelRatio || 1;
+                const context = state.canvas.getContext('2d', { alpha: false });
+
+                state.canvas.width = Math.floor(viewport.width * outputScale);
+                state.canvas.height = Math.floor(viewport.height * outputScale);
+                state.canvas.style.width = `${viewport.width}px`;
+                state.canvas.style.height = `${viewport.height}px`;
+                context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+                context.imageSmoothingEnabled = true;
+                context.clearRect(0, 0, state.canvas.width, state.canvas.height);
+
+                state.renderTask = page.render({
+                    canvasContext: context,
+                    viewport
+                });
+
+                try {
+                    await state.renderTask.promise;
+                } catch (error) {
+                    if (error?.name !== 'RenderingCancelledException') {
+                        throw error;
+                    }
+                }
+
+                state.loading.classList.add('hidden');
+                state.fallback.classList.add('hidden');
+                state.canvas.classList.remove('hidden');
+                state.stage.focus({ preventScroll: true });
+            };
+
+            const updateIndicators = () => {
+                const label = `Page ${state.currentPage} / ${state.pageCount || '--'}`;
+                if (state.pageIndicator) state.pageIndicator.textContent = label;
+                if (state.overlayIndicator) state.overlayIndicator.textContent = label;
+                if (state.prevBtn) state.prevBtn.disabled = state.currentPage <= 1;
+                if (state.nextBtn) state.nextBtn.disabled = state.currentPage >= state.pageCount;
+                if (state.overlayPrevBtn) state.overlayPrevBtn.disabled = state.currentPage <= 1;
+                if (state.overlayNextBtn) state.overlayNextBtn.disabled = state.currentPage >= state.pageCount;
+            };
+
+            const goToPage = async (pageNumber) => {
+                if (!state.ready) return;
+                const nextPage = Math.max(1, Math.min(state.pageCount, Number(pageNumber) || 1));
+                if (nextPage === state.currentPage) return;
+                state.currentPage = nextPage;
+                updateIndicators();
+                await renderPage();
+            };
+
+            const syncPresentUi = () => {
+                state.root.classList.toggle('pdf-present-active', state.isPresenting);
+                state.overlayControls?.classList.toggle('hidden', !state.isPresenting);
+                state.presentBtn?.classList.toggle('hidden', !state.ready || state.isPresenting);
+                document.body.classList.toggle('body-no-scroll', state.isPresenting);
+            };
+
+            const exitPresentMode = async ({ skipFullscreenExit = false } = {}) => {
+                if (!state.isPresenting) return;
+
+                state.isPresenting = false;
+                syncPresentUi();
+
+                if (!skipFullscreenExit && document.fullscreenElement === state.root && document.exitFullscreen) {
+                    try {
+                        await document.exitFullscreen();
+                    } catch (_) {
+                        // Ignore fullscreen exit failures and fall back to overlay cleanup.
+                    }
+                }
+
+                await renderPage({ force: true, fitMode: 'width' });
+            };
+
+            const enterPresentMode = async () => {
+                if (!state.ready || state.isPresenting) return;
+
+                state.isPresenting = true;
+                syncPresentUi();
+                await renderPage({ force: true, fitMode: 'page' });
+
+                if (state.root.requestFullscreen) {
+                    try {
+                        await state.root.requestFullscreen();
+                        state.usingNativeFullscreen = document.fullscreenElement === state.root;
+                    } catch (_) {
+                        state.usingNativeFullscreen = false;
+                    }
+                }
+            };
+
+            state.renderPage = renderPage;
+            state.goToPage = goToPage;
+            state.enterPresentMode = enterPresentMode;
+            state.exitPresentMode = exitPresentMode;
+            state.updateIndicators = updateIndicators;
+
+            const attachClick = (element, handler) => {
+                if (!element) return;
+                element.addEventListener('click', handler);
+            };
+
+            attachClick(prevBtn, () => goToPage(state.currentPage - 1));
+            attachClick(nextBtn, () => goToPage(state.currentPage + 1));
+            attachClick(overlayPrevBtn, () => goToPage(state.currentPage - 1));
+            attachClick(overlayNextBtn, () => goToPage(state.currentPage + 1));
+            attachClick(zoomOutBtn, async () => {
+                if (state.isPresenting) return;
+                state.zoomFactor = Math.max(0.6, Number((state.zoomFactor - 0.15).toFixed(2)));
+                await renderPage({ force: true, fitMode: 'width' });
+            });
+            attachClick(zoomInBtn, async () => {
+                if (state.isPresenting) return;
+                state.zoomFactor = Math.min(2.4, Number((state.zoomFactor + 0.15).toFixed(2)));
+                await renderPage({ force: true, fitMode: 'width' });
+            });
+            attachClick(fitBtn, async () => {
+                state.zoomFactor = 1;
+                await renderPage({ force: true, fitMode: state.isPresenting ? 'page' : 'width' });
+            });
+            attachClick(presentBtn, () => enterPresentMode());
+            attachClick(exitBtn, () => exitPresentMode());
+
+            state.keydownHandler = async (event) => {
+                if (!state.isPresenting) return;
+
+                if (['ArrowRight', 'PageDown', ' '].includes(event.key)) {
+                    event.preventDefault();
+                    await goToPage(state.currentPage + 1);
+                    return;
+                }
+
+                if (['ArrowLeft', 'PageUp'].includes(event.key)) {
+                    event.preventDefault();
+                    await goToPage(state.currentPage - 1);
+                    return;
+                }
+
+                if (event.key === 'Home') {
+                    event.preventDefault();
+                    await goToPage(1);
+                    return;
+                }
+
+                if (event.key === 'End') {
+                    event.preventDefault();
+                    await goToPage(state.pageCount);
+                    return;
+                }
+
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    await exitPresentMode();
+                }
+            };
+
+            state.resizeHandler = () => {
+                if (!state.ready) return;
+                renderPage({ force: true, fitMode: state.isPresenting ? 'page' : 'width' });
+            };
+
+            state.fullscreenChangeHandler = () => {
+                if (this._pdfViewerState !== state) return;
+
+                if (document.fullscreenElement === state.root) {
+                    state.usingNativeFullscreen = true;
+                    return;
+                }
+
+                if (state.isPresenting && state.usingNativeFullscreen) {
+                    state.usingNativeFullscreen = false;
+                    exitPresentMode({ skipFullscreenExit: true });
+                }
+            };
+
+            document.addEventListener('keydown', state.keydownHandler);
+            window.addEventListener('resize', state.resizeHandler);
+            document.addEventListener('fullscreenchange', state.fullscreenChangeHandler);
+
+            updateIndicators();
+            setControlsEnabled(true);
+            presentBtn.classList.remove('hidden');
+            await renderPage({ force: true, fitMode: 'width' });
+        } catch (error) {
+            if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+                console.warn('[DETAIL] PDF viewer unavailable:', error);
+            }
+
+            if (this._pdfViewerState !== state) return;
+
+            loading.classList.add('hidden');
+            canvas.classList.add('hidden');
+            fallback.classList.remove('hidden');
+            presentBtn.classList.add('hidden');
+            document.body.classList.remove('body-no-scroll');
+        }
+    },
+
+    teardownPdfViewer() {
+        const state = this._pdfViewerState;
+        if (!state) return;
+
+        if (state.renderTask) {
+            try {
+                state.renderTask.cancel();
+            } catch (_) {
+                // Ignore render cancellation noise.
+            }
+        }
+
+        if (state.loadingTask?.destroy) {
+            try {
+                state.loadingTask.destroy();
+            } catch (_) {
+                // Ignore PDF task destroy failures during teardown.
+            }
+        }
+
+        if (state.keydownHandler) {
+            document.removeEventListener('keydown', state.keydownHandler);
+        }
+
+        if (state.resizeHandler) {
+            window.removeEventListener('resize', state.resizeHandler);
+        }
+
+        if (state.fullscreenChangeHandler) {
+            document.removeEventListener('fullscreenchange', state.fullscreenChangeHandler);
+        }
+
+        if (document.fullscreenElement === state.root && document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+        }
+
+        document.body.classList.remove('body-no-scroll');
+        this._pdfViewerState = null;
     },
 
     setupPreviewFullscreen() {
