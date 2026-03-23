@@ -3,16 +3,17 @@ import { Auth } from './auth.js';
 import { supabase } from './supabase.js';
 import { AvatarLibrary } from './avatars.js';
 import { API } from './api.js';
+import { buildAppPath, buildAppUrl } from './path-utils.js';
 
 export const UI = {
     defaultThumbnailIcons: {
-        stories: '/assets/images/story.png',
-        writing: '/assets/images/writing.png',
-        literature: '/assets/images/literature.png',
-        lessons: '/assets/images/learning.png',
-        learning: '/assets/images/learning.png',
-        media: '/assets/images/media.png',
-        fun: '/assets/images/fun.png'
+        stories: 'assets/images/story.png',
+        writing: 'assets/images/writing.png',
+        literature: 'assets/images/literature.png',
+        lessons: 'assets/images/learning.png',
+        learning: 'assets/images/learning.png',
+        media: 'assets/images/media.png',
+        fun: 'assets/images/fun.png'
     },
     _audioR2PublicBaseUrlPromise: null,
     _livePreviewConfigs: new Map(),
@@ -448,7 +449,7 @@ export const UI = {
 
     getThumbnailFallbackPath(category, contentType = '') {
         const categoryKey = this.getCategoryFallbackKey(category, contentType);
-        return this.defaultThumbnailIcons[categoryKey] || '/assets/images/default.png';
+        return this.defaultThumbnailIcons[categoryKey] || 'assets/images/default.png';
     },
 
     getThumbnailFallbackUrl(sub) {
@@ -661,7 +662,13 @@ export const UI = {
     },
 
     getSubmissionFileUrl(sub = {}) {
-        return this.resolveMediaUrl(sub.public_url || sub.file_url || sub.file_path || '') || null;
+        const resolvedUrl = this.resolveMediaUrl(sub.public_url || sub.file_url || sub.file_path || '') || null;
+        console.log('[UI] Resolved file preview URL:', {
+            submissionId: sub?.id || null,
+            raw: sub.public_url || sub.file_url || sub.file_path || null,
+            resolvedUrl
+        });
+        return resolvedUrl;
     },
 
     getSubmissionFileExtension(sub = {}) {
@@ -1212,8 +1219,19 @@ export const UI = {
     resolveMediaUrl(pathOrUrl) {
         if (!pathOrUrl) return null;
         if (pathOrUrl.startsWith('data:') || pathOrUrl.startsWith('http')) return pathOrUrl;
-        if (pathOrUrl.startsWith('/assets/') || pathOrUrl.startsWith('assets/')) {
-            return pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`;
+        if (
+            pathOrUrl.startsWith('/assets/')
+            || pathOrUrl.startsWith('assets/')
+            || pathOrUrl.startsWith('/public/')
+            || pathOrUrl.startsWith('public/')
+            || pathOrUrl.startsWith('/icons/')
+            || pathOrUrl.startsWith('icons/')
+            || pathOrUrl.startsWith('/manifest.json')
+            || pathOrUrl.startsWith('manifest.json')
+        ) {
+            const resolvedAssetUrl = buildAppPath(pathOrUrl);
+            console.log('[UI] Resolved asset URL:', { raw: pathOrUrl, resolvedAssetUrl });
+            return resolvedAssetUrl;
         }
 
         const { data } = supabase.storage.from('approved_public').getPublicUrl(pathOrUrl);
@@ -1240,7 +1258,7 @@ export const UI = {
 
         const imageSrc = thumbnailValue !== ''
             ? customThumbnailUrl
-            : this.defaultThumbnailIcons[category] || '/assets/images/default.png';
+            : this.defaultThumbnailIcons[category] || 'assets/images/default.png';
 
         console.log('Thumbnail used:', imageSrc);
 
@@ -1256,7 +1274,7 @@ export const UI = {
 
     async getAudioR2PublicBaseUrl() {
         if (!this._audioR2PublicBaseUrlPromise) {
-            this._audioR2PublicBaseUrlPromise = fetch('/api/r2-public-config')
+            this._audioR2PublicBaseUrlPromise = fetch(buildAppPath('api/r2-public-config'))
                 .then(async (response) => {
                     const payload = await response.json().catch(() => ({}));
                     if (!response.ok || !payload.publicBaseUrl) {
@@ -1722,7 +1740,7 @@ export const UI = {
             url,
             filename
         });
-        return `/api/download-file?${params.toString()}`;
+        return buildAppPath(`api/download-file?${params.toString()}`);
     },
 
     downloadFile(url, filename = 'download') {

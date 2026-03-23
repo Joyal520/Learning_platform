@@ -93,6 +93,14 @@ export const DetailPage = {
                 sub.public_url = data.publicUrl;
             }
 
+            console.log('[DETAIL] Active backend project URL:', supabase?.supabaseUrl || 'unknown');
+            console.log('[DETAIL] Resolved submission preview source:', {
+                submissionId: sub.id,
+                publicUrl: sub.public_url || null,
+                fileUrl: sub.file_url || null,
+                filePath: sub.file_path || null
+            });
+
             // Step 3: Initial Render (Show content immediately)
             sub.initialViewCount = Number(sub.submission_stats?.[0]?.view_count || 0);
             main.innerHTML = UI.pages.detail(sub, currentUser, userRole);
@@ -157,7 +165,12 @@ export const DetailPage = {
         }
 
         this._audioPlayer?.destroy();
-        this._audioPlayer = new AudioPlayer(mount, sub);
+        this._audioPlayer = new AudioPlayer(mount, sub, {
+            onPlaybackStart: async () => {
+                console.log('[DETAIL] Audio playback started, recording view/play count...');
+                await this.recordView(sub.id, { source: 'audio-playback' });
+            }
+        });
         this._audioPlayer.init();
     },
 
@@ -213,13 +226,25 @@ export const DetailPage = {
 
         UI.showLoader();
         try {
+            console.log('[DETAIL] Rating mutation start:', {
+                submissionId: sub.id,
+                ratingValue,
+                backendProjectUrl: supabase?.supabaseUrl || 'unknown'
+            });
             const { data, error } = await API.rateSubmission(sub.id, user.id, ratingValue);
             if (error || !data) {
+                console.warn('[DETAIL] Rating mutation failed:', error);
                 UI.showToast(error?.message || 'Could not save rating.', 'error');
                 return;
             }
 
+            this._statsMutationVersion = (this._statsMutationVersion || 0) + 1;
             this.applyAverageRatingToUi(data.avgRating, sub);
+            console.log('[DETAIL] Rating mutation success:', data);
+            await this.refreshStats(sub.id, {
+                reason: 'rating-success',
+                mutationVersion: this._statsMutationVersion
+            });
             UI.showToast('Rated!', 'success');
         } finally {
             UI.hideLoader();
@@ -1124,7 +1149,7 @@ export const DetailPage = {
         });
     },
 
-    async refreshStats(subId) {
+    async refreshStats(subId, { reason = 'general', mutationVersion = this._statsMutationVersion || 0 } = {}) {
         try {
             let likeCount = 0;
             const stats = this.ensureSubmissionStats(this._currentSub);
@@ -1162,6 +1187,24 @@ export const DetailPage = {
                 viewCount = vCount;
             }
 
+            if ((this._statsMutationVersion || 0) !== mutationVersion) {
+                console.log('[DETAIL] Skipping stale stats refresh result:', {
+                    submissionId: subId,
+                    reason,
+                    mutationVersion,
+                    currentMutationVersion: this._statsMutationVersion || 0
+                });
+                return;
+            }
+
+            console.log('[DETAIL] Post-mutation refresh result:', {
+                submissionId: subId,
+                reason,
+                likeCount,
+                avgRating,
+                viewCount
+            });
+
             // Update like count in UI
             const likeCountSpan = document.getElementById('like-count');
             stats.like_count = likeCount;
@@ -1187,15 +1230,28 @@ export const DetailPage = {
                     this.attachStarListeners(starContainer, this._currentSub);
                 }
             }
+
+            console.log('[DETAIL] Final rendered count values:', {
+                submissionId: subId,
+                renderedLikeCount: likeCountSpan?.textContent || null,
+                renderedAvgRating: avgRatingSpan?.textContent || null,
+                renderedViewCount: viewCountSpan?.textContent || null,
+                renderedAudioViewCount: audioViewCountSpan?.textContent || null
+            });
         } catch (err) {
             console.error('[DETAIL] refreshStats error:', err);
         }
     },
 
-
-    async recordView(subId) {
+    async recordView(subId, { source = 'detail-init' } = {}) {
         try {
             const viewerId = App.user ? App.user.id : null;
+            console.log('[DETAIL] Recording view:', {
+                submissionId: subId,
+                source,
+                viewerId,
+                backendProjectUrl: supabase?.supabaseUrl || 'unknown'
+            });
 
             const { error } = await API.recordSubmissionView(subId, viewerId);
 
@@ -1204,7 +1260,12 @@ export const DetailPage = {
                 return false;
             } else {
                 console.log('[DETAIL] View recorded successfully');
+                this._statsMutationVersion = (this._statsMutationVersion || 0) + 1;
                 this.incrementViewCountDisplays(1);
+                await this.refreshStats(subId, {
+                    reason: `view-success:${source}`,
+                    mutationVersion: this._statsMutationVersion
+                });
                 return true;
             }
         } catch (err) {

@@ -1,3 +1,5 @@
+import { buildAppPath } from './path-utils.js';
+
 const WAVESURFER_MODULE_URL = 'https://cdn.jsdelivr.net/npm/wavesurfer.js@7/dist/wavesurfer.esm.js';
 
 let wavesurferModulePromise = null;
@@ -26,7 +28,9 @@ async function loadWaveSurfer() {
 
 async function getR2PublicBaseUrl() {
     if (!r2PublicBaseUrlPromise) {
-        r2PublicBaseUrlPromise = fetch('/api/r2-public-config')
+        const configUrl = buildAppPath('api/r2-public-config');
+        console.log('[AudioPlayer] R2 config URL resolved:', configUrl);
+        r2PublicBaseUrlPromise = fetch(configUrl)
             .then(async (response) => {
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok || !payload.publicBaseUrl) {

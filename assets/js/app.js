@@ -6,6 +6,7 @@ import { DetailPage } from '../../pages/detail.js';
 import { DashboardPage } from '../../pages/dashboard.js';
 import { StudentDashboardPage } from '../../pages/student-dashboard.js';
 import { PresentationRemotePage } from '../../pages/presentation-remote.js';
+import { buildAppPath, logAppRuntime } from './path-utils.js';
 
 const App = {
     user: null,
@@ -19,6 +20,7 @@ const App = {
 
     async init() {
         UI.init();
+        logAppRuntime('app-init');
         this.renderNav();
         this.initializePwaEnhancements();
         this.handleAuthErrorsInUrl();
@@ -92,14 +94,18 @@ const App = {
 
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js?v=9')
+                const serviceWorkerPath = buildAppPath('sw.js?v=9');
+                console.log('[PWA] service worker path resolved:', serviceWorkerPath);
+                navigator.serviceWorker.register(serviceWorkerPath)
                     .then(() => console.log('[PWA] service worker registered'))
                     .catch((error) => console.warn('[PWA] service worker registration skipped:', error));
             });
         }
 
         setTimeout(() => {
-            fetch('/manifest.json?v=3')
+            const manifestPath = buildAppPath('manifest.json?v=3');
+            console.log('[PWA] manifest path resolved:', manifestPath);
+            fetch(manifestPath)
                 .then((res) => {
                     if (res.ok) console.log('[PWA] manifest loaded');
                 })

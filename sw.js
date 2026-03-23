@@ -1,16 +1,25 @@
-const CACHE_NAME = 'edtechra-v4';
+const CACHE_NAME = 'edtechra-v5';
+const APP_BASE_PATH = (() => {
+  const pathname = self.location.pathname || '/sw.js';
+  const lastSlash = pathname.lastIndexOf('/');
+  return lastSlash >= 0 ? pathname.slice(0, lastSlash + 1) : '/';
+})();
+const withBase = (path = '') => {
+  const normalized = String(path || '').replace(/^\/+/, '');
+  return `${APP_BASE_PATH}${normalized}`.replace(/\/{2,}/g, '/');
+};
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/assets/css/styles.css',
-  '/assets/css/explore_recovered.css',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/public/favicon.ico?v=3',
-  '/public/favicon-32x32.png?v=3',
-  '/public/favicon-16x16.png?v=3',
-  '/public/icons/apple-touch-icon.png?v=3'
+  withBase(''),
+  withBase('index.html'),
+  withBase('manifest.json'),
+  withBase('assets/css/styles.css'),
+  withBase('assets/css/explore_recovered.css'),
+  withBase('icons/icon-192.png'),
+  withBase('icons/icon-512.png'),
+  withBase('public/favicon.ico?v=3'),
+  withBase('public/favicon-32x32.png?v=3'),
+  withBase('public/favicon-16x16.png?v=3'),
+  withBase('public/icons/apple-touch-icon.png?v=3')
 ];
 
 self.addEventListener('install', (event) => {
@@ -37,12 +46,16 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  const apiPrefix = withBase('api/');
+  if (url.origin === self.location.origin && url.pathname.startsWith(apiPrefix)) {
+    return;
+  }
+
   // Only handle GET requests
   if (event.request.method !== 'GET') return;
-  
-  const url = new URL(event.request.url);
-  // Exclude API/Supabase requests from caching and SPA fallbacks entirely.
-  if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) return;
+
+  // Exclude Supabase requests from caching and SPA fallbacks entirely.
   if (url.hostname.includes('supabase.co')) return;
 
   event.respondWith(
@@ -65,7 +78,7 @@ self.addEventListener('fetch', (event) => {
         }
         // If it's a navigation request and not in cache, fallback to index.html
         if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
+          return caches.match(withBase('index.html'));
         }
       });
     })

@@ -1,5 +1,6 @@
 // assets/js/api.js
 import { supabase } from './supabase.js';
+import { buildAppUrl } from './path-utils.js';
 
 const PROJECT_MIME_BY_EXTENSION = {
     pdf: 'application/pdf',
@@ -42,8 +43,9 @@ function resolveApiUrl(path) {
         return path;
     }
 
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    return new URL(normalizedPath, window.location.origin).toString();
+    const resolvedApiUrl = buildAppUrl(path);
+    console.log('[API] Resolved API URL:', { path, resolvedApiUrl });
+    return resolvedApiUrl;
 }
 
 function formatServerApiError(payload, response) {
@@ -313,10 +315,15 @@ export const API = {
                 title,
                 description,
                 category,
+                themes,
                 author_id,
                 thumbnail_path,
                 thumbnail_url,
                 image_url,
+                file_type,
+                mime_type,
+                file_url,
+                file_path,
                 content_type,
                 status,
                 created_at,
@@ -355,6 +362,128 @@ export const API = {
             console.warn('[API] Could not fetch stats:', e.message);
             return {};
         }
+    },
+
+    async getUserSubmissionInteractions(ids, userId) {
+        if (!ids || ids.length === 0 || !userId) return {};
+
+        try {
+            const uniqueIds = [...new Set(ids.filter(Boolean))];
+            const [likesResult, bookmarksResult, ratingsResult] = await Promise.all([
+                supabase.from('likes').select('submission_id').eq('user_id', userId).in('submission_id', uniqueIds),
+                supabase.from('bookmarks').select('submission_id').eq('user_id', userId).in('submission_id', uniqueIds),
+                supabase.from('ratings').select('submission_id, rating').eq('user_id', userId).in('submission_id', uniqueIds)
+            ]);
+
+            const interactionMap = {};
+            uniqueIds.forEach((id) => {
+                interactionMap[id] = { liked: false, bookmarked: false, userRating: null };
+            });
+
+            (likesResult.data || []).forEach((row) => {
+                if (!interactionMap[row.submission_id]) interactionMap[row.submission_id] = {};
+                interactionMap[row.submission_id].liked = true;
+            });
+
+            (bookmarksResult.data || []).forEach((row) => {
+                if (!interactionMap[row.submission_id]) interactionMap[row.submission_id] = {};
+                interactionMap[row.submission_id].bookmarked = true;
+            });
+
+            (ratingsResult.data || []).forEach((row) => {
+                if (!interactionMap[row.submission_id]) interactionMap[row.submission_id] = {};
+                interactionMap[row.submission_id].userRating = Number(row.rating) || null;
+            });
+
+            return interactionMap;
+        } catch (error) {
+            console.warn('[API] Could not fetch user interactions:', error);
+            return {};
+        }
+    },
+
+    async getTopCreators(limit = 10) {
+        const resolvedLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 500)) : 500;
+        const { data: submissions, error } = await supabase
+            .from('submissions')
+            .select(`
+                id,
+                author_id,
+                category,
+                content_type,
+                profiles!author_id(display_name, avatar_url)
+            `)
+            .eq('status', 'approved')
+            .limit(500);
+
+        if (error) {
+            return { data: [], error };
+        }
+
+        if (!submissions || submissions.length === 0) {
+            return { data: [], error: null };
+        }
+
+        const statsMap = await this.getStatsForSubmissions(submissions.map((submission) => submission.id));
+        const creatorMap = new Map();
+
+        submissions.forEach((submission) => {
+            const authorId = submission.author_id;
+            if (!authorId) return;
+
+            const profile = submission.profiles || {};
+            const stats = statsMap[submission.id] || { avg_rating: 0, like_count: 0, view_count: 0 };
+            const points = this.calculateCreatorPoints(stats);
+            const title = this.getCreatorTitle(submission);
+
+            if (!creatorMap.has(authorId)) {
+                creatorMap.set(authorId, {
+                    id: authorId,
+                    name: profile.display_name || 'Anonymous Creator',
+                    avatar: profile.avatar_url || null,
+                    points: 0,
+                    title,
+                    topSubmissionPoints: points
+                });
+            }
+
+            const creator = creatorMap.get(authorId);
+            creator.points += points;
+            if (points >= creator.topSubmissionPoints) {
+                creator.topSubmissionPoints = points;
+                creator.title = title;
+            }
+        });
+
+        const data = [...creatorMap.values()]
+            .sort((a, b) => {
+                if (b.points !== a.points) return b.points - a.points;
+                return a.name.localeCompare(b.name);
+            })
+            .slice(0, resolvedLimit)
+            .map(({ topSubmissionPoints, ...creator }) => creator);
+
+        return { data, error: null };
+    },
+
+    calculateCreatorPoints(stats = {}) {
+        const likeCount = Number(stats.like_count) || 0;
+        const viewCount = Number(stats.view_count) || 0;
+        const avgRating = Number(stats.avg_rating) || 0;
+        return (likeCount * 5) + viewCount + Math.round(avgRating * 10);
+    },
+
+    getCreatorTitle(submission = {}) {
+        const category = String(submission.category || '');
+        const contentType = String(submission.content_type || '');
+        const label = `${category} ${contentType}`.toLowerCase();
+
+        if (label.includes('story')) return 'Young Storyteller';
+        if (label.includes('writing') || label.includes('poem') || label.includes('essay')) return 'Aspiring Writer';
+        if (label.includes('image') || label.includes('art') || label.includes('media')) return 'Creative Artist';
+        if (label.includes('learning') || label.includes('tool') || label.includes('project')) return 'Curious Builder';
+        if (label.includes('fun')) return 'Imaginative Maker';
+        return 'Creative Explorer';
     },
 
     async uploadSubmission(submissionData, file = null, thumbnailBlob = null, displayBlob = null) {
@@ -575,6 +704,21 @@ export const API = {
                 console.warn('[API] No active session for image upload.');
             }
 
+            await preflightR2Upload({
+                assetType: 'image',
+                file: imageBlob,
+                contentType: imageBlob?.type || submissionData.mime_type || 'image/webp'
+            });
+
+            if (thumbnailBlob) {
+                await preflightR2Upload({
+                    assetType: 'thumbnail',
+                    file: thumbnailBlob,
+                    filename: 'thumbnail-preflight.webp',
+                    contentType: thumbnailBlob.type || 'image/webp'
+                });
+            }
+
             console.log('[API] Inserting image post record...');
             const { data: sub, error: insertError } = await withTimeout(
                 supabase.from('submissions').insert([submissionData]).select('id').single(),
@@ -668,6 +812,98 @@ export const API = {
                 }
             }
             return { error: err };
+        }
+    },
+
+    async getSubmissionPlaybackData(submissionId) {
+        try {
+            const { data, error } = await supabase
+                .from('submissions')
+                .select('id, file_path, file_url, file_type, mime_type, storage_provider, content_type')
+                .eq('id', submissionId)
+                .maybeSingle();
+
+            return { data, error };
+        } catch (err) {
+            console.error('[API] Submission playback fetch error:', err);
+            return { data: null, error: err };
+        }
+    },
+
+    async recordSubmissionView(submissionId, viewerId = null) {
+        try {
+            console.log('[API] recordSubmissionView start:', {
+                submissionId,
+                viewerId,
+                backendProjectUrl: supabase?.supabaseUrl || 'unknown'
+            });
+            const { error } = await supabase
+                .from('views')
+                .insert({
+                    submission_id: submissionId,
+                    viewer_id: viewerId
+                });
+
+            if (error) {
+                console.warn('[API] recordSubmissionView failed:', error);
+            } else {
+                console.log('[API] recordSubmissionView success:', { submissionId, viewerId });
+            }
+            return { error };
+        } catch (err) {
+            console.error('[API] View record error:', err);
+            return { error: err };
+        }
+    },
+
+    async rateSubmission(submissionId, userId, rating) {
+        try {
+            const parsedRating = Math.max(1, Math.min(5, Number(rating) || 0));
+            console.log('[API] rateSubmission start:', {
+                submissionId,
+                userId,
+                rating: parsedRating,
+                backendProjectUrl: supabase?.supabaseUrl || 'unknown'
+            });
+            const { error } = await supabase
+                .from('ratings')
+                .upsert({
+                    submission_id: submissionId,
+                    user_id: userId,
+                    rating: parsedRating
+                }, { onConflict: 'submission_id,user_id' });
+
+            if (error) throw error;
+
+            const { data: ratings, error: ratingsError } = await supabase
+                .from('ratings')
+                .select('rating')
+                .eq('submission_id', submissionId);
+
+            if (ratingsError) throw ratingsError;
+
+            const ratingCount = ratings?.length || 0;
+            const ratingSum = (ratings || []).reduce((sum, item) => sum + Number(item.rating || 0), 0);
+            const avgRating = ratingCount > 0 ? ratingSum / ratingCount : 0;
+
+            console.log('[API] rateSubmission refresh result:', {
+                submissionId,
+                avgRating,
+                ratingCount,
+                userRating: parsedRating
+            });
+
+            return {
+                data: {
+                    avgRating,
+                    ratingCount,
+                    userRating: parsedRating
+                },
+                error: null
+            };
+        } catch (err) {
+            console.error('[API] Rating error:', err);
+            return { data: null, error: err };
         }
     },
 

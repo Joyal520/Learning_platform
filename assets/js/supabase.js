@@ -11,3 +11,5 @@ export const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
         detectSessionInUrl: true
     }
 });
+
+console.log('[Supabase] Active project URL:', SUPABASE_URL);
