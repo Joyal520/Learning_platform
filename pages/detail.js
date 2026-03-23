@@ -2,12 +2,16 @@
 import { supabase } from '../assets/js/supabase.js';
 import { UI } from '../assets/js/ui.js';
 import App from '../assets/js/app.js';
+import API from '../assets/js/api.js';
+import { AudioPlayer } from '../assets/js/audio-player.js';
 
 export const DetailPage = {
     async init(id) {
         const main = document.getElementById('main-content');
         console.log('[DETAIL] init called with id:', id);
         UI.showLoader();
+        this._audioPlayer?.destroy();
+        this._audioPlayer = null;
         this.teardownPdfViewer();
 
         try {
@@ -76,6 +80,7 @@ export const DetailPage = {
             }
 
             // Step 3: Initial Render (Show content immediately)
+            sub.initialViewCount = Number(sub.submission_stats?.[0]?.view_count || 0);
             main.innerHTML = UI.pages.detail(sub, currentUser, userRole);
             this._currentSub = sub;
 
@@ -85,6 +90,7 @@ export const DetailPage = {
             const likeStatusPromise = this.checkIfLiked(sub.id);
 
             // Setup static UI elements
+            this.setupAudioPlayer(sub);
             this.setupInteractions(sub);
             this.setupPdfViewer(sub);
             this.setupEditButton(sub);
@@ -100,8 +106,10 @@ export const DetailPage = {
                 }, 500); // Small delay to ensure render is complete
             }
 
-            // Record a view (non-blocking)
-            this.recordView(sub.id);
+            // Record a view immediately for non-audio content only.
+            if (!this.isAudioSubmission(sub)) {
+                this.recordView(sub.id);
+            }
 
             // Wait for non-critical data
             await Promise.all([statsPromise, likeStatusPromise]);
@@ -111,6 +119,8 @@ export const DetailPage = {
 
             // Clean up fullscreen state on navigation
             window.addEventListener('hashchange', () => {
+                this._audioPlayer?.destroy();
+                this._audioPlayer = null;
                 this.teardownPdfViewer();
                 document.body.classList.remove('body-no-scroll');
                 document.querySelectorAll('.fullscreen-active').forEach(el => {
@@ -121,6 +131,86 @@ export const DetailPage = {
         } catch (err) {
             console.error('[DETAIL] ❌ Error:', err);
             main.innerHTML = `<div style="padding:2rem;text-align:center"><h2>Error loading</h2><p>${err.message}</p></div>`;
+            UI.hideLoader();
+        }
+    },
+
+    setupAudioPlayer(sub) {
+        const mount = document.getElementById('audioPlayerMount');
+        if (!mount || !this.isAudioSubmission(sub)) {
+            return;
+        }
+
+        this._audioPlayer?.destroy();
+        this._audioPlayer = new AudioPlayer(mount, sub, {
+            onPlaybackStart: async () => {
+                await this.recordView(sub.id);
+            }
+        });
+        this._audioPlayer.init();
+    },
+
+    isAudioSubmission(sub = {}) {
+        return sub.content_type === 'audio' || sub.file_type?.startsWith?.('audio/');
+    },
+
+    ensureSubmissionStats(sub = this._currentSub) {
+        if (!sub) return { avg_rating: 0, like_count: 0, view_count: 0 };
+        if (!Array.isArray(sub.submission_stats) || sub.submission_stats.length === 0) {
+            sub.submission_stats = [{ avg_rating: 0, like_count: 0, view_count: 0 }];
+        }
+        return sub.submission_stats[0];
+    },
+
+    applyAverageRatingToUi(avgRating, sub = this._currentSub) {
+        const stats = this.ensureSubmissionStats(sub);
+        stats.avg_rating = UI.getAverageRatingValue(avgRating);
+
+        const avgRatingSpan = document.getElementById('avg-rating');
+        if (avgRatingSpan) {
+            avgRatingSpan.textContent = `(${UI.formatAverageRating(stats.avg_rating)})`;
+        }
+
+        const starContainer = document.getElementById('rating-stars');
+        if (starContainer) {
+            starContainer.innerHTML = UI.renderStars(stats.avg_rating);
+            this.attachStarListeners(starContainer, sub);
+        }
+    },
+
+    incrementViewCountDisplays(delta = 1, sub = this._currentSub) {
+        const increment = Math.max(0, Number(delta) || 0);
+        if (!increment) return;
+
+        const stats = this.ensureSubmissionStats(sub);
+        stats.view_count = Math.max(0, Number(stats.view_count || 0) + increment);
+
+        const nextCount = String(stats.view_count);
+        const viewCountSpan = document.getElementById('view-count');
+        if (viewCountSpan) viewCountSpan.textContent = nextCount;
+
+        const audioViewCountSpan = document.getElementById('audio-player-view-count');
+        if (audioViewCountSpan) audioViewCountSpan.textContent = nextCount;
+    },
+
+    async submitRating(sub, ratingValue) {
+        const user = App.user;
+        if (!user) {
+            UI.showToast('Please login to rate', 'error');
+            return;
+        }
+
+        UI.showLoader();
+        try {
+            const { data, error } = await API.rateSubmission(sub.id, user.id, ratingValue);
+            if (error || !data) {
+                UI.showToast(error?.message || 'Could not save rating.', 'error');
+                return;
+            }
+
+            this.applyAverageRatingToUi(data.avgRating, sub);
+            UI.showToast('Rated!', 'success');
+        } finally {
             UI.hideLoader();
         }
     },
@@ -209,6 +299,7 @@ export const DetailPage = {
             zoomFactor: 1,
             isPresenting: false,
             usingNativeFullscreen: false,
+            controlsHideTimer: null,
             ready: false
         };
 
@@ -323,13 +414,38 @@ export const DetailPage = {
                 state.root.classList.toggle('pdf-present-active', state.isPresenting);
                 state.overlayControls?.classList.toggle('hidden', !state.isPresenting);
                 state.presentBtn?.classList.toggle('hidden', !state.ready || state.isPresenting);
+                state.root.classList.toggle('presenter-controls-visible', state.isPresenting);
                 document.body.classList.toggle('body-no-scroll', state.isPresenting);
+            };
+
+            const clearControlsHideTimer = () => {
+                if (state.controlsHideTimer) {
+                    window.clearTimeout(state.controlsHideTimer);
+                    state.controlsHideTimer = null;
+                }
+            };
+
+            const scheduleControlsHide = () => {
+                clearControlsHideTimer();
+                if (!state.isPresenting) return;
+
+                state.controlsHideTimer = window.setTimeout(() => {
+                    if (!state.isPresenting) return;
+                    state.root.classList.remove('presenter-controls-visible');
+                }, 2200);
+            };
+
+            const revealPresentControls = () => {
+                if (!state.isPresenting) return;
+                state.root.classList.add('presenter-controls-visible');
+                scheduleControlsHide();
             };
 
             const exitPresentMode = async ({ skipFullscreenExit = false } = {}) => {
                 if (!state.isPresenting) return;
 
                 state.isPresenting = false;
+                clearControlsHideTimer();
                 syncPresentUi();
 
                 if (!skipFullscreenExit && document.fullscreenElement === state.root && document.exitFullscreen) {
@@ -349,6 +465,7 @@ export const DetailPage = {
                 state.isPresenting = true;
                 syncPresentUi();
                 await renderPage({ force: true, fitMode: 'page' });
+                revealPresentControls();
 
                 if (state.root.requestFullscreen) {
                     try {
@@ -365,6 +482,7 @@ export const DetailPage = {
             state.enterPresentMode = enterPresentMode;
             state.exitPresentMode = exitPresentMode;
             state.updateIndicators = updateIndicators;
+            state.revealPresentControls = revealPresentControls;
 
             const attachClick = (element, handler) => {
                 if (!element) return;
@@ -394,6 +512,8 @@ export const DetailPage = {
 
             state.keydownHandler = async (event) => {
                 if (!state.isPresenting) return;
+
+                revealPresentControls();
 
                 if (['ArrowRight', 'PageDown', ' '].includes(event.key)) {
                     event.preventDefault();
@@ -430,6 +550,10 @@ export const DetailPage = {
                 renderPage({ force: true, fitMode: state.isPresenting ? 'page' : 'width' });
             };
 
+            state.presenterInteractionHandler = () => {
+                revealPresentControls();
+            };
+
             state.fullscreenChangeHandler = () => {
                 if (this._pdfViewerState !== state) return;
 
@@ -445,6 +569,10 @@ export const DetailPage = {
             };
 
             document.addEventListener('keydown', state.keydownHandler);
+            document.addEventListener('mousemove', state.presenterInteractionHandler);
+            document.addEventListener('touchstart', state.presenterInteractionHandler, { passive: true });
+            document.addEventListener('touchmove', state.presenterInteractionHandler, { passive: true });
+            document.addEventListener('focusin', state.presenterInteractionHandler);
             window.addEventListener('resize', state.resizeHandler);
             document.addEventListener('fullscreenchange', state.fullscreenChangeHandler);
 
@@ -497,6 +625,17 @@ export const DetailPage = {
 
         if (state.fullscreenChangeHandler) {
             document.removeEventListener('fullscreenchange', state.fullscreenChangeHandler);
+        }
+
+        if (state.presenterInteractionHandler) {
+            document.removeEventListener('mousemove', state.presenterInteractionHandler);
+            document.removeEventListener('touchstart', state.presenterInteractionHandler);
+            document.removeEventListener('touchmove', state.presenterInteractionHandler);
+            document.removeEventListener('focusin', state.presenterInteractionHandler);
+        }
+
+        if (state.controlsHideTimer) {
+            window.clearTimeout(state.controlsHideTimer);
         }
 
         if (document.fullscreenElement === state.root && document.exitFullscreen) {
@@ -598,36 +737,7 @@ export const DetailPage = {
             UI.hideLoader();
         });
 
-        starContainer?.querySelectorAll('.star').forEach(star => {
-            star.addEventListener('click', async () => {
-                const rating = star.dataset.value;
-                const user = App.user;
-                if (!user) return UI.showToast('Please login to rate', 'error');
-
-                UI.showLoader();
-                const { error } = await supabase.from('ratings').upsert({
-                    submission_id: sub.id, user_id: user.id, rating: parseInt(rating)
-                }, { onConflict: 'submission_id,user_id' });
-
-                if (error) {
-                    UI.showToast(error.message, 'error');
-                } else {
-                    UI.showToast('Rated!', 'success');
-
-                    // Optimistically fetch ONLY ratings to avoid querying views/likes again
-                    const { data: ratings } = await supabase.from('ratings').select('rating').eq('submission_id', sub.id);
-                    if (ratings && ratings.length > 0) {
-                        const sum = ratings.reduce((acc, r) => acc + r.rating, 0);
-                        const avgRating = sum / ratings.length;
-                        const avgSpan = document.getElementById('avg-rating');
-                        if (avgSpan) avgSpan.textContent = `(${avgRating.toFixed(1)})`;
-                        starContainer.innerHTML = UI.renderStars(Math.round(avgRating));
-                        this.attachStarListeners(starContainer, sub);
-                    }
-                }
-                UI.hideLoader();
-            });
-        });
+        this.attachStarListeners(starContainer, sub);
 
         downloadBtn?.addEventListener('click', async () => {
             const user = App.user;
@@ -656,31 +766,7 @@ export const DetailPage = {
     attachStarListeners(container, sub) {
         container?.querySelectorAll('.star').forEach(star => {
             star.addEventListener('click', async () => {
-                const rating = star.dataset.value;
-                const user = App.user;
-                if (!user) return UI.showToast('Please login to rate', 'error');
-
-                UI.showLoader();
-                const { error } = await supabase.from('ratings').upsert({
-                    submission_id: sub.id, user_id: user.id, rating: parseInt(rating)
-                }, { onConflict: 'submission_id,user_id' });
-
-                if (error) {
-                    UI.showToast(error.message, 'error');
-                } else {
-                    UI.showToast('Rated!', 'success');
-
-                    const { data: ratings } = await supabase.from('ratings').select('rating').eq('submission_id', sub.id);
-                    if (ratings && ratings.length > 0) {
-                        const sum = ratings.reduce((acc, r) => acc + r.rating, 0);
-                        const avgRating = sum / ratings.length;
-                        const avgSpan = document.getElementById('avg-rating');
-                        if (avgSpan) avgSpan.textContent = `(${avgRating.toFixed(1)})`;
-                        container.innerHTML = UI.renderStars(Math.round(avgRating));
-                        this.attachStarListeners(container, sub);
-                    }
-                }
-                UI.hideLoader();
+                await this.submitRating(sub, star.dataset.value);
             });
         });
     },
@@ -688,6 +774,7 @@ export const DetailPage = {
     async refreshStats(subId) {
         try {
             let likeCount = 0;
+            const stats = this.ensureSubmissionStats(this._currentSub);
             let avgRating = 0;
             let viewCount = 0;
 
@@ -724,20 +811,25 @@ export const DetailPage = {
 
             // Update like count in UI
             const likeCountSpan = document.getElementById('like-count');
+            stats.like_count = likeCount;
             if (likeCountSpan) likeCountSpan.textContent = likeCount;
 
             // Update average rating display
             const avgRatingSpan = document.getElementById('avg-rating');
-            if (avgRatingSpan) avgRatingSpan.textContent = `(${avgRating.toFixed(1)})`;
+            if (avgRatingSpan) avgRatingSpan.textContent = `(${UI.formatAverageRating(avgRating)})`;
 
             // Update view count display
             const viewCountSpan = document.getElementById('view-count');
+            stats.avg_rating = avgRating;
+            stats.view_count = viewCount;
             if (viewCountSpan) viewCountSpan.textContent = viewCount;
+            const audioViewCountSpan = document.getElementById('audio-player-view-count');
+            if (audioViewCountSpan) audioViewCountSpan.textContent = viewCount;
 
             // Update star visual AND re-attach listeners
             const starContainer = document.getElementById('rating-stars');
-            if (starContainer && avgRating > 0) {
-                starContainer.innerHTML = UI.renderStars(Math.round(avgRating));
+            if (starContainer) {
+                starContainer.innerHTML = UI.renderStars(avgRating);
                 if (this._currentSub) {
                     this.attachStarListeners(starContainer, this._currentSub);
                 }
@@ -762,11 +854,15 @@ export const DetailPage = {
 
             if (error) {
                 console.warn('[DETAIL] Failed to record view:', error);
+                return false;
             } else {
                 console.log('[DETAIL] View recorded successfully');
+                this.incrementViewCountDisplays(1);
+                return true;
             }
         } catch (err) {
             console.error('[DETAIL] recordView error:', err);
+            return false;
         }
     },
 

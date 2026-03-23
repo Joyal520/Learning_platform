@@ -997,9 +997,22 @@ export const UI = {
         return `<div class="file-placeholder">📄 This content is a ${this.getProjectFileLabel(sub)} and can be downloaded below.</div>`;
     },
 
+    getAverageRatingValue(statsOrRating = 0) {
+        const rawValue = typeof statsOrRating === 'object' && statsOrRating !== null
+            ? statsOrRating.avg_rating
+            : statsOrRating;
+        const rating = Number(rawValue);
+        return Number.isFinite(rating) ? rating : 0;
+    },
+
+    formatAverageRating(statsOrRating = 0) {
+        return this.getAverageRatingValue(statsOrRating).toFixed(1);
+    },
+
     renderStars(rating) {
+        const averageRating = this.getAverageRatingValue(rating);
         return [1, 2, 3, 4, 5].map(i => `
-            <span class="star ${i <= Math.round(rating) ? 'active' : ''}" data-value="${i}">★</span>
+            <span class="star ${i <= Math.round(averageRating) ? 'active' : ''}" data-value="${i}">★</span>
         `).join('');
     },
 
@@ -1093,6 +1106,7 @@ export const UI = {
 
     renderCard(sub, badgeObj = null) {
         const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
+        const avgRating = this.getAverageRatingValue(stats);
         const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
         const color = this.getCategoryColor(sub.category, sub.content_type);
         const categoryLabel = this.getContentTypeLabel(sub.category, sub.content_type);
@@ -1131,7 +1145,7 @@ export const UI = {
             const initials = authorName.charAt(0).toUpperCase();
             const shareUrl = this.createWhatsAppShareUrl(title, sub.id);
             const audioArtworkUrl = previewUrl || fullUrl || fallbackThumbnailUrl;
-            const activeRating = Math.round(Number(stats.avg_rating) || 0);
+            const activeRating = Math.round(avgRating);
             const ratingControls = Array.from({ length: 5 }, (_, index) => {
                 const value = index + 1;
                 return `
@@ -1210,7 +1224,7 @@ export const UI = {
                                         <svg viewBox="0 0 24 24" aria-hidden="true">
                                             <path d="m12 2.5 2.9 5.87 6.48.94-4.69 4.57 1.11 6.47L12 17.32 6.2 20.35l1.11-6.47L2.62 9.31l6.48-.94Z"></path>
                                         </svg>
-                                        <span class="audio-feed-rating-value">${Number(stats.avg_rating).toFixed(1)}</span>
+                                        <span class="audio-feed-rating-value">${this.formatAverageRating(stats)}</span>
                                     </span>
                                     <button class="audio-feed-stat audio-feed-like-btn" type="button" data-audio-action="like" aria-label="Like audio">
                                         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1276,7 +1290,7 @@ export const UI = {
                                 <span class="author-name">By ${sub.profiles?.display_name || 'Anonymous'}</span>
                              </div>
                              <div class="card-stats feed-stats">
-                                <span><span style="color:#fbbf24">★</span> ${Number(stats.avg_rating).toFixed(1)}</span>
+                                <span><span style="color:#fbbf24">★</span> ${this.formatAverageRating(stats)}</span>
                                 <span><span style="color:#ef4444">❤️</span> ${stats.like_count}</span>
                              </div>
                         </div>
@@ -1306,7 +1320,7 @@ export const UI = {
                     <p class="card-author">By ${sub.profiles?.display_name || 'Anonymous'}</p>
                     <div class="card-footer">
                         <div class="card-stats">
-                            <span><span style="color:#fbbf24">★</span> ${Number(stats.avg_rating).toFixed(1)}</span>
+                            <span><span style="color:#fbbf24">★</span> ${this.formatAverageRating(stats)}</span>
                             <span><span style="color:#ef4444">❤️</span> ${stats.like_count}</span>
                             <span>👁️ ${stats.view_count || 0}</span>
                         </div>
@@ -1846,6 +1860,7 @@ export const UI = {
 
         detail: (sub, currentUser, userRole) => {
             const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
+            const avgRating = UI.getAverageRatingValue(stats);
             const isOwner = currentUser?.id === sub.author_id;
             const isAdmin = userRole === 'admin';
 
@@ -1887,9 +1902,9 @@ export const UI = {
 
                                 <div class="rating-group">
                                     <div class="rating-stars" id="rating-stars">
-                                        ${UI.renderStars(stats.avg_rating)}
+                                        ${UI.renderStars(avgRating)}
                                     </div>
-                                    <span class="text-xs text-muted" id="avg-rating">(${Number(stats.avg_rating).toFixed(1)})</span>
+                                    <span class="text-xs text-muted" id="avg-rating">(${UI.formatAverageRating(avgRating)})</span>
                                 </div>
                             </div>
 
@@ -2529,7 +2544,7 @@ export const UI = {
                         </div>
                         <div class="sd-sc-stat">
                             <span>⭐</span>
-                            <span>${Number(stats.avg_rating || 0).toFixed(1)}</span>
+                            <span>${this.formatAverageRating(stats)}</span>
                         </div>
                     </div>
                     <div class="sd-sc-action">

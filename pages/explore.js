@@ -775,7 +775,8 @@ export const ExplorePage = {
     },
 
     updateAudioFeedRatingState(submissionId, avgRating, activeRating = null) {
-        const roundedAverage = Math.round(Number(avgRating) || 0);
+        const resolvedAverage = UI.getAverageRatingValue(avgRating);
+        const roundedAverage = Math.round(resolvedAverage);
         const selectedRating = activeRating ?? roundedAverage;
 
         document.querySelectorAll(`.audio-feed-card[data-id="${submissionId}"]`).forEach((card) => {
@@ -783,7 +784,7 @@ export const ExplorePage = {
             const stars = card.querySelectorAll('[data-audio-action="rate"]');
 
             if (ratingValue) {
-                ratingValue.textContent = Number(avgRating || 0).toFixed(1);
+                ratingValue.textContent = UI.formatAverageRating(resolvedAverage);
             }
 
             stars.forEach((star) => {

@@ -61,13 +61,15 @@ function buildFallbackMarkup(sourceUrl, fileType) {
 }
 
 export class AudioPlayer {
-    constructor(container, submission) {
+    constructor(container, submission, options = {}) {
         this.container = container;
         this.submission = submission;
+        this.options = options;
         this.waveSurfer = null;
         this.isScrubbing = false;
         this.isDestroyed = false;
         this.boundHandlers = [];
+        this.hasCountedPlayForCurrentSession = false;
     }
 
     renderShell() {
@@ -148,6 +150,24 @@ export class AudioPlayer {
         }
     }
 
+    resetPlaybackSession() {
+        this.hasCountedPlayForCurrentSession = false;
+    }
+
+    async countPlaybackStart() {
+        if (this.hasCountedPlayForCurrentSession || this.isDestroyed) {
+            return;
+        }
+
+        this.hasCountedPlayForCurrentSession = true;
+
+        try {
+            await this.options.onPlaybackStart?.();
+        } catch (error) {
+            console.warn('[AudioPlayer] Could not record playback start:', error);
+        }
+    }
+
     async init() {
         this.renderShell();
 
@@ -192,6 +212,9 @@ export class AudioPlayer {
                 const ratio = Number(event.target.value) / 1000;
                 this.waveSurfer?.seekTo(Math.max(0, Math.min(1, ratio)));
                 this.isScrubbing = false;
+                if (ratio <= 0.001 && !this.waveSurfer?.isPlaying?.()) {
+                    this.resetPlaybackSession();
+                }
             });
 
             this.waveSurfer.on('ready', () => {
@@ -202,11 +225,15 @@ export class AudioPlayer {
             this.waveSurfer.on('timeupdate', (currentTime) => {
                 this.updateTime(currentTime, this.waveSurfer.getDuration());
             });
-            this.waveSurfer.on('play', () => this.updatePlayState());
+            this.waveSurfer.on('play', () => {
+                this.updatePlayState();
+                this.countPlaybackStart();
+            });
             this.waveSurfer.on('pause', () => this.updatePlayState());
             this.waveSurfer.on('finish', () => {
                 this.updatePlayState();
                 this.updateTime(this.waveSurfer.getDuration(), this.waveSurfer.getDuration());
+                this.resetPlaybackSession();
             });
             this.waveSurfer.on('error', (error) => {
                 console.error('[AudioPlayer] WaveSurfer error:', error);
@@ -231,6 +258,15 @@ export class AudioPlayer {
                 ${buildFallbackMarkup(sourceUrl, this.submission.file_type)}
             </section>
         `;
+
+        const audioElement = this.container.querySelector('.audio-player-fallback-element');
+        this.bind(audioElement, 'playing', () => this.countPlaybackStart());
+        this.bind(audioElement, 'ended', () => this.resetPlaybackSession());
+        this.bind(audioElement, 'seeked', () => {
+            if ((audioElement?.currentTime || 0) <= 0.01 && audioElement?.paused) {
+                this.resetPlaybackSession();
+            }
+        });
     }
 
     destroyWaveSurferOnly() {
@@ -244,6 +280,7 @@ export class AudioPlayer {
         this.isDestroyed = true;
         this.boundHandlers.forEach((unbind) => unbind());
         this.boundHandlers = [];
+        this.resetPlaybackSession();
         this.destroyWaveSurferOnly();
     }
 }

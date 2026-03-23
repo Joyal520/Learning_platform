@@ -1531,6 +1531,9 @@ body.explore-view .btn-outline:hover {
     box-shadow: 0 18px 48px rgba(2, 6, 23, 0.42);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.24s ease;
 }
 
 .pdf-overlay-button {
@@ -1553,6 +1556,7 @@ body.explore-view .btn-outline:hover {
     box-shadow: none;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 .pdf-workspace-shell.pdf-present-active .document-preview-toolbar {
@@ -1561,15 +1565,28 @@ body.explore-view .btn-outline:hover {
 
 .pdf-workspace-shell.pdf-present-active .pdf-stage {
     flex: 1;
-    min-height: 100vh;
-    padding: 34px;
+    min-height: 0;
+    height: 100dvh;
+    padding: 24px;
     background: #020617;
+    overflow: hidden;
 }
 
 .pdf-workspace-shell.pdf-present-active .pdf-preview-canvas {
     box-shadow:
         0 28px 80px rgba(0, 0, 0, 0.55),
         0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.pdf-workspace-shell.pdf-present-active .pdf-present-overlay-control {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.pdf-workspace-shell.pdf-present-active.presenter-controls-visible .pdf-present-overlay-control,
+.pdf-workspace-shell.pdf-present-active .pdf-present-overlay-control:focus-within {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .presentation-frame-shell {
