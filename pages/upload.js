@@ -4,6 +4,7 @@ import { supabase } from '../assets/js/supabase.js';
 import { ImageUtils } from '../assets/js/image-utils.js';
 import { ProjectUpload } from '../assets/js/project-upload.js';
 import App from '../assets/js/app.js';
+import { notesFromTextareaValue, notesToTextareaValue } from '../assets/js/presentation-remote.js';
 
 export const UploadPage = {
     _imageFile: null,
@@ -173,6 +174,11 @@ export const UploadPage = {
                     thumbnailPreview.classList.remove('has-image');
                 }
             }
+
+            this.togglePresentationNotesEditor({
+                category: selectedCategory,
+                contentMode: nextMode
+            });
         };
 
         categorySelect?.addEventListener('change', applyContentTypeRules);
@@ -454,6 +460,11 @@ export const UploadPage = {
                         status: 'pending' // Normal flows require review
                     };
 
+                    const presentationNotes = this.getPresentationNotesValue();
+                    if (presentationNotes) {
+                        submissionData.presentation_notes = presentationNotes;
+                    }
+
                     // Processing high-performance thumbnail pipeline
                     let thumbnailBlob = null;
                     let displayBlob = null;
@@ -641,6 +652,62 @@ export const UploadPage = {
         return ProjectUpload.validateProjectFile(file);
     },
 
+    ensurePresentationNotesEditor() {
+        const form = document.querySelector('#upload-form');
+        if (!form) return null;
+
+        let group = document.getElementById('presentation-notes-group');
+        if (group) return group;
+
+        const descriptionGroup = form.querySelector('textarea[name="description"]')?.closest('.form-group');
+        if (!descriptionGroup) return null;
+
+        group = document.createElement('div');
+        group.id = 'presentation-notes-group';
+        group.className = 'form-group hidden';
+        group.innerHTML = `
+            <label>Speaker Notes <span class="text-muted text-sm">(optional)</span></label>
+            <p class="text-muted text-sm">Add one notes block per slide, separated by a line containing only <code>---</code>. These notes stay off the audience screen and only appear in the presenter remote.</p>
+            <textarea id="presentation-notes-textarea" class="form-control" rows="8" placeholder="Opening note\n---\nSecond slide note"></textarea>
+        `;
+
+        descriptionGroup.insertAdjacentElement('afterend', group);
+        return group;
+    },
+
+    togglePresentationNotesEditor({ category = '', contentMode = 'file', force = false } = {}) {
+        const group = this.ensurePresentationNotesEditor();
+        if (!group) return;
+
+        const shouldShow = force || (UI.normalizeCategoryValue(category) === 'presentations' && contentMode === 'file');
+        group.classList.toggle('hidden', !shouldShow);
+    },
+
+    getPresentationNotesValue() {
+        const group = document.getElementById('presentation-notes-group');
+        const textarea = document.getElementById('presentation-notes-textarea');
+        if (!group || group.classList.contains('hidden') || !textarea) return null;
+
+        const notes = notesFromTextareaValue(textarea.value);
+        return notes.length ? notes : null;
+    },
+
+    setPresentationNotesValue(notes) {
+        const group = this.ensurePresentationNotesEditor();
+        const textarea = document.getElementById('presentation-notes-textarea');
+        if (!group || !textarea) return;
+        textarea.value = notesToTextareaValue(notes);
+    },
+
+    isPresentationSubmission(sub = {}) {
+        const normalizedCategory = UI.normalizeCategoryValue(sub.category, sub.content_type);
+        const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
+        return normalizedCategory === 'presentations'
+            || fileType.includes('pdf')
+            || fileType.includes('powerpoint')
+            || fileType.includes('presentationml');
+    },
+
     async initEdit(id) {
         const form = document.querySelector('#upload-form');
         if (!form) return;
@@ -687,6 +754,11 @@ export const UploadPage = {
             
             // Trigger category change logic to show/hide correct groups
             categorySelect.dispatchEvent(new Event('change'));
+            this.togglePresentationNotesEditor({
+                category: categorySelect.value,
+                contentMode: sub.content_text ? (sub.file_type === 'text/html' ? 'code' : 'text') : 'file',
+                force: this.isPresentationSubmission(sub)
+            });
 
             if (sub.category === 'images') {
                 // If it's an image post, category is 'images', content_type is 'image'
@@ -733,6 +805,7 @@ export const UploadPage = {
                 }
             }
             form.querySelector('textarea[name="description"]').value = sub.description || '';
+            this.setPresentationNotesValue(sub.presentation_notes);
             const audienceSelect = form.querySelector('select[name="audience_level"]');
             if (audienceSelect) audienceSelect.value = this.normalizeAudienceLevel(sub.audience_level);
 
@@ -859,6 +932,8 @@ export const UploadPage = {
                         audience_level: this.normalizeAudienceLevel(formData.get('audience_level')),
                         status: 'pending'
                     };
+
+                    updateData.presentation_notes = this.getPresentationNotesValue();
 
                     if (contentText !== null) {
                         updateData.content_text = contentText;

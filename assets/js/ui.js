@@ -2,6 +2,7 @@
 import { Auth } from './auth.js';
 import { supabase } from './supabase.js';
 import { AvatarLibrary } from './avatars.js';
+import { API } from './api.js';
 
 export const UI = {
     defaultThumbnailIcons: {
@@ -14,6 +15,9 @@ export const UI = {
         fun: '/assets/images/fun.png'
     },
     _audioR2PublicBaseUrlPromise: null,
+    _livePreviewConfigs: new Map(),
+    _livePreviewDismissTimer: null,
+    _cardSubmissionRegistry: new Map(),
 
     contentTypeOptions: [
         { value: 'short_stories', label: 'Short Story', navLabel: 'Short Stories', group: 'Stories' },
@@ -52,6 +56,7 @@ export const UI = {
 
     init() {
         this.setupMobileMenu();
+        this.setupLivePreviewInteractions();
 
         // Hidden Debug Tool for PWA: long press the logo
         const logo = document.getElementById('nav-home');
@@ -665,6 +670,154 @@ export const UI = {
         return match?.[1] || '';
     },
 
+    getLivePreviewSource(sub = {}) {
+        const rawSource = String(sub.public_url || sub.file_url || sub.file_path || '').trim();
+        if (!rawSource) return null;
+
+        const resolved = this.resolveMediaUrl(rawSource);
+        if (!resolved) return null;
+
+        try {
+            return new URL(resolved, window.location.href).toString();
+        } catch (_) {
+            return null;
+        }
+    },
+
+    isLivePreviewSupported(sub = {}) {
+        return !!this.getLivePreviewDescriptor(sub);
+    },
+
+    isInteractiveWebCard(sub = {}) {
+        if (!sub || typeof sub !== 'object') return false;
+        if (sub.content_type === 'audio' || sub.content_type === 'image') return false;
+        if (String(sub.file_type || sub.mime_type || '').toLowerCase().startsWith('audio/')) return false;
+        if (String(sub.file_type || sub.mime_type || '').toLowerCase().startsWith('image/')) return false;
+        if (this.isPdfSubmission(sub) || this.isPowerPointSubmission(sub)) return false;
+
+        const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const extension = this.getSubmissionFileExtension(sub);
+        const hasInlineHtml = fileType === 'text/html' && String(sub.content_text || '').trim() !== '';
+        const isHtmlLikeFile = fileType === 'text/html'
+            || fileType === 'application/xhtml+xml'
+            || extension === 'html'
+            || extension === 'htm';
+
+        if (!hasInlineHtml && !isHtmlLikeFile) {
+            return false;
+        }
+
+        return this.isLivePreviewSupported(sub);
+    },
+
+    getLivePreviewDescriptor(sub = {}) {
+        if (!sub || typeof sub !== 'object') return null;
+
+        const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const extension = this.getSubmissionFileExtension(sub);
+        const hasInlineHtml = fileType === 'text/html' && String(sub.content_text || '').trim() !== '';
+        const sourceUrl = this.getLivePreviewSource(sub);
+        const isHtmlFile = fileType === 'text/html'
+            || fileType === 'application/xhtml+xml'
+            || extension === 'html'
+            || extension === 'htm';
+
+        if (!hasInlineHtml && !isHtmlFile) {
+            return null;
+        }
+
+        if (hasInlineHtml) {
+            return {
+                mode: 'srcdoc',
+                srcdoc: this.wrapCodeForPreview(sub.content_text),
+                title: sub.title || 'Live Preview',
+                sourceUrl,
+                fallbackMessage: 'This web preview could not be rendered inline right now.'
+            };
+        }
+
+        if (!sourceUrl) {
+            return null;
+        }
+
+        return {
+            mode: 'url',
+            src: sourceUrl,
+            title: sub.title || 'Live Preview',
+            sourceUrl,
+            fallbackMessage: 'This website could not be loaded inside the live preview viewer.'
+        };
+    },
+
+    ensureSubmissionStats(sub = {}) {
+        if (!Array.isArray(sub.submission_stats) || sub.submission_stats.length === 0) {
+            sub.submission_stats = [{ avg_rating: 0, like_count: 0, view_count: 0 }];
+        }
+
+        const stats = sub.submission_stats[0];
+        stats.avg_rating = this.getAverageRatingValue(stats);
+        stats.like_count = Math.max(0, Number(stats.like_count) || 0);
+        stats.view_count = Math.max(0, Number(stats.view_count) || 0);
+        return stats;
+    },
+
+    registerSubmissionCardState(sub = {}) {
+        if (!sub?.id) return;
+        this._cardSubmissionRegistry.set(String(sub.id), sub);
+    },
+
+    getRegisteredSubmissionCardState(submissionId) {
+        if (!submissionId) return null;
+        return this._cardSubmissionRegistry.get(String(submissionId)) || null;
+    },
+
+    async hydrateInteractiveWebCardState(submissions = []) {
+        const list = Array.isArray(submissions) ? submissions.filter(Boolean) : [];
+        list.forEach((submission) => this.registerSubmissionCardState(submission));
+
+        const interactiveItems = list.filter((submission) => this.isInteractiveWebCard(submission));
+        if (!interactiveItems.length) return;
+
+        const { data: { session } } = await supabase.auth.getSession();
+        const userId = session?.user?.id || null;
+        if (!userId) return;
+
+        const interactionMap = await API.getUserSubmissionInteractions(interactiveItems.map((item) => item.id), userId);
+        interactiveItems.forEach((submission) => {
+            const interaction = interactionMap[submission.id] || {};
+            submission._interactiveWebLiked = !!interaction.liked;
+            submission._interactiveWebBookmarked = !!interaction.bookmarked;
+            submission._interactiveWebUserRating = Number(interaction.userRating) || null;
+        });
+    },
+
+    registerLivePreview(sub = {}, options = {}) {
+        const descriptor = this.getLivePreviewDescriptor(sub);
+        if (!descriptor || !sub?.id) return '';
+
+        const label = options.label || '';
+        const extraClassName = options.className || '';
+        this._livePreviewConfigs.set(String(sub.id), descriptor);
+        return `
+            <button type="button"
+                    class="btn clay-btn btn-sm btn-snake btn-round ${label ? 'btn-wide' : 'btn-icon'} btn-live-preview ${extraClassName}"
+                    data-live-preview-open="true"
+                    data-submission-id="${sub.id}"
+                    title="Open live preview"
+                    aria-label="Open live preview">
+                <span></span><span></span><span></span><span></span>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="position: relative; z-index: 5;">
+                    <path d="M4 8V5a1 1 0 0 1 1-1h3"></path>
+                    <path d="M16 4h3a1 1 0 0 1 1 1v3"></path>
+                    <path d="M20 16v3a1 1 0 0 1-1 1h-3"></path>
+                    <path d="M8 20H5a1 1 0 0 1-1-1v-3"></path>
+                    <path d="M9 9h6v6H9z"></path>
+                </svg>
+                ${label ? `<span class="btn-live-preview-label" style="position: relative; z-index: 5;">${label}</span>` : ''}
+            </button>
+        `;
+    },
+
     isPdfSubmission(sub = {}) {
         const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
         const extension = this.getSubmissionFileExtension(sub);
@@ -782,13 +935,47 @@ export const UI = {
                             </div>
                         </div>
                         <canvas class="document-preview-frame pdf-preview-canvas hidden" id="pdfCanvas" aria-label="PDF page preview"></canvas>
+                        <div class="pdf-laser-pointer hidden" id="pdfLaserPointer" aria-hidden="true"></div>
                     </div>
                     <div class="pdf-present-overlay-control hidden" id="pdfPresentOverlayControls">
                         ${this.renderPreviewActionButton({ id: 'pdfOverlayPrevBtn', label: 'Previous', className: 'pdf-overlay-button' })}
                         <span class="pdf-page-indicator pdf-overlay-indicator" id="pdfOverlayPageIndicator" aria-live="polite">Page 1 / --</span>
                         ${this.renderPreviewActionButton({ id: 'pdfOverlayNextBtn', label: 'Next', className: 'pdf-overlay-button' })}
+                        ${this.renderPreviewActionButton({ id: 'pdfRemoteToggleBtn', label: 'Remote Control', className: 'pdf-overlay-button' })}
                         ${this.renderPreviewActionButton({ id: 'pdfExitPresentBtn', label: 'Exit Present Mode', className: 'pdf-overlay-button pdf-exit-button' })}
                     </div>
+                    <aside class="pdf-remote-panel hidden" id="pdfRemotePanel" aria-live="polite">
+                        <div class="pdf-remote-panel-header">
+                            <div>
+                                <p class="pdf-remote-eyebrow">Remote Control</p>
+                                <h3>Phone pairing</h3>
+                            </div>
+                            <button type="button" class="pdf-remote-close" id="pdfRemoteCloseBtn" aria-label="Close remote control panel">×</button>
+                        </div>
+                        <div class="pdf-remote-panel-body">
+                            <button type="button" class="btn btn-primary pdf-remote-enable-btn" id="pdfRemoteEnableBtn">Enable remote</button>
+                            <div class="pdf-remote-status-grid">
+                                <div class="pdf-remote-status-item">
+                                    <span class="pdf-remote-status-label">Session</span>
+                                    <strong id="pdfRemoteSessionState">Inactive</strong>
+                                </div>
+                                <div class="pdf-remote-status-item">
+                                    <span class="pdf-remote-status-label">Phone</span>
+                                    <strong id="pdfRemoteConnectionState">Disconnected</strong>
+                                </div>
+                            </div>
+                            <div class="pdf-remote-code-card">
+                                <span class="pdf-remote-status-label">Manual pairing code</span>
+                                <div class="pdf-remote-pairing-code" id="pdfRemotePairingCode">------</div>
+                                <p class="pdf-remote-code-help">Backup code. QR pairing is recommended first.</p>
+                            </div>
+                            <div class="pdf-remote-qr-card" id="pdfRemoteQrCard">
+                                <div class="pdf-remote-qr" id="pdfRemoteQrCode" aria-label="QR code for mobile remote pairing"></div>
+                                <a href="#remote" class="pdf-remote-link" id="pdfRemotePairingLink">Open remote on this device</a>
+                            </div>
+                            <p class="pdf-remote-footnote">Only one active phone remote is allowed at a time. The presenter computer remains the source of truth.</p>
+                        </div>
+                    </aside>
                 </div>`;
     },
 
@@ -997,6 +1184,12 @@ export const UI = {
         return `<div class="file-placeholder">📄 This content is a ${this.getProjectFileLabel(sub)} and can be downloaded below.</div>`;
     },
 
+    renderStars(rating) {
+        return [1, 2, 3, 4, 5].map(i => `
+            <span class="star ${i <= Math.round(rating) ? 'active' : ''}" data-value="${i}">★</span>
+        `).join('');
+    },
+
     getAverageRatingValue(statsOrRating = 0) {
         const rawValue = typeof statsOrRating === 'object' && statsOrRating !== null
             ? statsOrRating.avg_rating
@@ -1012,7 +1205,7 @@ export const UI = {
     renderStars(rating) {
         const averageRating = this.getAverageRatingValue(rating);
         return [1, 2, 3, 4, 5].map(i => `
-            <span class="star ${i <= Math.round(averageRating) ? 'active' : ''}" data-value="${i}">★</span>
+            <span class="star ${i <= Math.round(averageRating) ? 'active' : ''}" data-value="${i}">&#9733;</span>
         `).join('');
     },
 
@@ -1104,13 +1297,105 @@ export const UI = {
         `).join('');
     },
 
+    renderInteractiveWebCard(sub, {
+        badgeHtml = '',
+        thumbnailHtml = '',
+        categoryLabel = '',
+        color = '#64748b',
+        title = 'Untitled'
+    } = {}) {
+        const stats = this.ensureSubmissionStats(sub);
+        const activeRating = Number(sub._interactiveWebUserRating || Math.round(stats.avg_rating) || 0);
+        const likeLabel = stats.like_count > 0 ? `${stats.like_count}` : 'Like';
+        const authorName = sub.profiles?.display_name || 'Anonymous';
+        const previewAction = this.registerLivePreview(sub, {
+            label: 'Open Preview',
+            className: 'interactive-web-preview-button'
+        });
+        const ratingControls = Array.from({ length: 5 }, (_, index) => {
+            const value = index + 1;
+            return `
+                <button class="interactive-web-rate-star ${value <= activeRating ? 'is-active' : ''}"
+                        type="button"
+                        data-web-card-action="rate"
+                        data-rating="${value}"
+                        data-submission-id="${sub.id}"
+                        aria-label="Rate ${value} star${value === 1 ? '' : 's'}">★</button>
+            `;
+        }).join('');
+
+        return `
+            <article class="content-card clay-card interactive-web-card animate-fade-in" data-id="${sub.id}" data-interactive-web-card="true">
+                ${badgeHtml}
+                ${thumbnailHtml}
+                <div class="card-body interactive-web-card-body">
+                    <span class="badge badge-category" style="--cat-color:${color}">${categoryLabel}</span>
+                    <div class="interactive-web-card-copy">
+                        <h3 class="card-title interactive-web-card-title">${title}</h3>
+                        <p class="card-author interactive-web-card-author">By ${authorName}</p>
+                    </div>
+                    <div class="interactive-web-card-stats card-stats">
+                        <span class="interactive-web-stat">
+                            <span style="color:#fbbf24">★</span>
+                            <span class="interactive-web-rating-value">${this.formatAverageRating(stats)}</span>
+                        </span>
+                        <span class="interactive-web-stat">
+                            <span style="color:#ef4444">❤</span>
+                            <span class="interactive-web-like-count">${stats.like_count}</span>
+                        </span>
+                        <span class="interactive-web-stat">
+                            <span>👁</span>
+                            <span class="interactive-web-view-count">${stats.view_count || 0}</span>
+                        </span>
+                    </div>
+                    <div class="interactive-web-card-rating-row">
+                        <span class="interactive-web-rating-label">Rate</span>
+                        <div class="interactive-web-rating-stars" aria-label="Rate this web project">
+                            ${ratingControls}
+                        </div>
+                    </div>
+                    <div class="interactive-web-card-actions">
+                        <button type="button"
+                                class="interactive-web-pill interactive-web-like ${sub._interactiveWebLiked ? 'is-active' : ''}"
+                                data-web-card-action="like"
+                                data-submission-id="${sub.id}"
+                                aria-label="Like web project"
+                                aria-pressed="${sub._interactiveWebLiked ? 'true' : 'false'}">
+                            <span class="interactive-web-pill-icon">❤</span>
+                            <span class="interactive-web-pill-label">${likeLabel}</span>
+                        </button>
+                        <button type="button"
+                                class="interactive-web-pill interactive-web-bookmark ${sub._interactiveWebBookmarked ? 'is-active' : ''}"
+                                data-web-card-action="bookmark"
+                                data-submission-id="${sub.id}"
+                                aria-label="Save web project"
+                                aria-pressed="${sub._interactiveWebBookmarked ? 'true' : 'false'}">
+                            <span class="interactive-web-pill-icon">🔖</span>
+                            <span class="interactive-web-pill-label">${sub._interactiveWebBookmarked ? 'Saved' : 'Save'}</span>
+                        </button>
+                    </div>
+                    <div class="interactive-web-card-footer">
+                        <div class="interactive-web-preview-slot">
+                            ${previewAction}
+                        </div>
+                        <a href="#detail/${sub.id}" class="interactive-web-detail-link" data-link="detail/${sub.id}" aria-label="Open details">
+                            Details
+                        </a>
+                    </div>
+                </div>
+            </article>
+        `;
+    },
+
     renderCard(sub, badgeObj = null) {
-        const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
+        this.registerSubmissionCardState(sub);
+        const stats = this.ensureSubmissionStats(sub);
         const avgRating = this.getAverageRatingValue(stats);
         const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
         const color = this.getCategoryColor(sub.category, sub.content_type);
         const categoryLabel = this.getContentTypeLabel(sub.category, sub.content_type);
         const title = sub.title || 'Untitled';
+        const livePreviewAction = this.registerLivePreview(sub);
 
         const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
         const thumbnailUrl = previewUrl;
@@ -1139,6 +1424,16 @@ export const UI = {
                 ${badgeObj.text}
             </div>
         ` : '';
+
+        if (this.isInteractiveWebCard(sub)) {
+            return this.renderInteractiveWebCard(sub, {
+                badgeHtml,
+                thumbnailHtml,
+                categoryLabel,
+                color,
+                title
+            });
+        }
 
         if (normalizedCategory === 'songs' || sub.content_type === 'audio' || sub.file_type?.startsWith('audio/')) {
             const authorName = sub.profiles?.display_name || 'Anonymous';
@@ -1237,7 +1532,7 @@ export const UI = {
                                             <path d="M1.5 12s3.8-7 10.5-7 10.5 7 10.5 7-3.8 7-10.5 7S1.5 12 1.5 12Z"></path>
                                             <circle cx="12" cy="12" r="3.2"></circle>
                                         </svg>
-                                        ${stats.view_count || 0}
+                                        <span class="audio-feed-view-count">${stats.view_count || 0}</span>
                                     </span>
                                 </div>
 
@@ -1331,6 +1626,7 @@ export const UI = {
                                     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.888-.788-1.489-1.761-1.663-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
                                 </svg>
                             </a>
+                            ${livePreviewAction}
                             <a href="#detail/${sub.id}" class="btn clay-btn btn-sm btn-snake btn-round btn-icon btn-preview" data-link="detail/${sub.id}" title="View Details">
                                 <span></span><span></span><span></span><span></span>
                                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="position: relative; z-index: 5;">
@@ -1644,6 +1940,312 @@ export const UI = {
             toast.style.animation = 'fadeOut 0.3s forwards';
             setTimeout(() => toast.remove(), 300);
         }, 3000);
+    },
+
+    updateInteractiveWebCardLikeState(submissionId, isLiked, likeCount) {
+        document.querySelectorAll(`.interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+            const button = card.querySelector('[data-web-card-action="like"]');
+            const countEl = card.querySelector('.interactive-web-like-count');
+            const labelEl = card.querySelector('.interactive-web-like .interactive-web-pill-label');
+            button?.classList.toggle('is-active', !!isLiked);
+            button?.setAttribute('aria-pressed', String(!!isLiked));
+            if (countEl) countEl.textContent = String(Math.max(0, Number(likeCount) || 0));
+            if (labelEl) labelEl.textContent = Number(likeCount) > 0 ? String(Math.max(0, Number(likeCount) || 0)) : 'Like';
+        });
+    },
+
+    updateInteractiveWebCardBookmarkState(submissionId, isSaved) {
+        document.querySelectorAll(`.interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+            const button = card.querySelector('[data-web-card-action="bookmark"]');
+            const labelEl = card.querySelector('.interactive-web-bookmark .interactive-web-pill-label');
+            button?.classList.toggle('is-active', !!isSaved);
+            button?.setAttribute('aria-pressed', String(!!isSaved));
+            if (labelEl) labelEl.textContent = isSaved ? 'Saved' : 'Save';
+        });
+    },
+
+    updateInteractiveWebCardRatingState(submissionId, avgRating, activeRating = null) {
+        const resolvedAverage = this.getAverageRatingValue(avgRating);
+        const selectedRating = Number(activeRating || Math.round(resolvedAverage) || 0);
+
+        document.querySelectorAll(`.interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+            const valueEl = card.querySelector('.interactive-web-rating-value');
+            const stars = card.querySelectorAll('[data-web-card-action="rate"]');
+            if (valueEl) valueEl.textContent = this.formatAverageRating(resolvedAverage);
+
+            stars.forEach((star) => {
+                const value = Number(star.dataset.rating || 0);
+                star.classList.toggle('is-active', value <= selectedRating);
+            });
+        });
+    },
+
+    updateInteractiveWebCardViewState(submissionId, viewCount) {
+        const nextCount = String(Math.max(0, Number(viewCount) || 0));
+        document.querySelectorAll(`.interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+            const viewCountEl = card.querySelector('.interactive-web-view-count');
+            if (viewCountEl) viewCountEl.textContent = nextCount;
+        });
+    },
+
+    setupLivePreviewInteractions() {
+        if (!document.body || document.body.dataset.livePreviewBound === 'true') return;
+
+        document.body.dataset.livePreviewBound = 'true';
+
+        document.addEventListener('click', (event) => {
+            const openButton = event.target.closest('[data-live-preview-open="true"]');
+            if (openButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.openLivePreview(openButton.dataset.submissionId);
+                return;
+            }
+
+            const closeButton = event.target.closest('[data-live-preview-close="true"]');
+            const isBackdrop = event.target.classList?.contains('live-preview-overlay');
+            if (!closeButton && !isBackdrop) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.closeLivePreview();
+        });
+
+        document.addEventListener('click', (event) => {
+            const card = event.target.closest('.interactive-web-card');
+            if (!card) return;
+
+            const explicitDetailLink = event.target.closest('.interactive-web-detail-link');
+            const interactiveControl = event.target.closest(
+                '[data-live-preview-open="true"], [data-web-card-action], .interactive-web-detail-link, a[href], button'
+            );
+
+            if (explicitDetailLink) {
+                return;
+            }
+
+            if (!interactiveControl) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }, true);
+
+        document.addEventListener('click', async (event) => {
+            const actionButton = event.target.closest('[data-web-card-action]');
+            if (!actionButton) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const submissionId = actionButton.dataset.submissionId;
+            const submission = this.getRegisteredSubmissionCardState(submissionId);
+            if (!submission || !this.isInteractiveWebCard(submission)) {
+                return;
+            }
+
+            const { data: { session } } = await supabase.auth.getSession();
+            const userId = session?.user?.id || null;
+            if (!userId) {
+                this.showToast('Please login to interact', 'error');
+                return;
+            }
+
+            const stats = this.ensureSubmissionStats(submission);
+            const action = actionButton.dataset.webCardAction;
+
+            if (action === 'like') {
+                const { action: likeAction, error } = await API.toggleLike(submission.id, userId);
+                if (error) {
+                    this.showToast(error.message || 'Could not update like.', 'error');
+                    return;
+                }
+
+                const isLiked = likeAction === 'liked';
+                submission._interactiveWebLiked = isLiked;
+                stats.like_count = Math.max(0, Number(stats.like_count || 0) + (isLiked ? 1 : -1));
+                this.updateInteractiveWebCardLikeState(submission.id, isLiked, stats.like_count);
+                this.showToast(isLiked ? 'Liked!' : 'Unliked');
+                return;
+            }
+
+            if (action === 'bookmark') {
+                const { action: bookmarkAction, error } = await API.toggleBookmark(submission.id, userId);
+                if (error) {
+                    this.showToast(error.message || 'Could not update save.', 'error');
+                    return;
+                }
+
+                const isSaved = bookmarkAction === 'saved';
+                submission._interactiveWebBookmarked = isSaved;
+                this.updateInteractiveWebCardBookmarkState(submission.id, isSaved);
+                this.showToast(isSaved ? 'Saved to collection!' : 'Removed from collection');
+                return;
+            }
+
+            if (action === 'rate') {
+                const rating = Number(actionButton.dataset.rating || 0);
+                const { data, error } = await API.rateSubmission(submission.id, userId, rating);
+                if (error || !data) {
+                    this.showToast(error?.message || 'Could not save rating.', 'error');
+                    return;
+                }
+
+                stats.avg_rating = data.avgRating;
+                submission._interactiveWebUserRating = data.userRating;
+                this.updateInteractiveWebCardRatingState(submission.id, data.avgRating, data.userRating);
+                this.showToast('Rated!', 'success');
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && document.body.classList.contains('live-preview-open')) {
+                event.preventDefault();
+                this.closeLivePreview();
+            }
+        });
+    },
+
+    openLivePreview(submissionId) {
+        const descriptor = this._livePreviewConfigs.get(String(submissionId || ''));
+        if (!descriptor) {
+            this.showToast('Live preview is unavailable for this submission.', 'error');
+            return;
+        }
+
+        this.closeLivePreview({ preserveFocus: true });
+
+        const overlay = document.createElement('div');
+        overlay.className = 'live-preview-overlay';
+
+        const shell = document.createElement('div');
+        shell.className = 'live-preview-shell';
+        shell.setAttribute('role', 'dialog');
+        shell.setAttribute('aria-modal', 'true');
+        shell.setAttribute('aria-label', `${descriptor.title || 'Live preview'} viewer`);
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'live-preview-toolbar';
+        toolbar.innerHTML = `
+            <div class="live-preview-title-group">
+                <span class="live-preview-kicker">LIVE PREVIEW</span>
+                <span class="live-preview-title">${descriptor.title || 'Live preview'}</span>
+            </div>
+            <div class="live-preview-toolbar-actions">
+                ${descriptor.sourceUrl
+                    ? `<a href="${descriptor.sourceUrl}" target="_blank" rel="noopener noreferrer" class="preview-action-link live-preview-open-tab">Open in new tab</a>`
+                    : ''}
+                <button type="button" class="live-preview-close" data-live-preview-close="true" aria-label="Close live preview">Close</button>
+            </div>
+        `;
+
+        const stage = document.createElement('div');
+        stage.className = 'live-preview-stage';
+
+        const loading = document.createElement('div');
+        loading.className = 'live-preview-loading';
+        loading.textContent = 'Launching live preview...';
+
+        const fallback = document.createElement('div');
+        fallback.className = 'live-preview-fallback hidden';
+        fallback.innerHTML = `
+            <p>${descriptor.fallbackMessage || 'This content could not be loaded inside the viewer.'}</p>
+            ${descriptor.sourceUrl
+                ? `<a href="${descriptor.sourceUrl}" target="_blank" rel="noopener noreferrer" class="preview-action-link">Open in new tab</a>`
+                : ''}
+        `;
+
+        const frame = document.createElement('iframe');
+        frame.className = 'live-preview-frame hidden';
+        frame.setAttribute('title', descriptor.title || 'Live preview');
+        frame.setAttribute('allow', 'fullscreen');
+        frame.setAttribute('allowfullscreen', '');
+        frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads');
+
+        let didFinish = false;
+        const finishLoading = () => {
+            if (didFinish) return;
+            didFinish = true;
+            loading.classList.add('hidden');
+            fallback.classList.add('hidden');
+            frame.classList.remove('hidden');
+        };
+
+        const showFallback = () => {
+            if (didFinish) return;
+            loading.classList.add('hidden');
+            frame.classList.add('hidden');
+            fallback.classList.remove('hidden');
+        };
+
+        frame.addEventListener('load', () => {
+            window.clearTimeout(this._livePreviewDismissTimer);
+            finishLoading();
+        }, { once: true });
+
+        frame.addEventListener('error', () => {
+            window.clearTimeout(this._livePreviewDismissTimer);
+            showFallback();
+        }, { once: true });
+
+        this._livePreviewDismissTimer = window.setTimeout(() => {
+            showFallback();
+        }, descriptor.mode === 'srcdoc' ? 8000 : 12000);
+
+        if (descriptor.mode === 'srcdoc') {
+            frame.srcdoc = descriptor.srcdoc || '';
+        } else {
+            frame.src = descriptor.src || descriptor.sourceUrl || '';
+        }
+
+        stage.appendChild(loading);
+        stage.appendChild(fallback);
+        stage.appendChild(frame);
+        shell.appendChild(toolbar);
+        shell.appendChild(stage);
+        overlay.appendChild(shell);
+        document.body.appendChild(overlay);
+        document.body.classList.add('body-no-scroll', 'live-preview-open');
+
+        this._livePreviewOverlay = overlay;
+        this._livePreviewPreviouslyFocused = document.activeElement;
+
+        shell.querySelector('[data-live-preview-close="true"]')?.focus({ preventScroll: true });
+
+        const submission = this.getRegisteredSubmissionCardState(submissionId);
+        if (submission && this.isInteractiveWebCard(submission)) {
+            const stats = this.ensureSubmissionStats(submission);
+            API.recordSubmissionView(submission.id, null).then(({ error }) => {
+                if (error) return;
+                stats.view_count = Math.max(0, Number(stats.view_count || 0) + 1);
+                this.updateInteractiveWebCardViewState(submission.id, stats.view_count);
+            }).catch(() => {});
+        }
+    },
+
+    closeLivePreview({ preserveFocus = false } = {}) {
+        window.clearTimeout(this._livePreviewDismissTimer);
+        this._livePreviewDismissTimer = null;
+
+        if (this._livePreviewOverlay) {
+            this._livePreviewOverlay.remove();
+            this._livePreviewOverlay = null;
+        }
+
+        document.body.classList.remove('live-preview-open');
+        if (!document.querySelector('.fullscreen-active')) {
+            document.body.classList.remove('body-no-scroll');
+        }
+
+        if (!preserveFocus && this._livePreviewPreviouslyFocused?.focus) {
+            try {
+                this._livePreviewPreviouslyFocused.focus({ preventScroll: true });
+            } catch (_) {
+                // Ignore focus restore failures.
+            }
+        }
+
+        this._livePreviewPreviouslyFocused = null;
     },
 
     // --- Compression Workflow UI ---

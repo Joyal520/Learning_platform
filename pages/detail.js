@@ -2,8 +2,22 @@
 import { supabase } from '../assets/js/supabase.js';
 import { UI } from '../assets/js/ui.js';
 import App from '../assets/js/app.js';
-import API from '../assets/js/api.js';
+import { API } from '../assets/js/api.js';
 import { AudioPlayer } from '../assets/js/audio-player.js';
+import {
+    PRESENTATION_POINTER_HIDE_MS,
+    PRESENTATION_REMOTE_HEARTBEAT_MS,
+    buildRemoteJoinUrl,
+    cleanupExpiredPresentationSessions,
+    createCommandSubscription,
+    createPresentationRemoteSession,
+    createSessionSubscription,
+    deletePresentationRemoteSession,
+    getSpeakerNoteForSlide,
+    normalizePresentationNotes,
+    refreshPresentationRemoteSession,
+    removeChannel
+} from '../assets/js/presentation-remote.js';
 
 export const DetailPage = {
     async init(id) {
@@ -91,8 +105,9 @@ export const DetailPage = {
 
             // Setup static UI elements
             this.setupAudioPlayer(sub);
-            this.setupInteractions(sub);
+            this.setupBackToExplore();
             this.setupPdfViewer(sub);
+            this.setupInteractions(sub);
             this.setupEditButton(sub);
             this.setupPreviewFullscreen();
             this.setupBookmark(sub);
@@ -142,11 +157,7 @@ export const DetailPage = {
         }
 
         this._audioPlayer?.destroy();
-        this._audioPlayer = new AudioPlayer(mount, sub, {
-            onPlaybackStart: async () => {
-                await this.recordView(sub.id);
-            }
-        });
+        this._audioPlayer = new AudioPlayer(mount, sub);
         this._audioPlayer.init();
     },
 
@@ -215,6 +226,24 @@ export const DetailPage = {
         }
     },
 
+    setupBackToExplore() {
+        const backLink = document.querySelector('.back-link');
+        if (!backLink) return;
+
+        backLink.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            try {
+                sessionStorage.setItem('edtechra_explore_restore_once', 'true');
+            } catch (_) {
+                // Ignore storage failures and fall back to default Explore.
+            }
+
+            window.location.hash = 'explore';
+        });
+    },
+
     async ensurePdfJsLoaded() {
         if (window.pdfjsLib) {
             return window.pdfjsLib;
@@ -266,9 +295,19 @@ export const DetailPage = {
         const exitBtn = document.getElementById('pdfExitPresentBtn');
         const overlayPrevBtn = document.getElementById('pdfOverlayPrevBtn');
         const overlayNextBtn = document.getElementById('pdfOverlayNextBtn');
+        const remoteToggleBtn = document.getElementById('pdfRemoteToggleBtn');
+        const remotePanel = document.getElementById('pdfRemotePanel');
+        const remoteCloseBtn = document.getElementById('pdfRemoteCloseBtn');
+        const remoteEnableBtn = document.getElementById('pdfRemoteEnableBtn');
+        const remoteSessionState = document.getElementById('pdfRemoteSessionState');
+        const remoteConnectionState = document.getElementById('pdfRemoteConnectionState');
+        const remotePairingCode = document.getElementById('pdfRemotePairingCode');
+        const remoteQrCode = document.getElementById('pdfRemoteQrCode');
+        const remotePairingLink = document.getElementById('pdfRemotePairingLink');
         const pageIndicator = document.getElementById('pdfPageIndicator');
         const overlayIndicator = document.getElementById('pdfOverlayPageIndicator');
         const overlayControls = document.getElementById('pdfPresentOverlayControls');
+        const laserPointer = document.getElementById('pdfLaserPointer');
 
         if (!root || !stage || !canvas || !loading || !fallback || !presentBtn) return;
 
@@ -288,9 +327,19 @@ export const DetailPage = {
             exitBtn,
             overlayPrevBtn,
             overlayNextBtn,
+            remoteToggleBtn,
+            remotePanel,
+            remoteCloseBtn,
+            remoteEnableBtn,
+            remoteSessionState,
+            remoteConnectionState,
+            remotePairingCode,
+            remoteQrCode,
+            remotePairingLink,
             pageIndicator,
             overlayIndicator,
             overlayControls,
+            laserPointer,
             fileUrl: root.dataset.pdfUrl || sub.public_url || sub.file_url || null,
             pdfDoc: null,
             renderTask: null,
@@ -300,21 +349,284 @@ export const DetailPage = {
             isPresenting: false,
             usingNativeFullscreen: false,
             controlsHideTimer: null,
-            ready: false
+            pointerHideTimer: null,
+            ready: false,
+            remotePanelOpen: false,
+            remoteNotes: normalizePresentationNotes(sub.presentation_notes),
+            remoteSession: null,
+            remoteSessionChannel: null,
+            remoteCommandChannel: null,
+            remoteHeartbeatTimer: null,
+            processedCommandIds: new Set()
         };
 
         this._pdfViewerState = state;
 
         const setControlsEnabled = (enabled) => {
-            [presentBtn, prevBtn, nextBtn, zoomOutBtn, zoomInBtn, fitBtn, exitBtn, overlayPrevBtn, overlayNextBtn]
+            [presentBtn, prevBtn, nextBtn, zoomOutBtn, zoomInBtn, fitBtn, exitBtn, overlayPrevBtn, overlayNextBtn, remoteToggleBtn, remoteEnableBtn]
                 .filter(Boolean)
                 .forEach((button) => {
                     button.disabled = !enabled;
                 });
         };
 
+        const clearPointerHideTimer = () => {
+            if (state.pointerHideTimer) {
+                window.clearTimeout(state.pointerHideTimer);
+                state.pointerHideTimer = null;
+            }
+        };
+
+        const hideLaserPointer = async ({ sync = false } = {}) => {
+            clearPointerHideTimer();
+            state.laserPointer?.classList.add('hidden');
+            if (sync && state.remoteSession?.id) {
+                try {
+                    state.remoteSession = await refreshPresentationRemoteSession(state.remoteSession.id, {
+                        title: state.sub.title || '',
+                        presentation_notes: state.remoteNotes,
+                        current_slide_index: state.currentPage - 1,
+                        slide_count: state.pageCount || 1,
+                        is_presenting: state.isPresenting,
+                        laser_pointer_visible: false,
+                        laser_pointer_x: null,
+                        laser_pointer_y: null
+                    });
+                    updateRemotePanelUi();
+                } catch (error) {
+                    console.warn('[DETAIL] Could not hide remote laser pointer:', error);
+                }
+            }
+        };
+
+        const showLaserPointer = (x, y) => {
+            if (!state.laserPointer) return;
+            state.laserPointer.style.left = `${x * 100}%`;
+            state.laserPointer.style.top = `${y * 100}%`;
+            state.laserPointer.classList.remove('hidden');
+            clearPointerHideTimer();
+            state.pointerHideTimer = window.setTimeout(() => {
+                hideLaserPointer({ sync: true }).catch(() => {});
+            }, PRESENTATION_POINTER_HIDE_MS);
+        };
+
+        const renderRemoteQr = (session) => {
+            if (!state.remoteQrCode || !state.remotePairingLink) return;
+
+            const joinUrl = buildRemoteJoinUrl(session.id, session.access_token);
+            state.remotePairingLink.href = joinUrl;
+            state.remotePairingLink.textContent = joinUrl;
+            state.remoteQrCode.innerHTML = '';
+
+            if (window.QRCode) {
+                new window.QRCode(state.remoteQrCode, {
+                    text: joinUrl,
+                    width: 176,
+                    height: 176
+                });
+                return;
+            }
+
+            state.remoteQrCode.textContent = 'QR unavailable. Use the link below.';
+        };
+
+        const updateRemotePanelUi = () => {
+            if (!state.remoteEnableBtn) return;
+
+            const session = state.remoteSession;
+            if (!session) {
+                state.remoteEnableBtn.textContent = 'Enable remote';
+                if (state.remoteSessionState) state.remoteSessionState.textContent = 'Inactive';
+                if (state.remoteConnectionState) state.remoteConnectionState.textContent = 'Disconnected';
+                if (state.remotePairingCode) state.remotePairingCode.textContent = '------';
+                if (state.remoteQrCode) state.remoteQrCode.innerHTML = '<span>Enable remote to generate a pairing QR.</span>';
+                if (state.remotePairingLink) {
+                    state.remotePairingLink.href = '#remote';
+                    state.remotePairingLink.textContent = 'Open remote on this device';
+                }
+                return;
+            }
+
+            state.remoteEnableBtn.textContent = 'Disable remote';
+            if (state.remoteSessionState) {
+                state.remoteSessionState.textContent = session.is_presenting ? 'Live session' : 'Ready';
+            }
+            if (state.remoteConnectionState) {
+                state.remoteConnectionState.textContent = session.remote_connected ? 'Authorised phone connected' : 'Waiting for phone';
+            }
+            if (state.remotePairingCode) state.remotePairingCode.textContent = session.pairing_code || '------';
+            renderRemoteQr(session);
+        };
+
+        const toggleRemotePanel = (force) => {
+            if (!state.remotePanel) return;
+            state.remotePanelOpen = typeof force === 'boolean' ? force : !state.remotePanelOpen;
+            state.remotePanel.classList.toggle('hidden', !state.remotePanelOpen);
+            if (state.remotePanelOpen) {
+                updateRemotePanelUi();
+            }
+        };
+
+        const syncRemoteSessionState = async (patch = {}) => {
+            if (!state.remoteSession?.id) return;
+
+            try {
+                state.remoteSession = await refreshPresentationRemoteSession(state.remoteSession.id, {
+                    title: state.sub.title || '',
+                    presentation_notes: state.remoteNotes,
+                    current_slide_index: Math.max(0, state.currentPage - 1),
+                    slide_count: Math.max(1, state.pageCount || 1),
+                    is_presenting: state.isPresenting,
+                    ...patch
+                });
+                updateRemotePanelUi();
+            } catch (error) {
+                console.warn('[DETAIL] Remote session sync failed:', error);
+            }
+        };
+
+        const teardownRemoteChannels = async () => {
+            if (state.remoteHeartbeatTimer) {
+                window.clearInterval(state.remoteHeartbeatTimer);
+                state.remoteHeartbeatTimer = null;
+            }
+
+            await Promise.all([
+                removeChannel(state.remoteSessionChannel),
+                removeChannel(state.remoteCommandChannel)
+            ]);
+            state.remoteSessionChannel = null;
+            state.remoteCommandChannel = null;
+        };
+
+        const destroyRemoteSession = async () => {
+            clearPointerHideTimer();
+            state.processedCommandIds.clear();
+
+            if (state.remoteSession?.id) {
+                try {
+                    await deletePresentationRemoteSession(state.remoteSession.id);
+                } catch (error) {
+                    console.warn('[DETAIL] Remote session delete failed:', error);
+                }
+            }
+
+            state.remoteSession = null;
+            await teardownRemoteChannels();
+            updateRemotePanelUi();
+        };
+
+        const handleRemoteCommand = async (command) => {
+            if (!command || state.processedCommandIds.has(command.id)) return;
+            state.processedCommandIds.add(command.id);
+            if (state.processedCommandIds.size > 150) {
+                const [firstId] = state.processedCommandIds;
+                if (firstId) state.processedCommandIds.delete(firstId);
+            }
+
+            if (!state.remoteSession || command.session_id !== state.remoteSession.id) return;
+            if (state.remoteSession.active_remote_id && command.remote_id !== state.remoteSession.active_remote_id) return;
+
+            if (command.command_type === 'next') {
+                await goToPage(state.currentPage + 1, { syncRemote: false });
+            } else if (command.command_type === 'prev') {
+                await goToPage(state.currentPage - 1, { syncRemote: false });
+            } else if (command.command_type === 'goto') {
+                await goToPage((Number(command.slide_index) || 0) + 1, { syncRemote: false });
+            } else if (command.command_type === 'start') {
+                if (!state.isPresenting) {
+                    await enterPresentMode({ syncRemote: false });
+                }
+            } else if (command.command_type === 'end') {
+                if (state.isPresenting) {
+                    await exitPresentMode({ syncRemote: false });
+                }
+            } else if (command.command_type === 'pointer_move') {
+                const x = Math.max(0, Math.min(1, Number(command.pointer_x) || 0));
+                const y = Math.max(0, Math.min(1, Number(command.pointer_y) || 0));
+                showLaserPointer(x, y);
+                await syncRemoteSessionState({
+                    remote_connected: true,
+                    laser_pointer_visible: true,
+                    laser_pointer_x: x,
+                    laser_pointer_y: y
+                });
+                return;
+            } else if (command.command_type === 'pointer_hide') {
+                await hideLaserPointer({ sync: false });
+            }
+
+            await syncRemoteSessionState({
+                remote_connected: true,
+                laser_pointer_visible: false,
+                laser_pointer_x: null,
+                laser_pointer_y: null
+            });
+        };
+
+        const subscribeRemoteChannels = () => {
+            if (!state.remoteSession?.id) return;
+
+            state.remoteSessionChannel = createSessionSubscription(state.remoteSession.id, (payload) => {
+                if (payload.eventType === 'DELETE') {
+                    state.remoteSession = null;
+                    updateRemotePanelUi();
+                    hideLaserPointer().catch(() => {});
+                    return;
+                }
+
+                state.remoteSession = payload.new || state.remoteSession;
+                updateRemotePanelUi();
+                if (!state.remoteSession?.laser_pointer_visible) {
+                    state.laserPointer?.classList.add('hidden');
+                }
+            });
+
+            state.remoteCommandChannel = createCommandSubscription(state.remoteSession.id, (payload) => {
+                handleRemoteCommand(payload.new).catch((error) => {
+                    console.warn('[DETAIL] Remote command failed:', error);
+                });
+            });
+
+            state.remoteHeartbeatTimer = window.setInterval(() => {
+                syncRemoteSessionState({
+                    remote_connected: Boolean(state.remoteSession?.active_remote_id)
+                }).catch(() => {});
+            }, PRESENTATION_REMOTE_HEARTBEAT_MS);
+        };
+
+        const enableRemoteSession = async () => {
+            if (!App.user) {
+                UI.showToast('Sign in to enable phone remote control.', 'error');
+                return;
+            }
+
+            if (state.remoteSession?.id) {
+                await destroyRemoteSession();
+                UI.showToast('Remote session closed.', 'success');
+                return;
+            }
+
+            await cleanupExpiredPresentationSessions(App.user.id);
+            state.remoteSession = await createPresentationRemoteSession({
+                presentationId: state.sub.id,
+                hostUserId: App.user.id,
+                title: state.sub.title || '',
+                presentationNotes: state.remoteNotes,
+                currentSlideIndex: state.currentPage - 1,
+                slideCount: state.pageCount || 1,
+                isPresenting: state.isPresenting
+            });
+
+            subscribeRemoteChannels();
+            updateRemotePanelUi();
+            toggleRemotePanel(true);
+            UI.showToast('Remote pairing is ready on this presenter.', 'success');
+        };
+
         setControlsEnabled(false);
         presentBtn.classList.add('hidden');
+        updateRemotePanelUi();
 
         try {
             const pdfjsLib = await this.ensurePdfJsLoaded();
@@ -401,13 +713,20 @@ export const DetailPage = {
                 if (state.overlayNextBtn) state.overlayNextBtn.disabled = state.currentPage >= state.pageCount;
             };
 
-            const goToPage = async (pageNumber) => {
+            const goToPage = async (pageNumber, { syncRemote = true } = {}) => {
                 if (!state.ready) return;
                 const nextPage = Math.max(1, Math.min(state.pageCount, Number(pageNumber) || 1));
                 if (nextPage === state.currentPage) return;
                 state.currentPage = nextPage;
                 updateIndicators();
                 await renderPage();
+                if (syncRemote) {
+                    await syncRemoteSessionState({
+                        laser_pointer_visible: false,
+                        laser_pointer_x: null,
+                        laser_pointer_y: null
+                    });
+                }
             };
 
             const syncPresentUi = () => {
@@ -416,6 +735,9 @@ export const DetailPage = {
                 state.presentBtn?.classList.toggle('hidden', !state.ready || state.isPresenting);
                 state.root.classList.toggle('presenter-controls-visible', state.isPresenting);
                 document.body.classList.toggle('body-no-scroll', state.isPresenting);
+                if (!state.isPresenting) {
+                    toggleRemotePanel(false);
+                }
             };
 
             const clearControlsHideTimer = () => {
@@ -441,12 +763,13 @@ export const DetailPage = {
                 scheduleControlsHide();
             };
 
-            const exitPresentMode = async ({ skipFullscreenExit = false } = {}) => {
+            const exitPresentMode = async ({ skipFullscreenExit = false, syncRemote = true } = {}) => {
                 if (!state.isPresenting) return;
 
                 state.isPresenting = false;
                 clearControlsHideTimer();
                 syncPresentUi();
+                await hideLaserPointer({ sync: false });
 
                 if (!skipFullscreenExit && document.fullscreenElement === state.root && document.exitFullscreen) {
                     try {
@@ -457,9 +780,16 @@ export const DetailPage = {
                 }
 
                 await renderPage({ force: true, fitMode: 'width' });
+                if (syncRemote) {
+                    await syncRemoteSessionState({
+                        laser_pointer_visible: false,
+                        laser_pointer_x: null,
+                        laser_pointer_y: null
+                    });
+                }
             };
 
-            const enterPresentMode = async () => {
+            const enterPresentMode = async ({ syncRemote = true } = {}) => {
                 if (!state.ready || state.isPresenting) return;
 
                 state.isPresenting = true;
@@ -475,6 +805,10 @@ export const DetailPage = {
                         state.usingNativeFullscreen = false;
                     }
                 }
+
+                if (syncRemote) {
+                    await syncRemoteSessionState();
+                }
             };
 
             state.renderPage = renderPage;
@@ -483,6 +817,8 @@ export const DetailPage = {
             state.exitPresentMode = exitPresentMode;
             state.updateIndicators = updateIndicators;
             state.revealPresentControls = revealPresentControls;
+            state.destroyRemoteSession = destroyRemoteSession;
+            state.hideLaserPointer = hideLaserPointer;
 
             const attachClick = (element, handler) => {
                 if (!element) return;
@@ -493,6 +829,14 @@ export const DetailPage = {
             attachClick(nextBtn, () => goToPage(state.currentPage + 1));
             attachClick(overlayPrevBtn, () => goToPage(state.currentPage - 1));
             attachClick(overlayNextBtn, () => goToPage(state.currentPage + 1));
+            attachClick(remoteToggleBtn, () => toggleRemotePanel());
+            attachClick(remoteCloseBtn, () => toggleRemotePanel(false));
+            attachClick(remoteEnableBtn, () => {
+                enableRemoteSession().catch((error) => {
+                    console.warn('[DETAIL] Remote enable failed:', error);
+                    UI.showToast(error.message || 'Could not start remote pairing.', 'error');
+                });
+            });
             attachClick(zoomOutBtn, async () => {
                 if (state.isPresenting) return;
                 state.zoomFactor = Math.max(0.6, Number((state.zoomFactor - 0.15).toFixed(2)));
@@ -580,6 +924,7 @@ export const DetailPage = {
             setControlsEnabled(true);
             presentBtn.classList.remove('hidden');
             await renderPage({ force: true, fitMode: 'width' });
+            updateRemotePanelUi();
         } catch (error) {
             if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
                 console.warn('[DETAIL] PDF viewer unavailable:', error);
@@ -592,6 +937,7 @@ export const DetailPage = {
             fallback.classList.remove('hidden');
             presentBtn.classList.add('hidden');
             document.body.classList.remove('body-no-scroll');
+            updateRemotePanelUi();
         }
     },
 
@@ -637,6 +983,13 @@ export const DetailPage = {
         if (state.controlsHideTimer) {
             window.clearTimeout(state.controlsHideTimer);
         }
+
+        if (state.pointerHideTimer) {
+            window.clearTimeout(state.pointerHideTimer);
+        }
+
+        state.hideLaserPointer?.().catch?.(() => {});
+        state.destroyRemoteSession?.().catch?.(() => {});
 
         if (document.fullscreenElement === state.root && document.exitFullscreen) {
             document.exitFullscreen().catch(() => {});
@@ -844,13 +1197,7 @@ export const DetailPage = {
         try {
             const viewerId = App.user ? App.user.id : null;
 
-            // Insert view record
-            const { error } = await supabase
-                .from('views')
-                .insert({
-                    submission_id: subId,
-                    viewer_id: viewerId
-                });
+            const { error } = await API.recordSubmissionView(subId, viewerId);
 
             if (error) {
                 console.warn('[DETAIL] Failed to record view:', error);
