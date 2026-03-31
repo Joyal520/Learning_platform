@@ -1,4 +1,4 @@
-const CACHE_NAME = 'edtechra-v5';
+const CACHE_NAME = 'edtechra-v6';
 const APP_BASE_PATH = (() => {
   const pathname = self.location.pathname || '/sw.js';
   const lastSlash = pathname.lastIndexOf('/');
@@ -16,10 +16,10 @@ const ASSETS_TO_CACHE = [
   withBase('assets/css/explore_recovered.css'),
   withBase('icons/icon-192.png'),
   withBase('icons/icon-512.png'),
-  withBase('public/favicon.ico?v=3'),
-  withBase('public/favicon-32x32.png?v=3'),
-  withBase('public/favicon-16x16.png?v=3'),
-  withBase('public/icons/apple-touch-icon.png?v=3')
+  withBase('public/favicon.ico?v=6'),
+  withBase('public/favicon-32x32.png?v=6'),
+  withBase('public/favicon-16x16.png?v=6'),
+  withBase('public/icons/apple-touch-icon.png?v=6')
 ];
 
 self.addEventListener('install', (event) => {
