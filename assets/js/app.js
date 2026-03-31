@@ -17,6 +17,8 @@ const App = {
     _profileUserId: null,
     _bootstrappedUserId: null,
     _lastUserId: null,
+    _lastSuccessfulHash: '#home',
+    _isRecoveringRoute: false,
 
     async init() {
         UI.init();
@@ -255,6 +257,11 @@ const App = {
         }
     },
 
+    applyRouteBodyState(page = this.currentPage) {
+        document.body.classList.toggle('explore-view', page === 'explore');
+        document.body.classList.toggle('light-dashboard', page === 'student-dashboard' || page === 'admin-dashboard');
+    },
+
     async route() {
         const rawHash = window.location.hash.substring(1) || 'home';
 
@@ -265,11 +272,17 @@ const App = {
         const cleanHash = rawHash.startsWith('/') ? rawHash.substring(1) : rawHash;
         const hashWithoutQuery = cleanHash.split('?')[0];
         const [page, id] = hashWithoutQuery.split('/');
+        const previousPage = this.currentPage || 'home';
+        const previousHash = this._lastSuccessfulHash || '#home';
+        const previousBodyState = {
+            exploreView: document.body.classList.contains('explore-view'),
+            lightDashboard: document.body.classList.contains('light-dashboard')
+        };
+        const main = document.getElementById('main-content');
+        const previousMainMarkup = main?.innerHTML || '';
 
         this.currentPage = page || 'home';
-
-        document.body.classList.toggle('explore-view', this.currentPage === 'explore');
-        document.body.classList.toggle('light-dashboard', this.currentPage === 'student-dashboard' || this.currentPage === 'admin-dashboard');
+        this.applyRouteBodyState(this.currentPage);
 
         const nav = document.querySelector('.main-nav');
         const menuToggle = document.getElementById('menu-toggle');
@@ -283,82 +296,110 @@ const App = {
             return this.navigate('onboarding');
         }
 
-        const main = document.getElementById('main-content');
-
-        switch (page) {
-            case 'onboarding':
-                if (this.user) return this.navigate('home');
-                main.innerHTML = UI.pages.onboarding();
-                UI.setupOnboarding();
-                break;
-            case 'home':
-                main.innerHTML = UI.pages.home(this.profile);
-                UI.initHeroAnimations();
-                break;
-            case 'profile':
-                if (!this.user) return this.navigate('login');
-                main.innerHTML = UI.pages.profile(this.profile || this.user);
-                UI.setupProfileEdit(this.profile || this.user);
-                break;
-            case 'login':
-                if (this.user) return this.navigate('home');
-                main.innerHTML = UI.pages.login();
-                UI.setupAuthForms('login');
-                break;
-            case 'signup':
-                if (this.user) return this.navigate('home');
-                main.innerHTML = UI.pages.signup();
-                UI.setupAuthForms('signup');
-                break;
-            case 'explore':
-                main.innerHTML = UI.pages.explore();
-                ExplorePage.init();
-                break;
-            case 'upload': {
-                if (!this.user) return this.navigate('login');
-                main.innerHTML = UI.pages.upload();
-                const { UploadPage } = await import('../../pages/upload.js');
-                UploadPage.init();
-                break;
-            }
-            case 'my-uploads':
-                if (!this.user) return this.navigate('login');
-                main.innerHTML = UI.pages.myUploads();
-                MyUploadsPage.init();
-                break;
-            case 'student-dashboard':
-                if (!this.user) return this.navigate('login');
-                StudentDashboardPage.init();
-                break;
-            case 'admin-dashboard':
-                if (!this.user) return this.navigate('login');
-                await this.ensureProfileLoaded({ allowBackgroundSync: true });
-                DashboardPage.init();
-                break;
-            case 'detail':
-                if (id) DetailPage.init(id);
-                else this.navigate('explore');
-                break;
-            case 'remote':
-                PresentationRemotePage.init();
-                break;
-            case 'edit': {
-                if (!this.user) return this.navigate('login');
-                if (id) {
+        try {
+            switch (page) {
+                case 'onboarding':
+                    if (this.user) return this.navigate('home');
+                    main.innerHTML = UI.pages.onboarding();
+                    UI.setupOnboarding();
+                    break;
+                case 'home':
+                    main.innerHTML = UI.pages.home(this.profile);
+                    UI.initHeroAnimations();
+                    break;
+                case 'profile':
+                    if (!this.user) return this.navigate('login');
+                    main.innerHTML = UI.pages.profile(this.profile || this.user);
+                    UI.setupProfileEdit(this.profile || this.user);
+                    break;
+                case 'login':
+                    if (this.user) return this.navigate('home');
+                    main.innerHTML = UI.pages.login();
+                    UI.setupAuthForms('login');
+                    break;
+                case 'signup':
+                    if (this.user) return this.navigate('home');
+                    main.innerHTML = UI.pages.signup();
+                    UI.setupAuthForms('signup');
+                    break;
+                case 'explore':
+                    main.innerHTML = UI.pages.explore();
+                    ExplorePage.init();
+                    break;
+                case 'upload': {
+                    if (!this.user) return this.navigate('login');
                     main.innerHTML = UI.pages.upload();
                     const { UploadPage } = await import('../../pages/upload.js');
-                    UploadPage.initEdit(id);
-                } else {
-                    this.navigate('my-uploads');
+                    UploadPage.init();
+                    break;
                 }
-                break;
+                case 'my-uploads':
+                    if (!this.user) return this.navigate('login');
+                    main.innerHTML = UI.pages.myUploads();
+                    MyUploadsPage.init();
+                    break;
+                case 'student-dashboard':
+                    if (!this.user) return this.navigate('login');
+                    StudentDashboardPage.init();
+                    break;
+                case 'admin-dashboard':
+                    if (!this.user) return this.navigate('login');
+                    await this.ensureProfileLoaded({ allowBackgroundSync: true });
+                    DashboardPage.init();
+                    break;
+                case 'detail':
+                    if (id) DetailPage.init(id);
+                    else this.navigate('explore');
+                    break;
+                case 'remote':
+                    PresentationRemotePage.init();
+                    break;
+                case 'edit': {
+                    if (!this.user) return this.navigate('login');
+                    if (id) {
+                        main.innerHTML = UI.pages.upload();
+                        const { UploadPage } = await import('../../pages/upload.js');
+                        UploadPage.initEdit(id);
+                    } else {
+                        this.navigate('my-uploads');
+                    }
+                    break;
+                }
+                default:
+                    main.innerHTML = '<h1>404 Page Not Found</h1>';
             }
-            default:
-                main.innerHTML = '<h1>404 Page Not Found</h1>';
-        }
 
-        this.renderNav();
-        this.updateNavActive();
+            this.renderNav();
+            this.updateNavActive();
+            this._lastSuccessfulHash = `#${cleanHash || 'home'}`;
+        } catch (error) {
+            console.error(`[App] Route "${page}" failed during render/init:`, error);
+
+            main.innerHTML = previousMainMarkup;
+            document.body.classList.toggle('explore-view', previousBodyState.exploreView);
+            document.body.classList.toggle('light-dashboard', previousBodyState.lightDashboard);
+            this.currentPage = previousPage;
+
+            if (this._isRecoveringRoute) {
+                this.renderNav();
+                this.updateNavActive();
+                UI.showToast('This page could not be opened.', 'error');
+                return;
+            }
+
+            this._isRecoveringRoute = true;
+
+            try {
+                const failedHash = `#${cleanHash || 'home'}`;
+                const fallbackHash = previousHash !== failedHash ? previousHash : '#home';
+
+                UI.showToast('The requested page could not be opened. Restoring the previous page.', 'error');
+                window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${fallbackHash}`);
+                await this.route();
+            } finally {
+                this._isRecoveringRoute = false;
+            }
+        }
     },
 
     renderNav() {

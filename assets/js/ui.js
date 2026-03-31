@@ -4371,7 +4371,7 @@ export const UI = {
                             <textarea id="code-textarea" name="code_content" class="form-control code-editor" rows="12" placeholder="<!DOCTYPE html>\n<html>...</html>"></textarea>
                             <div class="code-preview-container">
                                 <p class="preview-label">Live Preview</p>
-                                <iframe id="code-preview-frame" class="code-preview-frame" sandbox="${this.getTrustedInlineHtmlSandbox()}"></iframe>
+                                <iframe id="code-preview-frame" class="code-preview-frame" sandbox="${UI.getTrustedInlineHtmlSandbox()}"></iframe>
                             </div>
                         </div>
                     </div>
