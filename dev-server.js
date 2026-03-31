@@ -5,7 +5,8 @@ const path = require('path');
 const ROOT_DIR = __dirname;
 const API_DIR = path.join(ROOT_DIR, 'api');
 const DEFAULT_PORT = Number(process.env.PORT || 3000);
-const REQUIRED_R2_ENV_NAMES = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
+const LOCAL_ORIGIN_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+const REQUIRED_R2_ENV_NAMES = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_URL'];
 
 const MIME_TYPES = {
     '.css': 'text/css; charset=utf-8',
@@ -107,6 +108,18 @@ function sendJson(res, statusCode, body) {
     res.end(JSON.stringify(body));
 }
 
+function applyCors(req, res) {
+    const requestOrigin = req.headers.origin;
+    if (!requestOrigin || !LOCAL_ORIGIN_PATTERN.test(requestOrigin)) {
+        return;
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+}
+
 function resolveSafePath(urlPathname) {
     const decoded = decodeURIComponent(urlPathname);
     const trimmed = decoded === '/' ? '/index.html' : decoded;
@@ -140,6 +153,14 @@ function serveStatic(req, res, pathname) {
 }
 
 async function serveApi(req, res, pathname) {
+    applyCors(req, res);
+
+    if (req.method === 'OPTIONS') {
+        res.statusCode = 204;
+        res.end();
+        return;
+    }
+
     const relativePath = pathname.replace(/^\/api\//, '');
     const routePath = path.join(API_DIR, `${relativePath}.js`);
 
@@ -177,6 +198,25 @@ const server = http.createServer(async (req, res) => {
     serveStatic(req, res, url.pathname);
 });
 
-server.listen(DEFAULT_PORT, () => {
-    console.log(`[DEV SERVER] Ready`);
-});
+function startServer(portCandidates) {
+    const [port, ...remainingPorts] = portCandidates;
+    if (port == null) {
+        throw new Error('Could not find an available port for dev-server.');
+    }
+
+    server.once('error', (error) => {
+        if (error.code === 'EADDRINUSE' && remainingPorts.length > 0) {
+            console.warn(`[DEV SERVER] Port ${port} is busy, retrying on ${remainingPorts[0]}.`);
+            startServer(remainingPorts);
+            return;
+        }
+
+        throw error;
+    });
+
+    server.listen(port, () => {
+        console.log(`[DEV SERVER] Ready`);
+    });
+}
+
+startServer([DEFAULT_PORT, DEFAULT_PORT + 1]);

@@ -55,19 +55,7 @@ export const UploadPage = {
             text: document.querySelector('input[name="content_mode"][value="text"]'),
             code: document.querySelector('input[name="content_mode"][value="code"]')
         };
-        const supportedProjectAccept = [
-            '.pdf', '.pptx', '.doc', '.docx', '.html', '.zip',
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'application/vnd.ms-powerpoint',
-            'text/html',
-            'application/zip',
-            'application/x-zip-compressed',
-            'multipart/x-zip',
-            'application/octet-stream'
-        ].join(',');
+        const supportedProjectAccept = ProjectUpload.PROJECT_ACCEPT_ATTRIBUTE;
         const supportedAudioAccept = [
             '.mp3', '.wav',
             'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'
@@ -111,6 +99,8 @@ export const UploadPage = {
             const isImageCategory = modeOptions.useImageUploader;
             const activeMode = document.querySelector('input[name="content_mode"]:checked')?.value;
             const nextMode = modeOptions[activeMode] ? activeMode : (modeOptions.file ? 'file' : modeOptions.code ? 'code' : 'text');
+            const textInput = textGroup?.querySelector('textarea');
+            const codeInput = codeGroup?.querySelector('textarea');
 
             refreshThemeOptions();
 
@@ -122,9 +112,15 @@ export const UploadPage = {
             codeGroup?.classList.add('hidden');
 
             fileInput?.removeAttribute('required');
-            textGroup?.querySelector('textarea')?.removeAttribute('required');
-            codeGroup?.querySelector('textarea')?.removeAttribute('required');
-            if (imageInput) imageInput.required = false;
+            textInput?.removeAttribute('required');
+            codeInput?.removeAttribute('required');
+            if (fileInput) fileInput.disabled = true;
+            if (textInput) textInput.disabled = true;
+            if (codeInput) codeInput.disabled = true;
+            if (imageInput) {
+                imageInput.required = false;
+                imageInput.disabled = !isImageCategory;
+            }
 
             Object.entries(modeTabs).forEach(([mode, tab]) => {
                 if (!tab || !modeInputs[mode]) return;
@@ -139,18 +135,28 @@ export const UploadPage = {
 
             if (isImageCategory) {
                 imageGroup?.classList.remove('hidden');
-                if (imageInput) imageInput.required = true;
+                if (imageInput) {
+                    imageInput.required = true;
+                    imageInput.disabled = false;
+                }
             } else if (nextMode === 'file') {
                 fileGroup?.classList.remove('hidden');
-                if (fileInput) fileInput.required = true;
+                if (fileInput) {
+                    fileInput.required = true;
+                    fileInput.disabled = false;
+                }
             } else if (nextMode === 'text') {
                 textGroup?.classList.remove('hidden');
-                const textInput = textGroup?.querySelector('textarea');
-                if (textInput) textInput.required = true;
+                if (textInput) {
+                    textInput.required = true;
+                    textInput.disabled = false;
+                }
             } else if (nextMode === 'code') {
                 codeGroup?.classList.remove('hidden');
-                const codeInput = codeGroup?.querySelector('textarea');
-                if (codeInput) codeInput.required = true;
+                if (codeInput) {
+                    codeInput.required = true;
+                    codeInput.disabled = false;
+                }
             }
 
             const isAudioCategory = UI.normalizeCategoryValue(selectedCategory) === 'songs';
@@ -321,19 +327,26 @@ export const UploadPage = {
                 const category = formData.get('category');
                 const contentMode = formData.get('content_mode');
                 const file = formData.get('file');
+                const selectedImageFile = this._imageFile || this._imageCompressedBlob || null;
+                const isImageCategory = category === 'images';
 
                 // Validation
-                if (category !== 'images' && contentMode === 'file' && (!file || file.size === 0)) {
+                if (isImageCategory && !selectedImageFile) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit for Review';
+                    return UI.showToast('Please select an image to upload.', 'error');
+                }
+                if (!isImageCategory && contentMode === 'file' && (!file || file.size === 0)) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit for Review';
                     return UI.showToast('Please select a file to upload.', 'error');
                 }
-                if (contentMode === 'file' && file.size > 50 * 1024 * 1024) {
+                if (!isImageCategory && contentMode === 'file' && file && file.size > 50 * 1024 * 1024) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit for Review';
                     return UI.showToast('File size exceeds 50MB limit.', 'error');
                 }
-                if (category !== 'images' && contentMode === 'file') {
+                if (!isImageCategory && contentMode === 'file') {
                     const validationError = this.validateProjectFile(file, category);
                     if (validationError) {
                         UI.hideLoader();
@@ -400,7 +413,7 @@ export const UploadPage = {
                 }
 
                 // If image category, we submit as "Image Post" not just normal submission
-                if (category === 'images') {
+                if (isImageCategory) {
                     if (!this._imageFile && !this._imageCompressedBlob) {
                         UI.hideLoader();
                         submitBtn.disabled = false;
@@ -439,9 +452,15 @@ export const UploadPage = {
                         console.error('Image Upload error:', error);
                         UI.showToast(error.message || 'Image Upload failed.', 'error');
                     } else {
-                        UI.showToast('Thank you for uploading your work. Your submission has been received and is now pending review.', 'success');
+                        UI.hideLoader();
+                        await UI.showSubmissionSuccessCelebration(3500);
+                        await UI.triggerBadgeEvaluation({
+                            userId: user.id,
+                            reason: 'upload-success',
+                            awaitPopups: true
+                        });
                         this._resetImageSelection();
-                        setTimeout(() => window.location.hash = '#my-uploads', 1500);
+                        window.location.hash = '#my-uploads';
                     }
 
                 } else {
@@ -461,7 +480,13 @@ export const UploadPage = {
                     };
 
                     const presentationNotes = this.getPresentationNotesValue();
-                    if (presentationNotes) {
+                    if (presentationNotes && this.shouldAttachPresentationNotes({
+                        category: submissionData.category,
+                        contentMode,
+                        fileType: submissionData.file_type,
+                        mimeType: submissionData.mime_type,
+                        contentType: submissionData.content_type
+                    })) {
                         submissionData.presentation_notes = presentationNotes;
                     }
 
@@ -497,17 +522,18 @@ export const UploadPage = {
                     console.log('Submitting standard post:', submissionData);
                     const { error } = await API.uploadSubmission(submissionData, fileToUpload, thumbnailBlob, displayBlob);
 
-                    const fileExtension = fileToUpload?.name?.split('.')?.pop()?.toLowerCase() || '';
-                    const projectSuccessMessage = fileExtension === 'zip'
-                        ? 'Your website project has been uploaded successfully.'
-                        : 'Your file has been uploaded successfully.';
-
                     if (error) {
                         console.error('Upload error:', error);
                         UI.showToast(this.mapUploadError(error), 'error');
                     } else {
-                        UI.showToast(fileToUpload && !fileToUpload.type?.startsWith('audio/') ? projectSuccessMessage : 'Thank you for uploading your work. Your submission has been received and is now pending review.', 'success');
-                        setTimeout(() => window.location.hash = '#my-uploads', 1500);
+                        UI.hideLoader();
+                        await UI.showSubmissionSuccessCelebration(3500);
+                        await UI.triggerBadgeEvaluation({
+                            userId: user.id,
+                            reason: 'upload-success',
+                            awaitPopups: true
+                        });
+                        window.location.hash = '#my-uploads';
                     }
                 }
             } catch (err) {
@@ -706,6 +732,18 @@ export const UploadPage = {
             || fileType.includes('pdf')
             || fileType.includes('powerpoint')
             || fileType.includes('presentationml');
+    },
+
+    shouldAttachPresentationNotes({ category = '', contentMode = 'file', fileType = '', mimeType = '', contentType = '' } = {}) {
+        const normalizedCategory = UI.normalizeCategoryValue(category, contentType);
+        const normalizedFileType = String(fileType || mimeType || '').toLowerCase();
+        return normalizedCategory === 'presentations'
+            && contentMode === 'file'
+            && (
+                normalizedFileType.includes('pdf')
+                || normalizedFileType.includes('powerpoint')
+                || normalizedFileType.includes('presentationml')
+            );
     },
 
     async initEdit(id) {
@@ -933,12 +971,22 @@ export const UploadPage = {
                         status: 'pending'
                     };
 
-                    updateData.presentation_notes = this.getPresentationNotesValue();
+                    const presentationNotes = this.getPresentationNotesValue();
 
                     if (contentText !== null) {
                         updateData.content_text = contentText;
                         updateData.file_type = contentMode === 'code' ? 'text/html' : 'text/plain';
                         updateData.mime_type = updateData.file_type;
+                    }
+
+                    if (presentationNotes && this.shouldAttachPresentationNotes({
+                        category: updateData.category,
+                        contentMode,
+                        fileType: updateData.file_type || sub.file_type,
+                        mimeType: updateData.mime_type || sub.mime_type,
+                        contentType: sub.content_type
+                    })) {
+                        updateData.presentation_notes = presentationNotes;
                     }
 
                     let thumbnailBlob = null;
@@ -1119,7 +1167,7 @@ export const UploadPage = {
     },
 
     isWebsiteZip(file) {
-        return ProjectUpload.getProjectMimeType(file?.name, file?.type)?.includes('zip') || String(file?.name || '').toLowerCase().endsWith('.zip');
+        return ProjectUpload.getProjectUploadDescriptor(file?.name, file?.type)?.extension === 'zip';
     },
 
     mapUploadError(error) {

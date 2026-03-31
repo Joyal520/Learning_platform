@@ -3,6 +3,7 @@ import { supabase } from '../assets/js/supabase.js';
 import { UI } from '../assets/js/ui.js';
 import App from '../assets/js/app.js';
 import { API } from '../assets/js/api.js';
+import { BadgeEngine } from '../assets/js/badges.js';
 
 export const StudentDashboardPage = {
     async init() {
@@ -19,11 +20,16 @@ export const StudentDashboardPage = {
         this.setupSavedScroll();
 
         // Make the page usable immediately, then fill sections independently.
+        const leaderboardPromise = this.loadLeaderboard();
         this.loadStats();
         this.loadRecentCreations();
-        this.loadLeaderboard();
         this.loadActivityFeed();
         this.loadSavedCreations();
+        this.bindBadgePanel();
+
+        leaderboardPromise
+            .then((creatorRankings) => this.loadBadges({ creatorRankings, reason: 'leaderboard-refresh' }))
+            .catch(() => this.loadBadges({ reason: 'dashboard-load' }));
     },
 
     async getCreatorRankings() {
@@ -136,6 +142,7 @@ export const StudentDashboardPage = {
                 .from('submissions')
                 .select(`
                     id, title, category, author_id, thumbnail_path, thumbnail_url,
+                    file_type, mime_type, file_url, file_path, content_text, content_type,
                     status, created_at, updated_at,
                     profiles!author_id (display_name)
                 `)
@@ -162,11 +169,15 @@ export const StudentDashboardPage = {
 
             // Add empty stats placeholder so renderCard doesn't break
             const cardsData = data.map(sub => {
-                sub.submission_stats = [{ avg_rating: 0, like_count: 0 }];
+                sub.submission_stats = [{ avg_rating: 0, like_count: 0, view_count: 0 }];
                 return sub;
             });
+            await UI.hydrateInteractiveWebCardState(cardsData);
 
             grid.innerHTML = cardsData.map(sub => UI.renderCard(sub)).join('');
+            UI.setupMasonryCardInteractions(grid, {
+                getUserId: () => App.user?.id || null
+            });
 
             // Step 2: Lazy load fresh stats (non-blocking)
             const ids = data.map(s => s.id);
@@ -178,16 +189,31 @@ export const StudentDashboardPage = {
 
                 if (freshStats) {
                     freshStats.forEach(stat => {
+                        const submission = cardsData.find((item) => item.id === stat.id);
+                        if (submission) {
+                            submission.submission_stats = [{
+                                avg_rating: stat.avg_rating,
+                                like_count: stat.like_count,
+                                view_count: stat.view_count || 0
+                            }];
+                        }
+
                         const card = grid.querySelector(`[data-id="${stat.id}"]`);
                         if (card) {
-                            const statsEl = card.querySelector('.card-stats');
-                            if (statsEl) {
-                                statsEl.innerHTML = `
-                                    <span>★ ${Number(stat.avg_rating).toFixed(1)}</span>
-                                    <span>❤ ${stat.like_count}</span>
-                                    <span>👁 ${stat.view_count || 0}</span>
-                                `;
+                            if (card.classList.contains('interactive-web-card') && submission) {
+                                UI.updateInteractiveWebCardLikeState(stat.id, !!submission._interactiveWebLiked, stat.like_count);
+                                UI.updateInteractiveWebCardRatingState(stat.id, stat.avg_rating, submission._interactiveWebUserRating);
+                                UI.updateInteractiveWebCardViewState(stat.id, stat.view_count || 0);
+                                return;
                             }
+
+                            const statsEl = card.querySelector('.card-stats');
+                            if (!statsEl) return;
+                            statsEl.innerHTML = `
+                                <span>★ ${Number(stat.avg_rating).toFixed(1)}</span>
+                                <span>❤ ${stat.like_count}</span>
+                                <span>👁 ${stat.view_count || 0}</span>
+                            `;
                         }
                     });
                 }
@@ -377,13 +403,45 @@ export const StudentDashboardPage = {
             // Render bookmarked submissions as horizontal cards in the vertical list
             list.innerHTML = submissions.map(sub => {
                 sub.submission_stats = [{ avg_rating: 0, like_count: 0, view_count: 0 }];
-                return UI.pages.renderSavedCard(sub);
+
+                try {
+                    return UI.pages.renderSavedCard(sub);
+                } catch (renderError) {
+                    console.warn('[StudentDashboard] Failed to render saved card:', renderError, sub);
+                    return '';
+                }
             }).join('');
 
         } catch (err) {
             console.warn('[StudentDashboard] Saved creations error:', err);
             const list = document.getElementById('sd-saved-list');
             if (list) list.innerHTML = '<p class="text-muted" style="padding: 16px;">Could not load saved creations.</p>';
+        }
+    },
+
+    async loadBadges({ creatorRankings = null, reason = 'dashboard-load' } = {}) {
+        const container = document.getElementById('sd-badges-section');
+        if (!container || !App.user?.id) return;
+
+        container.innerHTML = UI.renderBadgePanel();
+
+        try {
+            const result = await BadgeEngine.evaluateAndSyncBadges({
+                userId: App.user.id,
+                creatorRankings,
+                reason
+            });
+
+            this._badgePanelState = result.panelState;
+            container.innerHTML = UI.renderBadgePanel(result.panelState);
+
+            if (result.newlyUnlockedBadges?.length) {
+                UI.presentUnlockedBadges(result.newlyUnlockedBadges);
+            }
+        } catch (error) {
+            console.warn('[StudentDashboard] Badge panel error:', error);
+            this._badgePanelState = BadgeEngine.getFallbackPanelState();
+            container.innerHTML = UI.renderBadgePanel(this._badgePanelState);
         }
     },
 
@@ -401,11 +459,13 @@ export const StudentDashboardPage = {
 
             // Render
             this.renderLeaderboard();
+            return creatorRankings;
 
         } catch (err) {
             console.warn('[StudentDashboard] Leaderboard error:', err);
             const podium = document.getElementById('sd-lb-podium');
             if (podium) podium.innerHTML = '<p class="text-muted">Could not load leaderboard.</p>';
+            throw err;
         }
     },
 
@@ -432,15 +492,6 @@ export const StudentDashboardPage = {
             return avatarUrl
                 ? `<img src="${escapeHtml(avatarUrl)}" class="${className}" alt="${escapeHtml(displayName)}">`
                 : `<span class="${className} sd-avatar-fallback sd-avatar-tone-${toneIndex}" data-initial="${escapeHtml(initial)}">${escapeHtml(initial)}</span>`;
-        };
-        const getTodayPoints = (creator) => {
-            const rawValue = creator?.points_today ?? creator?.pointsToday ?? creator?.today_points ?? creator?.todayPoints ?? creator?.daily_points ?? creator?.dailyPoints ?? null;
-            const value = Number.isFinite(Number(rawValue)) ? Math.max(0, Number(rawValue)) : 0;
-            if (value > 0) {
-                return { className: 'positive', label: `+${value} today` };
-            }
-
-            return { className: 'muted', label: '0 today' };
         };
         const getMovementMeta = (creator) => {
             const rawValue = creator?.rank_change_today ?? creator?.rankChangeToday ?? creator?.rank_delta ?? creator?.rankDelta ?? creator?.movement ?? null;
@@ -545,7 +596,6 @@ export const StudentDashboardPage = {
                 const rank = i + 4;
                 const avatarHtml = getAvatarMarkup(creator, 'sd-lb-avatar-img');
                 const movement = getMovementMeta(creator);
-                const todayMeta = getTodayPoints(creator);
                 const { targetPoints, progress } = getNextRankMeta(creator, rank - 1);
                 const isCurrentUser = creator?.id && App.user?.id && creator.id === App.user.id;
                 const creatorName = escapeHtml(creator.name || 'Unknown creator');
@@ -559,7 +609,6 @@ export const StudentDashboardPage = {
                         <div class="sd-lb-compact-avatar">${avatarHtml}</div>
                         <div class="sd-lb-compact-copy">
                             <span class="sd-lb-compact-name">${creatorName}</span>
-                            <span class="sd-lb-compact-today ${todayMeta.className}">${todayMeta.label}</span>
                         </div>
                         <div class="sd-lb-compact-score">
                             <span class="sd-lb-compact-points">${creator.points} pts</span>
@@ -648,6 +697,52 @@ export const StudentDashboardPage = {
                 `;
             }).join('') : '<p class="text-muted" style="text-align:center; font-size: 0.8rem; padding: 10px;">Climb higher to reach the top!</p>';
         }
+    },
+
+    bindBadgePanel() {
+        const container = document.getElementById('sd-badges-section');
+        if (!container || container.dataset.badgePanelBound === 'true') return;
+
+        container.dataset.badgePanelBound = 'true';
+        container.addEventListener('click', async (event) => {
+            const equipButton = event.target.closest('[data-badge-equip]');
+            const clearButton = event.target.closest('[data-badge-clear]');
+            if (!equipButton && !clearButton) return;
+
+            event.preventDefault();
+
+            if (!App.user?.id) {
+                UI.showToast('Please login to equip badges.', 'error');
+                return;
+            }
+
+            const result = clearButton
+                ? await BadgeEngine.equipBadge({ userId: App.user.id, badgeKey: null, creatorRankings: this._leaderboardData })
+                : await BadgeEngine.equipBadge({
+                    userId: App.user.id,
+                    badgeKey: equipButton.dataset.badgeEquip,
+                    creatorRankings: this._leaderboardData
+                });
+
+            if (result.error) {
+                UI.showToast(result.error.message || 'Could not update current badge.', 'error');
+                return;
+            }
+
+            this._badgePanelState = result.panelState;
+            container.innerHTML = UI.renderBadgePanel(result.panelState);
+            App.profile = {
+                ...(App.profile || {}),
+                equipped_badge_key: result.panelState?.equippedBadgeKey || null
+            };
+
+            UI.showToast(
+                clearButton
+                    ? 'Current badge cleared.'
+                    : 'Current badge updated!',
+                'success'
+            );
+        });
     },
 
     setupSavedScroll() {

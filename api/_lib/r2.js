@@ -28,6 +28,29 @@ const PROJECT_TYPES = new Set([
     'multipart/x-zip',
     'application/octet-stream'
 ]);
+const PROJECT_CANONICAL_MIME_BY_EXTENSION = {
+    pdf: 'application/pdf',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    html: 'text/html',
+    htm: 'text/html',
+    zip: 'application/zip'
+};
+const PROJECT_ALLOWED_MIME_BY_EXTENSION = {
+    pdf: new Set(['', 'application/octet-stream', 'application/pdf']),
+    pptx: new Set([
+        '',
+        'application/octet-stream',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.ms-powerpoint'
+    ]),
+    doc: new Set(['', 'application/octet-stream', 'application/msword']),
+    docx: new Set(['', 'application/octet-stream', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']),
+    html: new Set(['', 'application/octet-stream', 'text/html', 'text/plain']),
+    htm: new Set(['', 'application/octet-stream', 'text/html', 'text/plain']),
+    zip: new Set(['', 'application/octet-stream', 'application/zip', 'application/x-zip-compressed', 'multipart/x-zip'])
+};
 
 const MAX_SIZE_BY_ASSET = {
     image: 15 * 1024 * 1024,
@@ -38,7 +61,7 @@ const MAX_SIZE_BY_ASSET = {
 };
 
 const REQUIRED_R2_ENV_NAMES = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_URL'];
-const METRICS_PREFIXES = ['images/', 'audio/', 'projects/', 'thumbnails/', 'thumbs/'];
+const METRICS_PREFIXES = ['images/', 'audio/', 'projects/', 'uploads/web-zips/', 'web-projects/', 'thumbnails/', 'thumbs/'];
 const R2_METRICS_CACHE_TTL_MS = 45000;
 const r2MetricsCache = {
     expiresAt: 0,
@@ -245,6 +268,37 @@ function sanitizeSegment(value) {
         .slice(0, 80);
 }
 
+function normalizeMimeType(contentType = '') {
+    return String(contentType || '').trim().toLowerCase();
+}
+
+function getFilenameExtension(filename = '') {
+    const match = String(filename || '').trim().toLowerCase().match(/\.([a-z0-9]+)$/i);
+    return match ? match[1] : '';
+}
+
+function getProjectUploadDescriptor(filename = '', contentType = '') {
+    const extension = getFilenameExtension(filename);
+    const normalizedType = normalizeMimeType(contentType);
+    const allowedMimeTypes = PROJECT_ALLOWED_MIME_BY_EXTENSION[extension];
+
+    if (!allowedMimeTypes || !allowedMimeTypes.has(normalizedType)) {
+        return {
+            extension,
+            normalizedType,
+            resolvedMimeType: '',
+            isSupported: false
+        };
+    }
+
+    return {
+        extension,
+        normalizedType,
+        resolvedMimeType: PROJECT_CANONICAL_MIME_BY_EXTENSION[extension] || '',
+        isSupported: true
+    };
+}
+
 function inferExtension(filename = '', contentType = '') {
     const lower = filename.toLowerCase();
     if (lower.includes('.')) {
@@ -270,8 +324,8 @@ function inferExtension(filename = '', contentType = '') {
 }
 
 function getProjectExtension(filename = '', contentType = '') {
-    const extension = inferExtension(filename, contentType);
-    return ['pdf', 'pptx', 'doc', 'docx', 'html', 'zip'].includes(extension) ? extension : null;
+    const descriptor = getProjectUploadDescriptor(filename, contentType);
+    return descriptor.isSupported ? descriptor.extension : null;
 }
 
 function sanitizeProjectFilename(filename = '', extension = 'bin') {
@@ -310,8 +364,8 @@ function validateAsset({ assetType, contentType, size, filename = '' }) {
     }
 
     if (assetType === 'project') {
-        const extension = getProjectExtension(filename, contentType);
-        if (!extension || !PROJECT_TYPES.has(contentType)) {
+        const descriptor = getProjectUploadDescriptor(filename, contentType);
+        if (!descriptor.isSupported || !descriptor.resolvedMimeType || !PROJECT_TYPES.has(descriptor.resolvedMimeType)) {
             throw new Error('Unsupported file type. Upload PDF, PPTX, DOC, DOCX, HTML, or ZIP files only.');
         }
     }
@@ -338,6 +392,10 @@ function buildObjectKey({ assetType, submissionId, userId, filename, contentType
             }
 
             const safeFileName = sanitizeProjectFilename(filename, projectExt);
+            if (projectExt === 'zip') {
+                return `uploads/web-zips/${cleanUserId}/${cleanSubmissionId}/${safeFileName}`;
+            }
+
             return `projects/${cleanUserId}/${safeFileName}`;
         }
         default:
@@ -503,6 +561,36 @@ async function deleteObjects(keys) {
     return { deleted: normalizedKeys };
 }
 
+async function putObject(objectKey, body, { contentType = 'application/octet-stream' } = {}) {
+    if (!objectKey) {
+        throw new Error('Missing objectKey.');
+    }
+
+    const payload = Buffer.isBuffer(body) ? body : Buffer.from(body);
+    const signed = signRequest({
+        method: 'PUT',
+        objectKey,
+        body: payload,
+        contentType
+    });
+
+    const response = await fetch(`${signed.endpoint}/${signed.bucket}/${objectKey.split('/').map(encodeRfc3986).join('/')}`, {
+        method: 'PUT',
+        headers: signed.headers,
+        body: payload
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`R2 put failed: ${response.status} ${errorText}`.trim());
+    }
+
+    return {
+        objectKey,
+        publicUrl: buildPublicUrl(objectKey)
+    };
+}
+
 function parseTagValues(xml, tagName) {
     const regex = new RegExp(`<${tagName}>(.*?)</${tagName}>`, 'g');
     const values = [];
@@ -552,6 +640,16 @@ async function listAllObjects() {
     }
 
     return allObjects;
+}
+
+async function listObjectKeysWithPrefix(prefix = '') {
+    const normalizedPrefix = String(prefix || '').replace(/^\/+/, '');
+    if (!normalizedPrefix) return [];
+
+    const objects = await listAllObjects();
+    return objects
+        .map((object) => object.key)
+        .filter((key) => String(key || '').startsWith(normalizedPrefix));
 }
 
 async function getCachedR2Metrics({ forceRefresh = false } = {}) {
@@ -703,6 +801,48 @@ async function verifyObjectAvailability(objectKey) {
     return { exists: true, listed };
 }
 
+async function getSupabaseSubmission(accessToken, submissionId, select = '*') {
+    const params = new URLSearchParams({
+        id: `eq.${submissionId}`,
+        select
+    });
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/submissions?${params.toString()}`, {
+        headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${accessToken}`
+        }
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`Could not load submission metadata. ${errorText}`.trim());
+    }
+
+    const rows = await response.json();
+    return rows?.[0] || null;
+}
+
+async function updateSupabaseSubmission(accessToken, submissionId, patch = {}) {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/submissions?id=eq.${encodeURIComponent(submissionId)}`, {
+        method: 'PATCH',
+        headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation'
+        },
+        body: JSON.stringify(patch)
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`Could not update submission metadata. ${errorText}`.trim());
+    }
+
+    const rows = await response.json();
+    return rows?.[0] || null;
+}
+
 function groupObjectsByFolder(objects) {
     return objects.reduce((acc, object) => {
         const key = object.key || '';
@@ -774,18 +914,23 @@ module.exports = {
     getConfig,
     getCachedR2Metrics,
     getObjectHead,
+    getSupabaseSubmission,
     getR2ConfigErrorPayload,
     getMissingR2EnvVars,
     getR2Identity,
     groupObjectsByFolder,
     json,
     listAllObjects,
+    listObjectKeysWithPrefix,
     listObjectsGroupedByFolder,
     METRICS_PREFIXES,
     normalizeObjectKey,
+    putObject,
     readJsonBody,
     requireAdmin,
+    sanitizeSegment,
     summarizeObjects,
+    updateSupabaseSubmission,
     validateR2Config,
     validateAsset,
     verifyObjectAvailability,

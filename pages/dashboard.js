@@ -126,9 +126,15 @@ export const DashboardPage = {
         if (elBucket) elBucket.textContent = 'Bucket: --';
         if (elBreakdown) elBreakdown.textContent = 'Loading Cloudflare metrics...';
 
-        const { count: users } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-        const { count: pending } = await supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'pending');
-        const { count: approved } = await supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'approved');
+        const [
+            { count: users },
+            { count: pending },
+            { count: approved }
+        ] = await Promise.all([
+            supabase.from('profiles').select('*', { count: 'exact', head: true }),
+            supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+            supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'approved')
+        ]);
 
         let storageUnavailable = false;
         let metrics = null;
@@ -333,7 +339,7 @@ export const DashboardPage = {
                 
                 // 0. Fetch submission files before deletion to clear storage
                 const { data: sub, error: subError } = await supabase.from('submissions')
-                    .select('id, title, thumbnail_path, thumbnail_url, image_url, file_path, file_url, category, storage_provider')
+                    .select('id, author_id, title, thumbnail_path, thumbnail_url, image_url, file_path, file_url, category, storage_provider, file_type, mime_type')
                     .eq('id', submissionId)
                     .maybeSingle();
 
@@ -407,12 +413,14 @@ export const DashboardPage = {
                 // 3. Clear Storage Files to free up Cloud Space
                 if (removed && sub) {
                     try {
+                        const zipWebsiteState = UI.getSubmissionZipWebsiteState(sub || {});
                         if (sub.storage_provider === 'r2') {
                             await API.deleteStoredMedia([
                                 sub.thumbnail_path || sub.thumbnail_url,
                                 sub.image_url,
                                 sub.file_path,
-                                sub.file_url
+                                sub.file_url,
+                                zipWebsiteState.extracted_root_path ? `${zipWebsiteState.extracted_root_path}/` : null
                             ], submissionId);
                         } else {
                             const pathsToDeleteFromPublic = new Set();

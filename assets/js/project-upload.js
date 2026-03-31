@@ -12,7 +12,7 @@ const PROJECT_MIME_BY_EXTENSION = {
     zip: 'application/zip'
 };
 
-const PROJECT_EXTENSIONS = ['.pdf', '.pptx', '.doc', '.docx', '.html', '.zip'];
+const PROJECT_EXTENSIONS = ['.pdf', '.pptx', '.doc', '.docx', '.html', '.htm', '.zip'];
 const PROJECT_MIME_TYPES = new Set([
     'application/pdf',
     'application/msword',
@@ -25,6 +25,33 @@ const PROJECT_MIME_TYPES = new Set([
     'multipart/x-zip',
     'application/octet-stream'
 ]);
+const PROJECT_ALLOWED_MIME_BY_EXTENSION = {
+    pdf: new Set(['', 'application/octet-stream', 'application/pdf']),
+    pptx: new Set([
+        '',
+        'application/octet-stream',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.ms-powerpoint'
+    ]),
+    doc: new Set(['', 'application/octet-stream', 'application/msword']),
+    docx: new Set(['', 'application/octet-stream', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']),
+    html: new Set(['', 'application/octet-stream', 'text/html', 'text/plain']),
+    htm: new Set(['', 'application/octet-stream', 'text/html', 'text/plain']),
+    zip: new Set(['', 'application/octet-stream', 'application/zip', 'application/x-zip-compressed', 'multipart/x-zip'])
+};
+const PROJECT_ACCEPT_ATTRIBUTE = [
+    ...PROJECT_EXTENSIONS,
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.ms-powerpoint',
+    'text/html',
+    'application/zip',
+    'application/x-zip-compressed',
+    'multipart/x-zip',
+    'application/octet-stream'
+].join(',');
 
 const SAFE_SPECIAL_FILENAMES = new Set([
     'cname',
@@ -118,16 +145,39 @@ function normalizeMimeType(contentType = '') {
     return String(contentType || '').trim().toLowerCase();
 }
 
-function getProjectMimeType(filename = '', contentType = '') {
+function getProjectUploadDescriptor(filename = '', contentType = '') {
+    const extension = getExtension(filename);
     const normalizedType = normalizeMimeType(contentType);
-    if (PROJECT_MIME_TYPES.has(normalizedType) && normalizedType !== 'application/octet-stream') {
-        if (normalizedType === 'application/vnd.ms-powerpoint' && getExtension(filename) !== 'pptx') {
-            return '';
-        }
-        return normalizedType;
+
+    if (!extension || !PROJECT_MIME_BY_EXTENSION[extension]) {
+        return {
+            extension,
+            normalizedType,
+            resolvedMimeType: '',
+            isSupported: false
+        };
     }
 
-    return PROJECT_MIME_BY_EXTENSION[getExtension(filename)] || '';
+    const allowedMimeTypes = PROJECT_ALLOWED_MIME_BY_EXTENSION[extension];
+    if (!allowedMimeTypes?.has(normalizedType)) {
+        return {
+            extension,
+            normalizedType,
+            resolvedMimeType: '',
+            isSupported: false
+        };
+    }
+
+    return {
+        extension,
+        normalizedType,
+        resolvedMimeType: PROJECT_MIME_BY_EXTENSION[extension] || '',
+        isSupported: true
+    };
+}
+
+function getProjectMimeType(filename = '', contentType = '') {
+    return getProjectUploadDescriptor(filename, contentType).resolvedMimeType;
 }
 
 function getProjectTypeLabel(fileOrSubmission = {}) {
@@ -147,11 +197,8 @@ function getProjectTypeLabel(fileOrSubmission = {}) {
 function validateProjectFile(file) {
     if (!file) return 'Please select a file to upload.';
 
-    const lowerName = String(file.name || '').toLowerCase();
-    const hasAllowedExtension = PROJECT_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
-    const resolvedMimeType = getProjectMimeType(file.name, file.type);
-
-    if (!hasAllowedExtension || !resolvedMimeType) {
+    const descriptor = getProjectUploadDescriptor(file.name, file.type);
+    if (!descriptor.isSupported || !descriptor.resolvedMimeType) {
         return 'Unsupported file type. Upload PDF, PPTX, DOC, DOCX, HTML, or ZIP files only.';
     }
 
@@ -358,9 +405,11 @@ async function inspectZipWebsite(file) {
 export const ProjectUpload = {
     LARGE_HTML_PREVIEW_BYTES,
     MAX_HTML_CONTENT_BYTES,
+    PROJECT_ACCEPT_ATTRIBUTE,
     PROJECT_EXTENSIONS,
     PROJECT_MIME_TYPES,
     getProjectMimeType,
+    getProjectUploadDescriptor,
     getProjectTypeLabel,
     inspectZipWebsite,
     shouldPausePreview,

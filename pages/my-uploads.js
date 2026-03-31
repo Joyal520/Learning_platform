@@ -85,7 +85,7 @@ export const MyUploadsPage = {
                 console.log('[MyUploads] Attempting to delete:', id);
                 const { data: sub, error: fetchError } = await supabase
                     .from('submissions')
-                    .select('id, storage_provider, thumbnail_path, thumbnail_url, image_url, file_path, file_url')
+                    .select('*')
                     .eq('id', id)
                     .maybeSingle();
 
@@ -95,13 +95,15 @@ export const MyUploadsPage = {
 
                 if (error) throw error;
 
+                const zipWebsiteState = UI.getSubmissionZipWebsiteState(sub || {});
                 if (sub?.storage_provider === 'r2') {
                     try {
                         await API.deleteStoredMedia([
                             sub.thumbnail_path || sub.thumbnail_url,
                             sub.image_url,
                             sub.file_path,
-                            sub.file_url
+                            sub.file_url,
+                            zipWebsiteState.extracted_root_path ? `${zipWebsiteState.extracted_root_path}/` : null
                         ], id);
                     } catch (cleanupErr) {
                         console.warn('[MyUploads] R2 cleanup warning:', cleanupErr);

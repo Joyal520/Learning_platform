@@ -3,6 +3,7 @@ import { Auth } from './auth.js';
 import { supabase } from './supabase.js';
 import { AvatarLibrary } from './avatars.js';
 import { API } from './api.js';
+import { BadgeEngine } from './badges.js';
 import { buildAppPath, buildAppUrl } from './path-utils.js';
 
 export const UI = {
@@ -19,6 +20,19 @@ export const UI = {
     _livePreviewConfigs: new Map(),
     _livePreviewDismissTimer: null,
     _cardSubmissionRegistry: new Map(),
+    _inlinePreviewDocuments: new Map(),
+    _inlinePreviewCounter: 0,
+    _immersiveViewerOverlay: null,
+    _immersiveViewerHistoryOpen: false,
+    _immersiveViewerRestoreScrollY: 0,
+    _immersiveViewerPopstateHandler: null,
+    _immersiveViewerPreviouslyFocused: null,
+    _submissionCelebrationTimeout: null,
+    _submissionCelebrationCleanup: null,
+    _submissionCelebrationPageHideHandler: null,
+    _submissionCelebrationPreviousBodyOverflow: '',
+    _submissionCelebrationPreviousHtmlOverflow: '',
+    _badgeCelebrationQueue: Promise.resolve(),
 
     contentTypeOptions: [
         { value: 'short_stories', label: 'Short Story', navLabel: 'Short Stories', group: 'Stories' },
@@ -493,6 +507,49 @@ export const UI = {
         return { file: true, text: true, code: true, useImageUploader: false };
     },
 
+    getSubmissionMediaKind(sub = {}) {
+        if (!sub || typeof sub !== 'object') return '';
+
+        const contentType = String(sub.content_type || '').trim().toLowerCase();
+        const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
+
+        const hasImageSignal = contentType === 'image' || fileType.startsWith('image/');
+        const hasAudioSignal = contentType === 'audio' || fileType.startsWith('audio/');
+
+        if (hasImageSignal) return 'image';
+        if (hasAudioSignal) return 'audio';
+        if (normalizedCategory === 'images') return 'image';
+        if (normalizedCategory === 'songs') return 'audio';
+        return '';
+    },
+
+    isImageSubmission(sub = {}) {
+        return this.getSubmissionMediaKind(sub) === 'image';
+    },
+
+    isAudioSubmission(sub = {}) {
+        return this.getSubmissionMediaKind(sub) === 'audio';
+    },
+
+    isStrictImageSubmission(sub = {}) {
+        if (!sub || typeof sub !== 'object') return false;
+
+        const contentType = String(sub.content_type || '').trim().toLowerCase();
+        const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const sourceRef = String(sub.file_url || sub.public_url || sub.file_path || '').trim().toLowerCase();
+        const hasAudioSignal = contentType === 'audio'
+            || contentType === 'song'
+            || contentType === 'songs'
+            || fileType.startsWith('audio/');
+        const hasImageSignal = contentType === 'image'
+            || fileType.startsWith('image/')
+            || /\.(avif|bmp|gif|jpe?g|png|svg|webp)(?:\?|#|$)/i.test(sourceRef);
+
+        if (hasAudioSignal) return false;
+        return hasImageSignal;
+    },
+
     getExploreCategoryMeta() {
         const lessonsChildren = this.lessonThemeOptions.map((theme) => ({
             label: theme,
@@ -652,7 +709,7 @@ export const UI = {
         const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
 
         if (fileReference.endsWith('.zip') || fileType.includes('zip')) return 'Website project (ZIP)';
-        if (fileReference.endsWith('.html') || fileType === 'text/html') return 'HTML website project';
+        if (fileReference.endsWith('.html') || fileReference.endsWith('.htm') || fileType === 'text/html') return 'HTML website project';
         if (fileReference.endsWith('.pdf') || fileType === 'application/pdf') return 'PDF document';
         if (fileReference.endsWith('.ppt') || fileType.includes('powerpoint')) return 'PowerPoint presentation';
         if (fileReference.endsWith('.pptx') || fileType.includes('presentationml')) return 'PowerPoint presentation';
@@ -695,63 +752,357 @@ export const UI = {
         return !!this.getLivePreviewDescriptor(sub);
     },
 
-    isInteractiveWebCard(sub = {}) {
-        if (!sub || typeof sub !== 'object') return false;
-        if (sub.content_type === 'audio' || sub.content_type === 'image') return false;
-        if (String(sub.file_type || sub.mime_type || '').toLowerCase().startsWith('audio/')) return false;
-        if (String(sub.file_type || sub.mime_type || '').toLowerCase().startsWith('image/')) return false;
-        if (this.isPdfSubmission(sub) || this.isPowerPointSubmission(sub)) return false;
+    getInlineHtmlCandidateEntries(sub = {}) {
+        if (!sub || typeof sub !== 'object') return [];
 
-        const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const candidateFields = [
+            'html',
+            'html_content',
+            'content_html',
+            'content',
+            'body',
+            'body_html',
+            'source_code',
+            'code',
+            'pasted_code',
+            'project_code',
+            'raw_content',
+            'content_text',
+            'submission_text',
+            'text_content',
+            'markup',
+            'rendered_html'
+        ];
+
+        return candidateFields.map((field) => ({
+            field,
+            value: typeof sub?.[field] === 'string' ? sub[field] : ''
+        }));
+    },
+
+    looksLikeHtmlMarkup(value = '') {
+        const source = String(value || '').trim();
+        if (!source) return false;
+
+        return /<!doctype\s+html|<html[\s>]|<head[\s>]|<body[\s>]|<div[\s>]|<section[\s>]|<main[\s>]|<article[\s>]|<style[\s>]|<script[\s>]|<[a-z][\w:-]*(\s|>)/i.test(source);
+    },
+
+    resolveInlineHtmlSource(sub = {}) {
+        const contentMode = String(sub?.content_mode || sub?.contentMode || '').trim().toLowerCase();
+        const contentType = String(sub?.content_type || '').trim().toLowerCase();
+        const fileType = String(sub?.file_type || sub?.mime_type || '').trim().toLowerCase();
         const extension = this.getSubmissionFileExtension(sub);
-        const hasInlineHtml = fileType === 'text/html' && String(sub.content_text || '').trim() !== '';
-        const isHtmlLikeFile = fileType === 'text/html'
+        const shouldPreferInlineHtml = contentMode === 'code'
+            || contentMode === 'paste'
+            || contentMode === 'inline'
+            || fileType === 'text/html'
             || fileType === 'application/xhtml+xml'
             || extension === 'html'
-            || extension === 'htm';
+            || extension === 'htm'
+            || contentType === 'project';
 
-        if (!hasInlineHtml && !isHtmlLikeFile) {
-            return false;
+        for (const candidate of this.getInlineHtmlCandidateEntries(sub)) {
+            const html = String(candidate.value || '').trim();
+            if (!html) continue;
+
+            if (this.looksLikeHtmlMarkup(html) || shouldPreferInlineHtml) {
+                return {
+                    html,
+                    field: candidate.field
+                };
+            }
         }
 
-        return this.isLivePreviewSupported(sub);
+        return {
+            html: '',
+            field: ''
+        };
+    },
+
+    sanitizeSubmissionStorageSegment(value = '') {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9._-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 80);
+    },
+
+    deriveR2PublicBaseUrl(sub = {}) {
+        const fileUrl = String(sub?.file_url || '').trim();
+        const filePath = String(sub?.file_path || '').trim().replace(/^\/+/, '');
+
+        if (!fileUrl || !filePath || !/^https?:\/\//i.test(fileUrl)) {
+            return '';
+        }
+
+        try {
+            const parsedUrl = new URL(fileUrl, window.location.href);
+            const decodedPathname = decodeURIComponent(parsedUrl.pathname || '');
+            const normalizedFilePath = `/${filePath}`;
+
+            if (decodedPathname.endsWith(normalizedFilePath)) {
+                const basePathname = decodedPathname
+                    .slice(0, decodedPathname.length - normalizedFilePath.length)
+                    .replace(/\/+$/, '');
+                return `${parsedUrl.origin}${basePathname}`;
+            }
+
+            const withoutQuery = fileUrl.replace(/[?#].*$/, '');
+            if (withoutQuery.endsWith(filePath)) {
+                return withoutQuery.slice(0, withoutQuery.length - filePath.length).replace(/\/+$/, '');
+            }
+        } catch (_) {
+            // Fall back to empty string when the stored file URL cannot be parsed safely.
+        }
+
+        return '';
+    },
+
+    buildSubmissionObjectPublicUrl(sub = {}, objectKey = '') {
+        const normalizedObjectKey = String(objectKey || '').trim().replace(/^\/+/, '');
+        if (!normalizedObjectKey) return '';
+        if (/^https?:\/\//i.test(normalizedObjectKey)) return normalizedObjectKey;
+
+        const publicBaseUrl = this.deriveR2PublicBaseUrl(sub);
+        if (!publicBaseUrl) return '';
+
+        return `${publicBaseUrl}/${normalizedObjectKey}`;
+    },
+
+    getSubmissionZipWebsiteState(sub = {}) {
+        const fileType = String(sub?.file_type || sub?.mime_type || '').trim().toLowerCase();
+        if (!fileType.includes('zip') || !sub?.id || !sub?.author_id) {
+            return {};
+        }
+
+        const safeAuthorId = this.sanitizeSubmissionStorageSegment(sub.author_id);
+        const safeSubmissionId = this.sanitizeSubmissionStorageSegment(sub.id);
+        if (!safeAuthorId || !safeSubmissionId) {
+            return {};
+        }
+
+        const extracted_root_path = `web-projects/${safeAuthorId}/${safeSubmissionId}`;
+        const index_path = 'index.html';
+        const entry_file_path = `${extracted_root_path}/${index_path}`;
+        const preview_url = this.buildSubmissionObjectPublicUrl(sub, entry_file_path) || '';
+
+        return {
+            zip_storage_path: sub.file_path || '',
+            extracted_root_path,
+            entry_file_path,
+            preview_url,
+            index_path
+        };
+    },
+
+    resolveRenderableWebsiteTarget(sub = {}) {
+        const contentType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const contentMode = String(sub.content_mode || '').trim().toLowerCase();
+        const extension = this.getSubmissionFileExtension(sub);
+        const inlineHtmlSource = this.resolveInlineHtmlSource(sub);
+        const zipWebsiteState = this.getSubmissionZipWebsiteState(sub);
+        const resolvedHtml = inlineHtmlSource.html;
+        const hasInlineHtml = resolvedHtml !== '';
+        const explicitCandidates = [
+            zipWebsiteState.preview_url,
+            sub.preview_url,
+            sub.project_url,
+            sub.html_url,
+            sub.website_url,
+            sub.public_url,
+            sub.file_url,
+            sub.file_path
+        ].map((value) => String(value || '').trim()).filter(Boolean);
+        const candidateIndexPath = String(
+            zipWebsiteState.index_path
+            || zipWebsiteState.indexPath
+            ||
+            sub.index_path
+            || sub.indexPath
+            || sub.website_index_path
+            || sub.websiteIndexPath
+            || sub.project_index_path
+            || sub.projectIndexPath
+            || ''
+        ).trim();
+        const acceptedGenericExtensions = new Set(['', 'html', 'htm']);
+        const blockedExtensions = new Set(['pdf', 'ppt', 'pptx', 'doc', 'docx', 'mp3', 'wav', 'ogg', 'png', 'jpg', 'jpeg', 'gif', 'webp']);
+        const isDocumentLike = this.isPdfSubmission(sub) || this.isPowerPointSubmission(sub);
+
+        if (hasInlineHtml) {
+            return {
+                mode: 'srcdoc',
+                url: null,
+                sourceField: inlineHtmlSource.field || 'content_text',
+                basePath: '',
+                indexPath: '',
+                fallbackReason: '',
+                inlineHtml: resolvedHtml
+            };
+        }
+
+        if (isDocumentLike) {
+            const fallbackReason = 'Submission is handled by a dedicated document viewer.';
+            return {
+                mode: '',
+                url: null,
+                sourceField: '',
+                basePath: '',
+                indexPath: '',
+                fallbackReason,
+                inlineHtml: ''
+            };
+        }
+
+        for (const candidate of explicitCandidates) {
+            const resolvedCandidate = this.resolveMediaUrl(candidate) || candidate;
+            if (!resolvedCandidate) continue;
+
+            try {
+                const url = new URL(resolvedCandidate, window.location.href);
+                const candidateExtension = (url.pathname.match(/\.([a-z0-9]+)(?:$|\?|#)/i)?.[1] || '').toLowerCase();
+                const isProbablyWebsite = acceptedGenericExtensions.has(candidateExtension)
+                    || contentType === 'text/html'
+                    || contentType === 'application/xhtml+xml'
+                    || candidate === sub.preview_url
+                    || candidate === sub.project_url
+                    || candidate === sub.html_url
+                    || candidateIndexPath !== '';
+
+                if (!isProbablyWebsite || blockedExtensions.has(candidateExtension)) {
+                    continue;
+                }
+
+                let finalUrl = url.toString();
+                let indexPath = url.pathname || '';
+                let basePath = url.pathname.replace(/[^/]*$/, '');
+
+                if (candidateIndexPath) {
+                    finalUrl = new URL(candidateIndexPath.replace(/^\/+/, ''), `${url.origin}${basePath}`).toString();
+                    const finalParsed = new URL(finalUrl, window.location.href);
+                    indexPath = candidateIndexPath;
+                    basePath = finalParsed.pathname.replace(/[^/]*$/, '');
+                }
+
+                return {
+                    mode: 'url',
+                    url: finalUrl,
+                    sourceField: candidate,
+                    basePath,
+                    indexPath,
+                    fallbackReason: '',
+                    inlineHtml: ''
+                };
+            } catch (_) {
+                // Keep trying legacy/current candidates.
+            }
+        }
+
+        const fallbackReason = explicitCandidates.length
+            ? 'No valid preview URL or index.html target could be resolved from submission fields.'
+            : 'No legacy or current website preview fields were present on the submission.';
+        return {
+            mode: '',
+            url: null,
+            sourceField: '',
+            basePath: '',
+            indexPath: '',
+            fallbackReason,
+            inlineHtml: ''
+        };
+    },
+
+    resolveHtmlPreviewEntry(sub = {}) {
+        const contentType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const extension = this.getSubmissionFileExtension(sub);
+        const resolvedTarget = this.resolveRenderableWebsiteTarget(sub);
+        const hasInlineHtml = resolvedTarget.mode === 'srcdoc';
+        const isHtmlLikeFile = hasInlineHtml
+            || contentType === 'text/html'
+            || contentType === 'application/xhtml+xml'
+            || extension === 'html'
+            || extension === 'htm'
+            || !!resolvedTarget.url;
+        const isZipWebsite = contentType.includes('zip') || extension === 'zip' || !!resolvedTarget.indexPath;
+        let previewUrl = null;
+        let indexPath = '';
+        let basePath = '';
+        let iframeSrc = '';
+        let fallbackReason = resolvedTarget.fallbackReason || '';
+        let mode = '';
+
+        if (hasInlineHtml) {
+            mode = 'srcdoc';
+            fallbackReason = '';
+        } else if (resolvedTarget.mode === 'url' && resolvedTarget.url) {
+            previewUrl = resolvedTarget.url;
+            iframeSrc = resolvedTarget.url;
+            indexPath = resolvedTarget.indexPath || '';
+            basePath = resolvedTarget.basePath || '';
+            mode = 'url';
+            fallbackReason = '';
+        }
+
+        return {
+            contentType,
+            previewUrl,
+            indexPath,
+            basePath,
+            iframeSrc,
+            fallbackReason,
+            mode,
+            hasInlineHtml,
+            inlineHtml: resolvedTarget.inlineHtml || '',
+            isHtmlLikeFile,
+            isZipWebsite
+        };
+    },
+
+    isInteractiveWebCard(sub = {}) {
+        if (!sub || typeof sub !== 'object') return false;
+        if (this.isAudioSubmission(sub) || this.isImageSubmission(sub)) return false;
+        if (this.isPdfSubmission(sub) || this.isPowerPointSubmission(sub)) return false;
+
+        const preview = this.resolveHtmlPreviewEntry(sub);
+        return preview.mode === 'srcdoc' || (preview.mode === 'url' && !!preview.iframeSrc);
+    },
+
+    isExploreImmersiveCard(sub = {}) {
+        if (!sub || typeof sub !== 'object') return false;
+        const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
+        if (this.isAudioSubmission(sub) || this.isImageSubmission(sub)) return false;
+        if (normalizedCategory === 'presentations') return false;
+
+        const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
+        if (this.isPowerPointSubmission(sub)) return false;
+
+        return true;
     },
 
     getLivePreviewDescriptor(sub = {}) {
         if (!sub || typeof sub !== 'object') return null;
 
-        const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
-        const extension = this.getSubmissionFileExtension(sub);
-        const hasInlineHtml = fileType === 'text/html' && String(sub.content_text || '').trim() !== '';
-        const sourceUrl = this.getLivePreviewSource(sub);
-        const isHtmlFile = fileType === 'text/html'
-            || fileType === 'application/xhtml+xml'
-            || extension === 'html'
-            || extension === 'htm';
+        const preview = this.resolveHtmlPreviewEntry(sub);
 
-        if (!hasInlineHtml && !isHtmlFile) {
-            return null;
-        }
-
-        if (hasInlineHtml) {
+        if (preview.mode === 'srcdoc') {
             return {
                 mode: 'srcdoc',
-                srcdoc: this.wrapCodeForPreview(sub.content_text),
+                srcdoc: this.wrapCodeForPreview(preview.inlineHtml || this.resolveInlineHtmlSource(sub).html),
                 title: sub.title || 'Live Preview',
-                sourceUrl,
+                sourceUrl: preview.previewUrl || preview.iframeSrc || '',
                 fallbackMessage: 'This web preview could not be rendered inline right now.'
             };
         }
 
-        if (!sourceUrl) {
+        if (preview.mode !== 'url' || !preview.iframeSrc) {
             return null;
         }
 
         return {
             mode: 'url',
-            src: sourceUrl,
+            src: preview.iframeSrc,
             title: sub.title || 'Live Preview',
-            sourceUrl,
+            sourceUrl: preview.previewUrl || preview.iframeSrc,
             fallbackMessage: 'This website could not be loaded inside the live preview viewer.'
         };
     },
@@ -773,6 +1124,172 @@ export const UI = {
         this._cardSubmissionRegistry.set(String(sub.id), sub);
     },
 
+    getSubmissionPrimaryTimestamp(sub = {}) {
+        return sub.created_at || sub.updated_at || null;
+    },
+
+    formatRelativeTime(timestamp) {
+        if (!timestamp) return 'Just now';
+
+        const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+        if (Number.isNaN(date.getTime())) {
+            return 'Just now';
+        }
+
+        const diffMs = Date.now() - date.getTime();
+        const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
+
+        if (diffSeconds < 60) return 'Just now';
+
+        const intervals = [
+            { limit: 60, unit: 'minute', seconds: 60 },
+            { limit: 24, unit: 'hour', seconds: 3600 },
+            { limit: 7, unit: 'day', seconds: 86400 },
+            { limit: 4.35, unit: 'week', seconds: 604800 },
+            { limit: 12, unit: 'month', seconds: 2629800 }
+        ];
+
+        for (const interval of intervals) {
+            const value = diffSeconds / interval.seconds;
+            if (value < interval.limit) {
+                const rounded = Math.max(1, Math.floor(value));
+                return `${rounded} ${interval.unit}${rounded === 1 ? '' : 's'} ago`;
+            }
+        }
+
+        const years = Math.max(1, Math.floor(diffSeconds / 31557600));
+        return `${years} year${years === 1 ? '' : 's'} ago`;
+    },
+
+    getFeedDownloadConfig(sub = {}) {
+        const title = sub.title || 'download';
+        const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
+        const extension = this.getSubmissionFileExtension(sub);
+        const rawUrl = sub.file_url || sub.image_url || fullUrl || previewUrl || null;
+
+        if (!rawUrl) return null;
+
+        return {
+            url: rawUrl,
+            filename: this.buildDownloadFileName(title, rawUrl, extension || undefined)
+        };
+    },
+
+    renderFeedHeader(sub = {}, { categoryLabel = '', color = '#64748b' } = {}) {
+        const authorName = sub.profiles?.display_name || 'Anonymous';
+        const avatarUrl = sub.profiles?.avatar_url || '';
+        const initials = authorName.charAt(0).toUpperCase();
+        const timestamp = this.formatRelativeTime(this.getSubmissionPrimaryTimestamp(sub));
+
+        return `
+            <div class="feed-card-header">
+                <div class="feed-card-author">
+                    <div class="feed-card-avatar" style="--feed-avatar-accent:${color}">
+                        ${avatarUrl
+                            ? `<img src="${avatarUrl}" alt="${authorName}" class="feed-card-avatar-img">`
+                            : `<span class="feed-card-avatar-fallback">${initials}</span>`}
+                    </div>
+                    <div class="feed-card-author-copy">
+                        <div class="feed-card-author-line">
+                            <span class="feed-card-author-name">${authorName}</span>
+                        </div>
+                        <div class="feed-card-meta-line">
+                            <span class="feed-card-time">${timestamp}</span>
+                            <span class="feed-card-meta-dot">•</span>
+                            <span class="feed-card-type">${categoryLabel}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    formatExploreCardTitle(title = '') {
+        const rawTitle = String(title || '').replace(/\s+/g, ' ').trim();
+        if (!rawTitle) return 'Untitled';
+
+        const lowerCased = rawTitle.toLocaleLowerCase();
+        let shouldUppercaseNext = true;
+
+        return Array.from(lowerCased).map((char) => {
+            if (shouldUppercaseNext && /\p{L}/u.test(char)) {
+                shouldUppercaseNext = false;
+                return char.toLocaleUpperCase();
+            }
+
+            if (/[.!?]/.test(char)) {
+                shouldUppercaseNext = true;
+            }
+
+            return char;
+        }).join('');
+    },
+
+    renderFeedActionBar(sub = {}, stats = {}, options = {}) {
+        const shareUrl = this.createWhatsAppShareUrl(sub.title || 'Shared work', sub.id);
+        const downloadConfig = options.includeDownload === false ? null : this.getFeedDownloadConfig(sub);
+        const detailLabel = options.detailLabel || 'Open';
+        const previewAction = options.previewAction || '';
+        const likeCount = Math.max(0, Number(stats.like_count) || 0);
+        const viewCount = Math.max(0, Number(stats.view_count) || 0);
+        const isLiked = !!sub._feedIsLiked;
+        const isBookmarked = !!sub._feedIsBookmarked;
+
+        return `
+            <div class="feed-action-bar">
+                <div class="feed-action-group">
+                    <button type="button"
+                            class="feed-action-pill interaction-btn btn-like ${isLiked ? 'liked' : ''}"
+                            data-id="${sub.id}"
+                            aria-label="Like post"
+                            aria-pressed="${isLiked ? 'true' : 'false'}">
+                        <span class="feed-action-icon">❤</span>
+                        <span class="feed-action-label">Like</span>
+                        <span class="like-count">${likeCount}</span>
+                    </button>
+                    <a href="${shareUrl}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="feed-action-pill btn-share"
+                       aria-label="Share on WhatsApp">
+                        <span class="feed-action-icon">WA</span>
+                        <span class="feed-action-label">Share</span>
+                    </a>
+                    <button type="button"
+                            class="feed-action-pill interaction-btn btn-save ${isBookmarked ? 'bookmarked' : ''}"
+                            data-id="${sub.id}"
+                            aria-label="Bookmark post"
+                            aria-pressed="${isBookmarked ? 'true' : 'false'}">
+                        <span class="feed-action-icon">🔖</span>
+                        <span class="feed-action-label">Save</span>
+                    </button>
+                    ${downloadConfig ? `
+                        <a href="${downloadConfig.url}"
+                           class="feed-action-pill btn-download"
+                           data-download-url="${downloadConfig.url}"
+                           data-filename="${downloadConfig.filename}"
+                           aria-label="Download">
+                            <span class="feed-action-icon">↓</span>
+                            <span class="feed-action-label">Download</span>
+                        </a>
+                    ` : ''}
+                </div>
+                <div class="feed-action-secondary">
+                    <span class="feed-action-stat">
+                        <span class="feed-action-stat-icon">★</span>
+                        <span>${this.formatAverageRating(stats)}</span>
+                    </span>
+                    <span class="feed-action-stat">
+                        <span class="feed-action-stat-icon">👁</span>
+                        <span>${viewCount}</span>
+                    </span>
+                    ${previewAction}
+                    <a href="#detail/${sub.id}" class="feed-action-link" data-link="detail/${sub.id}">${detailLabel}</a>
+                </div>
+            </div>
+        `;
+    },
+
     getRegisteredSubmissionCardState(submissionId) {
         if (!submissionId) return null;
         return this._cardSubmissionRegistry.get(String(submissionId)) || null;
@@ -782,7 +1299,7 @@ export const UI = {
         const list = Array.isArray(submissions) ? submissions.filter(Boolean) : [];
         list.forEach((submission) => this.registerSubmissionCardState(submission));
 
-        const interactiveItems = list.filter((submission) => this.isInteractiveWebCard(submission));
+        const interactiveItems = list.filter((submission) => this.isExploreImmersiveCard(submission));
         if (!interactiveItems.length) return;
 
         const { data: { session } } = await supabase.auth.getSession();
@@ -796,6 +1313,33 @@ export const UI = {
             submission._interactiveWebBookmarked = !!interaction.bookmarked;
             submission._interactiveWebUserRating = Number(interaction.userRating) || null;
         });
+    },
+
+    async ensureSubmissionCardDetail(submissionId) {
+        const submission = this.getRegisteredSubmissionCardState(submissionId);
+        if (!submission) return null;
+
+        if (submission._fullSubmissionLoaded) {
+            return submission;
+        }
+
+        if (!submission._fullSubmissionPromise) {
+            submission._fullSubmissionPromise = API.getSubmissionById(submissionId)
+                .then(({ data, error }) => {
+                    if (error || !data) {
+                        throw error || new Error('Submission not found.');
+                    }
+
+                    Object.assign(submission, data);
+                    submission._fullSubmissionLoaded = true;
+                    return submission;
+                })
+                .finally(() => {
+                    submission._fullSubmissionPromise = null;
+                });
+        }
+
+        return submission._fullSubmissionPromise;
     },
 
     registerLivePreview(sub = {}, options = {}) {
@@ -1154,12 +1698,51 @@ export const UI = {
 </html>`;
     },
 
+    getTrustedInlineHtmlSandbox() {
+        // Keep inline previews script-capable but isolated from the parent app.
+        return 'allow-scripts';
+    },
+
+    registerInlinePreviewDocument(srcdoc = '') {
+        const token = `inline-preview-${++this._inlinePreviewCounter}`;
+        this._inlinePreviewDocuments.set(token, String(srcdoc || ''));
+        return token;
+    },
+
+    renderInlinePreviewIframe({
+        className = '',
+        title = 'Content preview',
+        sandbox = '',
+        srcdoc = ''
+    } = {}) {
+        const token = this.registerInlinePreviewDocument(srcdoc);
+        return `<iframe class="${className}" sandbox="${sandbox}" title="${title}" data-inline-preview-token="${token}"></iframe>`;
+    },
+
+    hydrateInlinePreviewFrames(root = document) {
+        if (!root?.querySelectorAll) return;
+
+        root.querySelectorAll('iframe[data-inline-preview-token]').forEach((frame) => {
+            const token = frame.dataset.inlinePreviewToken;
+            if (!token || frame.dataset.inlinePreviewHydrated === 'true') return;
+
+            const srcdoc = this._inlinePreviewDocuments.get(token);
+            if (typeof srcdoc !== 'string') return;
+
+            frame.srcdoc = srcdoc;
+            frame.dataset.inlinePreviewHydrated = 'true';
+            this._inlinePreviewDocuments.delete(token);
+        });
+    },
+
     renderContentPreview(sub) {
         // High-performance display image priority
         const displayUrl = sub.image_url || sub.public_url || sub.thumbnail_url || sub.thumbnail_path;
+        const inlineHtmlSource = this.resolveInlineHtmlSource(sub);
+        const livePreview = this.getLivePreviewDescriptor(sub);
 
-        if (sub.file_type === 'text/html' && sub.content_text) {
-            const wrappedCode = this.wrapCodeForPreview(sub.content_text);
+        if (inlineHtmlSource.html) {
+            const wrappedCode = this.wrapCodeForPreview(inlineHtmlSource.html);
             return `<div class="code-preview-container" id="previewContainer">
                         <div class="preview-header">
                             <div class="preview-dots"><span></span><span></span><span></span></div>
@@ -1169,8 +1752,34 @@ export const UI = {
                                 ⛶ Fullscreen
                             </button>
                         </div>
-                        <button class="fullscreen-close-btn" id="floatingCloseBtn" title="Exit Fullscreen">✕ Cancel</button>
-                        <iframe class="code-preview-frame" sandbox="allow-scripts" srcdoc="${wrappedCode.replace(/"/g, '&quot;')}"></iframe>
+                        <button class="fullscreen-close-btn" id="floatingCloseBtn" title="Exit Fullscreen" aria-label="Exit Fullscreen">&times;</button>
+                        ${this.renderInlinePreviewIframe({
+                            className: 'code-preview-frame',
+                            sandbox: this.getTrustedInlineHtmlSandbox(),
+                            title: sub.title || 'Content preview',
+                            srcdoc: wrappedCode
+                        })}
+                    </div>`;
+        }
+        if (livePreview?.mode === 'url' && livePreview.src) {
+            return `<div class="code-preview-container" id="previewContainer">
+                        <div class="preview-header">
+                            <div class="preview-dots"><span></span><span></span><span></span></div>
+                            <div class="preview-label">LIVE WEBSITE PREVIEW</div>
+                            <button class="preview-fullscreen-btn btn-snake" id="previewFullscreenBtn" title="Toggle Fullscreen Mode">
+                                <span></span><span></span><span></span><span></span>
+                                â›¶ Fullscreen
+                            </button>
+                        </div>
+                        <button class="fullscreen-close-btn" id="floatingCloseBtn" title="Exit Fullscreen" aria-label="Exit Fullscreen">&times;</button>
+                        <iframe
+                            class="code-preview-frame"
+                            src="${livePreview.src}"
+                            sandbox="allow-scripts allow-same-origin"
+                            loading="lazy"
+                            referrerpolicy="no-referrer"
+                            title="${livePreview.title || sub.title || 'Live website preview'}"
+                        ></iframe>
                     </div>`;
         }
         if (sub.content_text) return `<div class="text-presentation">${sub.content_text}</div>`;
@@ -1260,8 +1869,6 @@ export const UI = {
             ? customThumbnailUrl
             : this.defaultThumbnailIcons[category] || 'assets/images/default.png';
 
-        console.log('Thumbnail used:', imageSrc);
-
         const previewUrl = imageSrc || defaultThumbnailUrl;
 
         const fullUrl = uploadedImageUrl || customThumbnailUrl || defaultThumbnailUrl;
@@ -1318,6 +1925,7 @@ export const UI = {
     renderInteractiveWebCard(sub, {
         badgeHtml = '',
         thumbnailHtml = '',
+        hasPreviewMedia = false,
         categoryLabel = '',
         color = '#64748b',
         title = 'Untitled'
@@ -1326,6 +1934,7 @@ export const UI = {
         const activeRating = Number(sub._interactiveWebUserRating || Math.round(stats.avg_rating) || 0);
         const likeLabel = stats.like_count > 0 ? `${stats.like_count}` : 'Like';
         const authorName = sub.profiles?.display_name || 'Anonymous';
+        const displayTitle = this.formatExploreCardTitle(title);
         const previewAction = this.registerLivePreview(sub, {
             label: 'Open Preview',
             className: 'interactive-web-preview-button'
@@ -1343,13 +1952,13 @@ export const UI = {
         }).join('');
 
         return `
-            <article class="content-card clay-card interactive-web-card animate-fade-in" data-id="${sub.id}" data-interactive-web-card="true">
+            <article class="content-card clay-card interactive-web-card animate-fade-in ${hasPreviewMedia ? 'content-card-has-preview-media' : ''}" data-id="${sub.id}" data-interactive-web-card="true">
                 ${badgeHtml}
                 ${thumbnailHtml}
                 <div class="card-body interactive-web-card-body">
                     <span class="badge badge-category" style="--cat-color:${color}">${categoryLabel}</span>
                     <div class="interactive-web-card-copy">
-                        <h3 class="card-title interactive-web-card-title">${title}</h3>
+                        <h3 class="card-title interactive-web-card-title explore-standard-card-title">${displayTitle}</h3>
                         <p class="card-author interactive-web-card-author">By ${authorName}</p>
                     </div>
                     <div class="interactive-web-card-stats card-stats">
@@ -1405,6 +2014,94 @@ export const UI = {
         `;
     },
 
+    renderExploreImmersiveCard(sub, {
+        badgeObj = null,
+        thumbnailHtml = '',
+        hasPreviewMedia = false,
+        categoryLabel = '',
+        color = '#64748b',
+        title = 'Untitled'
+    } = {}) {
+        const stats = this.ensureSubmissionStats(sub);
+        const activeRating = Number(sub._interactiveWebUserRating || Math.round(stats.avg_rating) || 0);
+        const authorName = sub.profiles?.display_name || 'Anonymous';
+        const shareUrl = this.createWhatsAppShareUrl(title, sub.id);
+        const displayTitle = this.formatExploreCardTitle(title);
+        const ratingControls = Array.from({ length: 5 }, (_, index) => {
+            const value = index + 1;
+            return `
+                <button class="interactive-web-rate-star ${value <= activeRating ? 'is-active' : ''}"
+                        type="button"
+                        data-web-card-action="rate"
+                        data-rating="${value}"
+                        data-submission-id="${sub.id}"
+                        aria-label="Rate ${value} star${value === 1 ? '' : 's'}">&#9733;</button>
+            `;
+        }).join('');
+
+        return `
+            <article class="content-card clay-card immersive-explore-card animate-fade-in ${hasPreviewMedia ? 'content-card-has-preview-media' : ''}" data-id="${sub.id}" data-explore-immersive-card="true">
+                <div class="immersive-card-media"
+                     data-immersive-view-open="true"
+                     data-submission-id="${sub.id}"
+                     role="button"
+                     tabindex="0"
+                     aria-label="Open ${title}">
+                    ${thumbnailHtml}
+                    ${badgeObj ? `<span class="immersive-card-status-badge ${badgeObj.className || ''}">${badgeObj.text}</span>` : ''}
+                </div>
+                <div class="immersive-card-body">
+                    <span class="badge badge-category immersive-card-category" style="--cat-color:${color}">${categoryLabel}</span>
+                    <h3 class="card-title immersive-card-title explore-standard-card-title">${displayTitle}</h3>
+                    <p class="card-author immersive-card-author">By ${authorName}</p>
+                    <div class="immersive-card-stats">
+                        <span class="immersive-card-stat">
+                            <span class="immersive-card-stat-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false"><path d="m12 2.5 2.9 5.87 6.48.94-4.69 4.57 1.11 6.47L12 17.32 6.2 20.35l1.11-6.47L2.62 9.31l6.48-.94Z"></path></svg>
+                            </span>
+                            <span class="interactive-web-rating-value">${this.formatAverageRating(stats)}</span>
+                        </span>
+                        <button type="button"
+                                class="immersive-card-stat immersive-card-stat-button immersive-card-like-btn interactive-web-like ${sub._interactiveWebLiked ? 'is-active' : ''}"
+                                data-web-card-action="like"
+                                data-submission-id="${sub.id}"
+                                aria-label="Like content"
+                                aria-pressed="${sub._interactiveWebLiked ? 'true' : 'false'}">
+                            <span class="immersive-card-stat-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false"><path d="m12 21-1.45-1.32C5.4 15.02 2 11.93 2 8.13 2 5.04 4.42 2.5 7.5 2.5c1.74 0 3.41.81 4.5 2.09A5.94 5.94 0 0 1 16.5 2.5C19.58 2.5 22 5.04 22 8.13c0 3.8-3.4 6.89-8.55 11.55Z"></path></svg>
+                            </span>
+                            <span class="interactive-web-like-count">${stats.like_count}</span>
+                        </button>
+                        <span class="immersive-card-stat">
+                            <span class="immersive-card-stat-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false"><path d="M1.5 12s3.8-7 10.5-7 10.5 7 10.5 7-3.8 7-10.5 7S1.5 12 1.5 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg>
+                            </span>
+                            <span class="interactive-web-view-count">${stats.view_count || 0}</span>
+                        </span>
+                        <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="immersive-card-stat immersive-card-stat-whatsapp" title="Share on WhatsApp" aria-label="Share on WhatsApp">
+                            <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.08.54 4.11 1.56 5.9L0 24l6.37-1.67a11.86 11.86 0 0 0 5.69 1.45h.01c6.55 0 11.89-5.34 11.9-11.9a11.82 11.82 0 0 0-3.45-8.4Zm-8.46 18.3h-.01a9.87 9.87 0 0 1-5.04-1.38l-.36-.22-3.78.99 1.01-3.69-.24-.38a9.82 9.82 0 0 1-1.52-5.24c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.11 1.03 6.98 2.9a9.82 9.82 0 0 1 2.89 6.99c0 5.46-4.44 9.9-9.89 9.9Zm5.42-7.4c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.29-.76.96-.94 1.16-.17.2-.35.22-.64.07-.3-.14-1.26-.46-2.39-1.47-.89-.79-1.49-1.76-1.66-2.06-.18-.29-.02-.45.13-.6.13-.14.3-.35.45-.53.15-.17.2-.29.3-.49.1-.2.05-.37-.03-.53-.07-.14-.67-1.61-.91-2.2-.24-.58-.49-.5-.67-.51h-.58c-.19 0-.5.07-.76.37-.27.29-1.03 1-1.03 2.44 0 1.44 1.05 2.83 1.2 3.03.15.2 2.07 3.16 5.02 4.43.7.31 1.25.49 1.68.63.72.23 1.38.2 1.89.12.58-.08 1.76-.72 2.01-1.41.25-.69.25-1.28.17-1.41-.07-.12-.27-.2-.56-.34Z"></path></svg>
+                        </a>
+                        <button type="button"
+                                class="immersive-card-stat immersive-card-stat-button immersive-card-bookmark-btn interactive-web-bookmark ${sub._interactiveWebBookmarked ? 'is-active' : ''}"
+                                data-web-card-action="bookmark"
+                                data-submission-id="${sub.id}"
+                                aria-label="Save content"
+                                aria-pressed="${sub._interactiveWebBookmarked ? 'true' : 'false'}">
+                            <span class="immersive-card-stat-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false"><path d="M6 4.75A1.75 1.75 0 0 1 7.75 3h8.5A1.75 1.75 0 0 1 18 4.75V21l-6-3.6L6 21V4.75Z"></path></svg>
+                            </span>
+                        </button>
+                    </div>
+                    <div class="immersive-card-rating-stars-row">
+                        <div class="interactive-web-rating-stars immersive-card-rating-stars" aria-label="Rate this content">
+                            ${ratingControls}
+                        </div>
+                    </div>
+                </div>
+            </article>
+        `;
+    },
+
     renderCard(sub, badgeObj = null) {
         this.registerSubmissionCardState(sub);
         const stats = this.ensureSubmissionStats(sub);
@@ -1413,16 +2110,15 @@ export const UI = {
         const color = this.getCategoryColor(sub.category, sub.content_type);
         const categoryLabel = this.getContentTypeLabel(sub.category, sub.content_type);
         const title = sub.title || 'Untitled';
-        const livePreviewAction = this.registerLivePreview(sub);
 
         const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
         const thumbnailUrl = previewUrl;
         const fallbackThumbnailUrl = this.getThumbnailFallbackUrl(sub);
 
         const thumbnailHtml = thumbnailUrl
-            ? `<div class="card-thumbnail-container">
+            ? `<div class="card-thumbnail-container card-thumbnail-container-preview">
                  <img src="${thumbnailUrl}" 
-                      class="card-thumbnail-img" 
+                      class="card-thumbnail-img card-thumbnail-img-preview" 
                       loading="lazy" 
                       decoding="async" 
                       alt="${title}"
@@ -1443,17 +2139,18 @@ export const UI = {
             </div>
         ` : '';
 
-        if (this.isInteractiveWebCard(sub)) {
-            return this.renderInteractiveWebCard(sub, {
-                badgeHtml,
+        if (this.isExploreImmersiveCard(sub)) {
+            return this.renderExploreImmersiveCard(sub, {
+                badgeObj,
                 thumbnailHtml,
+                hasPreviewMedia: !!thumbnailUrl,
                 categoryLabel,
                 color,
                 title
             });
         }
 
-        if (normalizedCategory === 'songs' || sub.content_type === 'audio' || sub.file_type?.startsWith('audio/')) {
+        if (this.isAudioSubmission(sub)) {
             const authorName = sub.profiles?.display_name || 'Anonymous';
             const initials = authorName.charAt(0).toUpperCase();
             const shareUrl = this.createWhatsAppShareUrl(title, sub.id);
@@ -1573,8 +2270,9 @@ export const UI = {
             `;
         }
 
-        // NEW: Image-First Feed Card for 'images' category
-        if (normalizedCategory === 'images' || sub.content_type === 'image') {
+        // Legacy image card renderer is bypassed in favor of the Explore masonry card.
+        if (this.isImageSubmission(sub)) {
+            return this.renderMasonryCard(sub);
             return `
                 <div class="content-card clay-card image-feed-card animate-fade-in" data-id="${sub.id}">
                     ${badgeHtml}
@@ -1614,7 +2312,7 @@ export const UI = {
                                 <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.888-.788-1.489-1.761-1.663-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
                             </a>
                             <a href="#detail/${sub.id}" class="btn btn-primary btn-sm btn-snake btn-round btn-wide btn-preview" data-link="detail/${sub.id}">
-                                <span></span><span></span><span></span><span></span> 💡 View Post
+                                <span></span><span></span><span></span><span></span> Open
                             </a>
                         </div>
                     </div>
@@ -1623,36 +2321,53 @@ export const UI = {
         }
 
         // Standard Document Card
+        const shareUrl = this.createWhatsAppShareUrl(sub.title, sub.id);
         return `
-            <div class="content-card clay-card animate-fade-in" data-id="${sub.id}">
+            <div class="content-card clay-card animate-fade-in ${thumbnailUrl ? 'content-card-has-preview-media' : ''}" data-id="${sub.id}">
                 ${badgeHtml}
                 ${thumbnailHtml}
                 <div class="card-body">
                     <span class="badge badge-category" style="--cat-color:${color}">${categoryLabel}</span>
                     <h3 class="card-title">${title}</h3>
                     <p class="card-author">By ${sub.profiles?.display_name || 'Anonymous'}</p>
-                    <div class="card-footer">
-                        <div class="card-stats">
-                            <span><span style="color:#fbbf24">★</span> ${this.formatAverageRating(stats)}</span>
-                            <span><span style="color:#ef4444">❤️</span> ${stats.like_count}</span>
-                            <span>👁️ ${stats.view_count || 0}</span>
-                        </div>
-                        <div style="display: flex; gap: 8px;">
-                            <a href="${this.createWhatsAppShareUrl(sub.title, sub.id)}" target="_blank" rel="noopener noreferrer" class="btn clay-btn btn-sm btn-snake btn-round btn-icon" style="background:#25D366; border-color:#25D366; color:white;" title="Share on WhatsApp">
-                                <span></span><span></span><span></span><span></span>
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="position: relative; z-index: 5;">
-                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.888-.788-1.489-1.761-1.663-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
-                                </svg>
-                            </a>
-                            ${livePreviewAction}
-                            <a href="#detail/${sub.id}" class="btn clay-btn btn-sm btn-snake btn-round btn-icon btn-preview" data-link="detail/${sub.id}" title="View Details">
-                                <span></span><span></span><span></span><span></span>
-                                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="position: relative; z-index: 5;">
+                    <div class="card-stats-row">
+                        <span class="card-stat-item"><span class="card-stat-icon" style="color:#fbbf24">★</span> ${this.formatAverageRating(stats)}</span>
+                        <span class="card-stat-item"><span class="card-stat-icon" style="color:#ef4444">♥</span> ${stats.like_count}</span>
+                        <span class="card-stat-item"><span class="card-stat-icon">👁</span> ${stats.view_count || 0}</span>
+                        <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="card-stat-item card-stat-whatsapp" title="Share on WhatsApp" aria-label="Share on WhatsApp">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.888-.788-1.489-1.761-1.663-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
+                            </svg>
+                        </a>
+                    </div>
+                    <div class="card-action-row">
+                        <button type="button"
+                                class="card-action-pill card-action-pill-like interactive-web-like ${sub._feedIsLiked ? 'is-active' : ''}"
+                                data-web-card-action="like"
+                                data-submission-id="${sub.id}"
+                                aria-label="Like"
+                                aria-pressed="${sub._feedIsLiked ? 'true' : 'false'}">
+                            <span class="card-action-pill-icon">♥</span>
+                            <span class="card-action-pill-label">Like</span>
+                        </button>
+                        <button type="button"
+                                class="card-action-pill card-action-pill-save interactive-web-bookmark ${sub._feedIsBookmarked ? 'is-active' : ''}"
+                                data-web-card-action="bookmark"
+                                data-submission-id="${sub.id}"
+                                aria-label="Save"
+                                aria-pressed="${sub._feedIsBookmarked ? 'true' : 'false'}">
+                            <span class="card-action-pill-icon">🔖</span>
+                            <span class="card-action-pill-label">Save</span>
+                        </button>
+                        <a href="#detail/${sub.id}" class="card-action-pill card-action-pill-view" data-link="detail/${sub.id}" aria-label="View Details">
+                            <span class="card-action-pill-icon">
+                                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                                     <circle cx="12" cy="12" r="3"></circle>
                                 </svg>
-                            </a>
-                        </div>
+                            </span>
+                            <span class="card-action-pill-label">View</span>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -1669,6 +2384,7 @@ export const UI = {
         const initials = (sub.profiles?.display_name || 'U').charAt(0).toUpperCase();
         const imageUrl = fullUrl || thumbUrl || fallbackThumbnailUrl;
         const shareUrl = this.createWhatsAppShareUrl(sub.title, sub.id);
+        const isLiked = !!(sub._feedIsLiked ?? stats.user_has_liked);
 
         return `
             <div class="masonry-item animate-fade-in" data-id="${sub.id}" data-full-url="${fullUrl || ''}" data-preview-url="${thumbUrl || ''}">
@@ -1684,32 +2400,122 @@ export const UI = {
                             </div>
                         </div>
                     </div>
-                    <div class="masonry-image-wrapper">
-                        <img src="${imageUrl}" class="masonry-img" loading="lazy" decoding="async" alt="${sub.title}" onerror="this.src='${fallbackThumbnailUrl}'">
+                    <div class="masonry-image-wrapper"
+                         data-image-full-view="true"
+                         aria-label="Open image in full view">
+                        <img src="${imageUrl}" class="masonry-img" data-image-full-view="true" loading="lazy" decoding="async" alt="${sub.title}" onerror="this.src='${fallbackThumbnailUrl}'">
                         <div class="masonry-overlay"></div>
                     </div>
-                    <div class="masonry-actions-row">
-                        <div class="action-mini btn-like interaction-btn ${stats.user_has_liked ? 'liked' : ''}" data-id="${sub.id}" title="Like">
+                    <div class="masonry-actions-row masonry-actions-row-compact" aria-label="Image actions">
+                        <button type="button"
+                                class="action-mini action-mini-icon-only btn-like interaction-btn ${isLiked ? 'liked' : ''}"
+                                data-id="${sub.id}"
+                                title="Like"
+                                aria-label="Like image"
+                                aria-pressed="${isLiked ? 'true' : 'false'}">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                            <span class="action-label">Like</span>
-                            <span class="like-count">${stats.like_count || 0}</span>
-                        </div>
-                        <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="action-mini btn-share" title="Share on WhatsApp" aria-label="Share on WhatsApp">
+                        </button>
+                        <a href="${shareUrl}"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="action-mini action-mini-icon-only btn-share"
+                           title="Share on WhatsApp"
+                           aria-label="Share on WhatsApp">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.08.54 4.11 1.56 5.9L0 24l6.37-1.67a11.86 11.86 0 0 0 5.69 1.45h.01c6.55 0 11.89-5.34 11.9-11.9a11.82 11.82 0 0 0-3.45-8.4Zm-8.46 18.3h-.01a9.87 9.87 0 0 1-5.04-1.38l-.36-.22-3.78.99 1.01-3.69-.24-.38a9.82 9.82 0 0 1-1.52-5.24c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.11 1.03 6.98 2.9a9.82 9.82 0 0 1 2.89 6.99c0 5.46-4.44 9.9-9.89 9.9Zm5.42-7.4c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.29-.76.96-.94 1.16-.17.2-.35.22-.64.07-.3-.14-1.26-.46-2.39-1.47-.89-.79-1.49-1.76-1.66-2.06-.18-.29-.02-.45.13-.6.13-.14.3-.35.45-.53.15-.17.2-.29.3-.49.1-.2.05-.37-.03-.53-.07-.14-.67-1.61-.91-2.2-.24-.58-.49-.5-.67-.51h-.58c-.19 0-.5.07-.76.37-.27.29-1.03 1-1.03 2.44 0 1.44 1.05 2.83 1.2 3.03.15.2 2.07 3.16 5.02 4.43.7.31 1.25.49 1.68.63.72.23 1.38.2 1.89.12.58-.08 1.76-.72 2.01-1.41.25-.69.25-1.28.17-1.41-.07-.12-.27-.2-.56-.34Z"></path></svg>
-                            <span class="action-label">Share</span>
                         </a>
-                        <div class="action-mini btn-save interaction-btn ${stats.user_has_bookmarked ? 'bookmarked' : ''}" data-id="${sub.id}" title="Bookmark">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-                            <span class="action-label">Bookmark</span>
-                        </div>
-                        <a href="${imageUrl}" class="action-mini btn-download" target="_blank" rel="noopener noreferrer" download data-filename="${this.buildDownloadFileName(sub.title, imageUrl)}" title="Download image">
+                        <a href="${imageUrl}"
+                           class="action-mini action-mini-icon-only btn-download"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           download
+                           data-filename="${this.buildDownloadFileName(sub.title, imageUrl)}"
+                           title="Download image"
+                           aria-label="Download image">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
-                            <span class="action-label">Download</span>
                         </a>
                     </div>
                 </div>
             </div>
         `;
+    },
+
+    setupMasonryCardInteractions(gridEl, { getUserId = null } = {}) {
+        if (!gridEl || gridEl.dataset.masonryInteractionsBound === 'true') return;
+
+        const resolveUserId = typeof getUserId === 'function'
+            ? getUserId
+            : () => null;
+
+        gridEl.addEventListener('click', async (event) => {
+            const btn = event.target.closest('.interaction-btn');
+            const downloadBtn = event.target.closest('.btn-download');
+            const shareBtn = event.target.closest('.btn-share');
+
+            if (downloadBtn) {
+                event.preventDefault();
+                event.stopPropagation();
+                await this.downloadFile(downloadBtn.href, downloadBtn.dataset.filename || 'image');
+                return;
+            }
+
+            if (shareBtn) {
+                event.stopPropagation();
+                return;
+            }
+
+            if (btn) {
+                event.stopPropagation();
+                const userId = resolveUserId();
+                if (!userId) {
+                    this.showToast('Please login to interact', 'error');
+                    return;
+                }
+
+                const subId = btn.dataset.id;
+                if (!subId) return;
+
+                if (btn.classList.contains('btn-like')) {
+                    const { action, error } = await API.toggleLike(subId, userId);
+                    if (error) {
+                        this.showToast(error.message || 'Could not update like.', 'error');
+                        return;
+                    }
+
+                    const isLiked = action === 'liked';
+                    gridEl.querySelectorAll(`.btn-like[data-id="${subId}"]`).forEach((element) => {
+                        element.classList.toggle('liked', isLiked);
+                        element.setAttribute('aria-pressed', String(isLiked));
+                        const countSpan = element.querySelector('.like-count');
+                        if (countSpan) {
+                            const currentCount = parseInt(countSpan.textContent || '0', 10) || 0;
+                            countSpan.textContent = String(Math.max(0, currentCount + (isLiked ? 1 : -1)));
+                        }
+                    });
+                    this.showToast(isLiked ? 'Liked!' : 'Unliked');
+                    if (isLiked) {
+                        this.triggerBadgeEvaluation({
+                            userId,
+                            reason: 'like-success'
+                        });
+                    }
+                    return;
+                }
+
+                return;
+            }
+
+            const imgWrapper = event.target.closest('[data-image-full-view="true"]');
+            const card = event.target.closest('.masonry-item');
+            if (imgWrapper && card) {
+                const fullUrl = card.dataset.fullUrl || card.dataset.previewUrl;
+                const title = imgWrapper.querySelector('.masonry-img')?.alt || 'Image';
+                if (fullUrl) {
+                    this.showImageLightbox(fullUrl, title);
+                }
+            }
+        });
+
+        gridEl.dataset.masonryInteractionsBound = 'true';
     },
 
     buildDownloadFileName(title = 'image', sourceUrl = '', fallbackExt = 'jpg') {
@@ -1787,7 +2593,7 @@ export const UI = {
                             </button>
                         </div>
                     </div>
-                    <div class="lightbox-stage">
+                    <div class="lightbox-stage" tabindex="0" aria-label="Scrollable image viewer">
                         <div class="lightbox-img-container">
                             <img src="${imageUrl}" class="lightbox-img" alt="${title}" loading="eager" decoding="sync" fetchpriority="high">
                         </div>
@@ -1798,13 +2604,22 @@ export const UI = {
 
         document.body.appendChild(overlay);
         document.body.classList.add('body-no-scroll');
+        document.documentElement.classList.add('body-no-scroll');
+        document.body.style.overflow = 'hidden';
 
         const image = overlay.querySelector('.lightbox-img');
         const imageContainer = overlay.querySelector('.lightbox-img-container');
+        const lightboxStage = overlay.querySelector('.lightbox-stage');
         const zoomOutBtn = overlay.querySelector('[data-action="zoom-out"]');
         const zoomResetBtn = overlay.querySelector('[data-action="zoom-reset"]');
         const zoomInBtn = overlay.querySelector('[data-action="zoom-in"]');
         const downloadBtn = overlay.querySelector('[data-action="download"]');
+
+        if (lightboxStage) {
+            lightboxStage.scrollTop = 0;
+            lightboxStage.scrollLeft = 0;
+        }
+        lightboxStage?.focus?.({ preventScroll: true });
 
         let scale = 1;
         let translateX = 0;
@@ -1874,6 +2689,8 @@ export const UI = {
             setTimeout(() => {
                 overlay.remove();
                 document.body.classList.remove('body-no-scroll');
+                document.documentElement.classList.remove('body-no-scroll');
+                document.body.style.overflow = '';
             }, 300);
         };
 
@@ -1892,6 +2709,7 @@ export const UI = {
         };
 
         imageContainer.addEventListener('wheel', (event) => {
+            if (!event.ctrlKey && !event.metaKey) return;
             event.preventDefault();
             const delta = event.deltaY < 0 ? 0.2 : -0.2;
             setScale(scale + delta);
@@ -1920,6 +2738,10 @@ export const UI = {
             scale = 1;
             translateX = 0;
             translateY = 0;
+            if (lightboxStage) {
+                lightboxStage.scrollTop = 0;
+                lightboxStage.scrollLeft = 0;
+            }
             applyTransform();
         }, { once: true });
 
@@ -1960,20 +2782,727 @@ export const UI = {
         }, 3000);
     },
 
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char]));
+    },
+
+    renderBadgePanel(panelState = null) {
+        const resolvedState = panelState || BadgeEngine.getFallbackPanelState();
+        const dedupedCards = [];
+        const seenKeys = new Set();
+
+        [...(resolvedState.allBadges || [])].forEach((badge) => {
+            if (!badge?.key || seenKeys.has(badge.key)) {
+                if ((window?.location?.hostname === 'localhost' || window?.location?.hostname === '127.0.0.1') && badge?.key) {
+                    console.warn('[UI] Duplicate badge card filtered before render:', badge.key);
+                }
+                return;
+            }
+            seenKeys.add(badge.key);
+            dedupedCards.push(badge);
+        });
+
+        const unlockedCount = Number(resolvedState.totalUnlocked || 0);
+        const totalCount = dedupedCards.length || 16;
+        const currentBadge = resolvedState.currentBadge || null;
+
+        return `
+            <div class="sd-badges-panel-inner">
+                <div class="sd-badges-header">
+                    <div>
+                        <h3 class="sd-badges-title">My Badges</h3>
+                        <p class="sd-badges-subtitle">Tap any unlocked badge to equip it.</p>
+                    </div>
+                    <span class="sd-badges-count">${unlockedCount}/${totalCount} unlocked</span>
+                </div>
+                <div class="sd-badges-current-bar ${currentBadge ? 'has-badge' : 'is-empty'}">
+                    <span class="sd-badges-current-kicker">Current</span>
+                    <span class="sd-badges-current-value">
+                        ${currentBadge
+            ? `<span class="sd-badges-current-icon" aria-hidden="true">${this.escapeHtml(currentBadge.icon)}</span><span class="sd-badges-current-name">${this.escapeHtml(currentBadge.name)}</span>`
+            : '<span class="sd-badges-current-name">No badge equipped</span>'}
+                    </span>
+                    ${currentBadge ? '<button type="button" class="sd-badge-clear" data-badge-clear="true" aria-label="Clear equipped badge">Clear</button>' : ''}
+                </div>
+                <div class="sd-badge-grid">
+                    ${dedupedCards.map((card) => this.renderBadgeCard(card)).join('')}
+                </div>
+            </div>
+        `;
+    },
+
+    renderBadgeCard(badge) {
+        const badgeName = this.escapeHtml(badge.name);
+        const badgeDescription = this.escapeHtml(badge.description);
+        const icon = this.escapeHtml(badge.icon);
+        const classes = [
+            'sd-badge-card',
+            badge.unlocked ? 'is-unlocked' : 'is-locked',
+            badge.equipped ? 'is-equipped' : '',
+            badge.key === 'edtechra_legend' ? 'is-legendary' : ''
+        ].filter(Boolean).join(' ');
+
+        if (badge.unlocked) {
+            return `
+                <button
+                    type="button"
+                    class="${classes}"
+                    data-badge-equip="${this.escapeHtml(badge.key)}"
+                    title="${badgeDescription}"
+                    aria-pressed="${badge.equipped ? 'true' : 'false'}"
+                >
+                    <span class="sd-badge-icon" aria-hidden="true">${icon}</span>
+                    <span class="sd-badge-name">${badgeName}</span>
+                    <span class="sd-badge-status">${badge.equipped ? 'Equipped' : 'Equip'}</span>
+                </button>
+            `;
+        }
+
+        return `
+            <div class="${classes}" title="${badgeDescription}" aria-label="Locked badge: ${badgeName}">
+                <span class="sd-badge-icon" aria-hidden="true">${icon}</span>
+                <span class="sd-badge-name">${badgeName}</span>
+                <span class="sd-badge-status">Locked</span>
+            </div>
+        `;
+    },
+
+    async triggerBadgeEvaluation({ userId, reason = 'dashboard-load', creatorRankings = null, awaitPopups = false } = {}) {
+        if (!userId) {
+            return {
+                panelState: BadgeEngine.getFallbackPanelState(),
+                newlyUnlockedBadges: []
+            };
+        }
+
+        try {
+            const result = await BadgeEngine.evaluateAndSyncBadges({ userId, creatorRankings, reason });
+            if (result?.newlyUnlockedBadges?.length) {
+                const presentation = this.presentUnlockedBadges(result.newlyUnlockedBadges);
+                if (awaitPopups) {
+                    await presentation;
+                }
+            }
+            return result;
+        } catch (error) {
+            console.warn('[Badge] Evaluation failed:', error);
+            return {
+                panelState: BadgeEngine.getFallbackPanelState(),
+                newlyUnlockedBadges: []
+            };
+        }
+    },
+
+    _ensureBadgeCelebrationStyles() {
+        if (document.getElementById('badge-unlock-celebration-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'badge-unlock-celebration-styles';
+        style.textContent = `
+            .badge-unlock-overlay {
+                position: fixed;
+                inset: 0;
+                z-index: 2600;
+                display: grid;
+                place-items: center;
+                padding: 20px;
+                pointer-events: none;
+            }
+
+            .badge-unlock-card {
+                position: relative;
+                width: min(100%, 340px);
+                padding: 26px 22px 22px;
+                border-radius: 28px;
+                overflow: hidden;
+                text-align: center;
+                color: #102418;
+                background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 250, 255, 0.96));
+                border: 1px solid rgba(120, 119, 255, 0.16);
+                box-shadow: 0 34px 90px rgba(15, 23, 42, 0.2);
+                animation: badge-unlock-pop 2200ms ease forwards;
+            }
+
+            .badge-unlock-glow {
+                position: absolute;
+                inset: auto 50% -46%;
+                width: 220px;
+                height: 220px;
+                transform: translateX(-50%);
+                border-radius: 999px;
+                background: radial-gradient(circle, rgba(99, 102, 241, 0.28), rgba(255, 255, 255, 0));
+                filter: blur(6px);
+            }
+
+            .badge-unlock-icon-wrap {
+                position: relative;
+                width: 92px;
+                height: 92px;
+                margin: 0 auto 16px;
+                border-radius: 999px;
+                display: grid;
+                place-items: center;
+                background: linear-gradient(135deg, #eef4ff 0%, #fff8e7 100%);
+                box-shadow: 0 18px 44px rgba(99, 102, 241, 0.18);
+            }
+
+            .badge-unlock-icon-wrap::before {
+                content: '';
+                position: absolute;
+                inset: -8px;
+                border-radius: inherit;
+                border: 1px solid rgba(99, 102, 241, 0.18);
+                animation: badge-unlock-ring 1200ms ease-out forwards;
+            }
+
+            .badge-unlock-icon {
+                position: relative;
+                font-size: 2.6rem;
+                line-height: 1;
+                filter: drop-shadow(0 10px 20px rgba(15, 23, 42, 0.14));
+            }
+
+            .badge-unlock-kicker {
+                margin: 0 0 8px;
+                font-size: 0.78rem;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: #5b6b93;
+                font-weight: 800;
+            }
+
+            .badge-unlock-name {
+                margin: 0;
+                font-size: 1.45rem;
+                line-height: 1.1;
+                font-weight: 800;
+                letter-spacing: -0.03em;
+            }
+
+            .badge-unlock-copy {
+                margin: 10px 0 0;
+                color: #526277;
+                font-size: 0.94rem;
+                line-height: 1.5;
+            }
+
+            .badge-unlock-burst {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+            }
+
+            .badge-unlock-burst-piece {
+                position: absolute;
+                top: 22%;
+                left: 50%;
+                width: 10px;
+                height: 18px;
+                border-radius: 999px;
+                opacity: 0;
+                animation: badge-unlock-burst 1200ms ease-out forwards;
+            }
+
+            @keyframes badge-unlock-pop {
+                0% {
+                    opacity: 0;
+                    transform: translateY(18px) scale(0.88);
+                }
+                12% {
+                    opacity: 1;
+                    transform: translateY(0) scale(1.02);
+                }
+                72% {
+                    opacity: 1;
+                    transform: translateY(0) scale(1);
+                }
+                100% {
+                    opacity: 0;
+                    transform: translateY(-10px) scale(0.98);
+                }
+            }
+
+            @keyframes badge-unlock-ring {
+                0% {
+                    opacity: 0.95;
+                    transform: scale(0.8);
+                }
+                100% {
+                    opacity: 0;
+                    transform: scale(1.24);
+                }
+            }
+
+            @keyframes badge-unlock-burst {
+                0% {
+                    opacity: 0;
+                    transform: translate3d(-50%, -50%, 0) rotate(var(--burst-rotate)) scale(0.7);
+                }
+                18% {
+                    opacity: 1;
+                }
+                100% {
+                    opacity: 0;
+                    transform: translate3d(calc(-50% + var(--burst-x)), calc(-50% + var(--burst-y)), 0) rotate(var(--burst-rotate)) scale(1);
+                }
+            }
+
+            @media (max-width: 640px) {
+                .badge-unlock-card {
+                    width: min(100%, 300px);
+                    padding: 24px 18px 20px;
+                    border-radius: 24px;
+                }
+
+                .badge-unlock-icon-wrap {
+                    width: 82px;
+                    height: 82px;
+                }
+
+                .badge-unlock-icon {
+                    font-size: 2.25rem;
+                }
+            }
+        `;
+
+        document.head.appendChild(style);
+    },
+
+    showBadgeUnlockCelebration(badge, duration = 2200) {
+        if (!badge || !document.body) {
+            return Promise.resolve();
+        }
+
+        this._ensureBadgeCelebrationStyles();
+
+        const burstPalette = ['#7c5cff', '#f59e0b', '#22c55e', '#38bdf8', '#fb7185', '#f97316'];
+        const burstMarkup = Array.from({ length: 12 }, (_, index) => {
+            const angle = (Math.PI * 2 * index) / 12;
+            const distance = 64 + ((index % 3) * 12);
+            const translateX = `${Math.round(Math.cos(angle) * distance)}px`;
+            const translateY = `${Math.round(Math.sin(angle) * distance)}px`;
+            const rotation = `${Math.round((angle * 180) / Math.PI)}deg`;
+            const color = burstPalette[index % burstPalette.length];
+            const delay = `${(index % 4) * 40}ms`;
+            return `
+                <span
+                    class="badge-unlock-burst-piece"
+                    style="background:${color}; animation-delay:${delay}; --burst-x:${translateX}; --burst-y:${translateY}; --burst-rotate:${rotation};"
+                ></span>
+            `;
+        }).join('');
+
+        const overlay = document.createElement('div');
+        overlay.className = 'badge-unlock-overlay';
+        overlay.setAttribute('role', 'status');
+        overlay.setAttribute('aria-live', 'polite');
+        overlay.innerHTML = `
+            <div class="badge-unlock-card">
+                <div class="badge-unlock-glow" aria-hidden="true"></div>
+                <div class="badge-unlock-burst" aria-hidden="true">${burstMarkup}</div>
+                <div class="badge-unlock-icon-wrap">
+                    <span class="badge-unlock-icon" aria-hidden="true">${this.escapeHtml(badge.icon)}</span>
+                </div>
+                <p class="badge-unlock-kicker">Badge Unlocked!</p>
+                <h2 class="badge-unlock-name">${this.escapeHtml(badge.name)}</h2>
+                <p class="badge-unlock-copy">${this.escapeHtml(badge.description)}</p>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        return new Promise((resolve) => {
+            window.setTimeout(() => {
+                overlay.remove();
+                resolve();
+            }, duration);
+        });
+    },
+
+    presentUnlockedBadges(badges = [], duration = 2200) {
+        if (!Array.isArray(badges) || badges.length === 0) {
+            return Promise.resolve();
+        }
+
+        const queueJob = async () => {
+            for (const badge of badges) {
+                // eslint-disable-next-line no-await-in-loop
+                await this.showBadgeUnlockCelebration(badge, duration);
+            }
+        };
+
+        this._badgeCelebrationQueue = this._badgeCelebrationQueue
+            .catch(() => undefined)
+            .then(queueJob);
+
+        return this._badgeCelebrationQueue;
+    },
+
+    _ensureSubmissionCelebrationStyles() {
+        if (document.getElementById('submission-success-celebration-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'submission-success-celebration-styles';
+        style.textContent = `
+            .submission-success-overlay {
+                position: fixed;
+                inset: 0;
+                z-index: 2500;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+                background:
+                    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.94), transparent 26%),
+                    radial-gradient(circle at 82% 12%, rgba(167, 243, 208, 0.52), transparent 24%),
+                    radial-gradient(circle at 50% 82%, rgba(191, 219, 254, 0.34), transparent 34%),
+                    linear-gradient(180deg, rgba(246, 255, 250, 0.96), rgba(237, 252, 244, 0.94));
+                backdrop-filter: blur(16px) saturate(1.08);
+                -webkit-backdrop-filter: blur(16px) saturate(1.08);
+                overflow: hidden;
+            }
+
+            .submission-success-overlay::before,
+            .submission-success-overlay::after {
+                content: '';
+                position: absolute;
+                inset: auto;
+                border-radius: 999px;
+                pointer-events: none;
+                filter: blur(14px);
+                opacity: 0.8;
+            }
+
+            .submission-success-overlay::before {
+                width: min(34vw, 260px);
+                height: min(34vw, 260px);
+                top: 10%;
+                left: 12%;
+                background: radial-gradient(circle, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0));
+            }
+
+            .submission-success-overlay::after {
+                width: min(38vw, 300px);
+                height: min(38vw, 300px);
+                right: 10%;
+                bottom: 8%;
+                background: radial-gradient(circle, rgba(187, 247, 208, 0.55), rgba(187, 247, 208, 0));
+            }
+
+            .submission-success-card {
+                position: relative;
+                width: min(100%, 540px);
+                padding: 42px 34px 36px;
+                border-radius: 32px;
+                background:
+                    radial-gradient(circle at top center, rgba(255, 255, 255, 0.88), transparent 34%),
+                    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 253, 246, 0.96));
+                box-shadow:
+                    0 34px 90px rgba(22, 101, 52, 0.12),
+                    0 18px 40px rgba(255, 255, 255, 0.5) inset,
+                    0 -14px 28px rgba(187, 247, 208, 0.14) inset;
+                border: 1px solid rgba(167, 243, 208, 0.54);
+                text-align: center;
+                color: #102418;
+                overflow: hidden;
+                animation: submission-success-card-in 520ms cubic-bezier(0.22, 1, 0.36, 1);
+            }
+
+            .submission-success-card::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                background:
+                    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.72), transparent 34%),
+                    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0));
+                pointer-events: none;
+            }
+
+            .submission-success-card::after {
+                content: '';
+                position: absolute;
+                inset: auto 14% -18% 14%;
+                height: 36%;
+                border-radius: 999px;
+                background: radial-gradient(circle, rgba(187, 247, 208, 0.26), rgba(187, 247, 208, 0));
+                filter: blur(18px);
+                pointer-events: none;
+            }
+
+            .submission-success-icon {
+                width: 74px;
+                height: 74px;
+                margin: 0 auto 20px;
+                border-radius: 999px;
+                display: grid;
+                place-items: center;
+                color: #ffffff;
+                background:
+                    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.3), transparent 36%),
+                    linear-gradient(135deg, #34d399 0%, #22c55e 42%, #16a34a 100%);
+                box-shadow:
+                    0 20px 42px rgba(34, 197, 94, 0.26),
+                    0 10px 18px rgba(255, 255, 255, 0.24) inset,
+                    0 -10px 16px rgba(20, 83, 45, 0.18) inset;
+                position: relative;
+                animation: submission-success-icon-pop 700ms cubic-bezier(0.2, 0.9, 0.22, 1.3);
+            }
+
+            .submission-success-icon::before {
+                content: '';
+                position: absolute;
+                inset: -10px;
+                border-radius: inherit;
+                border: 1px solid rgba(134, 239, 172, 0.34);
+                box-shadow: 0 0 0 10px rgba(187, 247, 208, 0.12);
+                opacity: 0.92;
+            }
+
+            .submission-success-icon::after {
+                content: '';
+                position: absolute;
+                inset: 8px;
+                border-radius: inherit;
+                background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
+                pointer-events: none;
+            }
+
+            .submission-success-title {
+                margin: 0 0 12px;
+                font-size: clamp(1.6rem, 1.2rem + 1vw, 2.1rem);
+                line-height: 1.12;
+                font-weight: 800;
+                letter-spacing: -0.03em;
+            }
+
+            .submission-success-message {
+                margin: 0 0 10px;
+                font-size: clamp(1rem, 0.96rem + 0.28vw, 1.12rem);
+                line-height: 1.6;
+                color: #1f4330;
+            }
+
+            .submission-success-confetti-layer {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                z-index: 10;
+                overflow: hidden;
+            }
+
+            .submission-success-confetti-piece {
+                position: absolute;
+                top: 40%;
+                left: 50%;
+                opacity: 0;
+                animation: sd-success-confetti-explosion var(--confetti-duration, 2800ms) cubic-bezier(0.12, 0.8, 0.2, 1) forwards;
+                transform-origin: center;
+                will-change: transform, opacity;
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+            }
+
+            @keyframes submission-success-card-in {
+                0% {
+                    opacity: 0;
+                    transform: translate3d(0, 24px, 0) scale(0.92);
+                }
+                60% {
+                    opacity: 1;
+                    transform: translate3d(0, -6px, 0) scale(1.02);
+                }
+                100% {
+                    opacity: 1;
+                    transform: translate3d(0, 0, 0) scale(1);
+                }
+            }
+
+            @keyframes submission-success-icon-pop {
+                0% {
+                    opacity: 0;
+                    transform: scale(0.72);
+                }
+                58% {
+                    opacity: 1;
+                    transform: scale(1.08);
+                }
+                100% {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+            }
+
+            @keyframes sd-success-confetti-explosion {
+                0% {
+                    opacity: 0;
+                    transform: translate3d(0, 0, 0) rotate(var(--confetti-start-rotate, 0deg)) scale(0.2);
+                }
+                14% {
+                    opacity: 1;
+                    transform: translate3d(var(--confetti-burst-x, 0px), var(--confetti-burst-y, -100px), 0) rotate(var(--confetti-mid-rotate, 40deg)) scale(1);
+                    animation-timing-function: cubic-bezier(0.35, 0, 0.85, 1);
+                }
+                100% {
+                    opacity: 0;
+                    transform: translate3d(var(--confetti-land-x, 0px), var(--confetti-land-y, 300px), 0) rotate(var(--confetti-rotate, 240deg)) scale(0.85);
+                }
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                .submission-success-card,
+                .submission-success-icon,
+                .submission-success-confetti-piece {
+                    animation: none !important;
+                }
+            }
+
+            @media (max-width: 640px) {
+                .submission-success-overlay {
+                    padding: 18px;
+                }
+
+                .submission-success-card {
+                    padding: 34px 22px 30px;
+                    border-radius: 26px;
+                }
+
+                .submission-success-card::after {
+                    bottom: -12%;
+                    height: 28%;
+                    filter: blur(14px);
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    },
+
+    clearSubmissionSuccessCelebration() {
+        if (this._submissionCelebrationTimeout) {
+            clearTimeout(this._submissionCelebrationTimeout);
+            this._submissionCelebrationTimeout = null;
+        }
+
+        if (typeof this._submissionCelebrationCleanup === 'function') {
+            this._submissionCelebrationCleanup();
+            this._submissionCelebrationCleanup = null;
+        }
+
+        if (this._submissionCelebrationPageHideHandler) {
+            window.removeEventListener('pagehide', this._submissionCelebrationPageHideHandler);
+            this._submissionCelebrationPageHideHandler = null;
+        }
+    },
+
+    showSubmissionSuccessCelebration(duration = 3000) {
+        this.clearSubmissionSuccessCelebration();
+        this._ensureSubmissionCelebrationStyles();
+
+        if (!document.body) {
+            return new Promise((resolve) => {
+                this._submissionCelebrationTimeout = window.setTimeout(() => {
+                    this._submissionCelebrationTimeout = null;
+                    resolve();
+                }, duration);
+            });
+        }
+
+        const confettiPalette = ['#a78bfa', '#f472b6', '#38bdf8', '#fbbf24', '#34d399', '#818cf8', '#f87171', '#fb923c'];
+        const confettiShapes = ['capsule', 'square', 'diamond'];
+        const confettiMarkup = Array.from({ length: 48 }, (_, index) => {
+            const isLeft = index % 2 === 0;
+            const spread = 20 + Math.random() * 200;
+            const height = 40 + Math.random() * 160;
+            
+            const burstX = (isLeft ? -1 : 1) * spread;
+            const burstY = -height;
+            
+            const landX = burstX + (isLeft ? -1 : 1) * (20 + Math.random() * 80);
+            const landY = 240 + Math.random() * 260;
+            
+            const rotate = (isLeft ? 360 : -360) + ((Math.random() - 0.5) * 400);
+            const midRotate = Math.round(rotate * 0.4);
+            
+            const pw = 6 + Math.random() * 7;
+            const ph = 10 + Math.random() * 8;
+            const color = confettiPalette[index % confettiPalette.length];
+            const shape = confettiShapes[index % confettiShapes.length];
+            const radius = shape === 'capsule' ? '999px' : shape === 'square' ? '4px' : '2px';
+            const startRotate = shape === 'diamond' ? '45deg' : '0deg';
+            const durationMs = 2300 + (Math.random() * 600);
+            const delay = Math.random() * 140;
+            
+            return `
+                <span
+                    class="submission-success-confetti-piece is-${shape}"
+                    style="width:${pw}px; height:${ph}px; border-radius:${radius}; background:${color}; animation-delay:${delay}ms; --confetti-duration:${durationMs}ms; --confetti-burst-x:${burstX}px; --confetti-burst-y:${burstY}px; --confetti-land-x:${landX}px; --confetti-land-y:${landY}px; --confetti-mid-rotate:${midRotate}deg; --confetti-rotate:${rotate}deg; --confetti-start-rotate:${startRotate};"
+                ></span>
+            `;
+        }).join('');
+
+        const overlay = document.createElement('div');
+        overlay.className = 'submission-success-overlay';
+        overlay.setAttribute('role', 'status');
+        overlay.setAttribute('aria-live', 'polite');
+        overlay.innerHTML = `
+            <div class="submission-success-confetti-layer" aria-hidden="true">${confettiMarkup}</div>
+            <div class="submission-success-card">
+                <div class="submission-success-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 6 9 17l-5-5"></path>
+                    </svg>
+                </div>
+                <h2 class="submission-success-title">Work Uploaded Successfully!</h2>
+                <p class="submission-success-message">Great job! Your creation has been added to the admin panel for review.</p>
+                <p class="submission-success-subtext">You will see it published once it is approved.</p>
+            </div>
+        `;
+
+        this._submissionCelebrationPreviousBodyOverflow = document.body.style.overflow;
+        this._submissionCelebrationPreviousHtmlOverflow = document.documentElement.style.overflow;
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+        document.body.appendChild(overlay);
+
+        const cleanup = () => {
+            overlay.remove();
+            document.body.style.overflow = this._submissionCelebrationPreviousBodyOverflow;
+            document.documentElement.style.overflow = this._submissionCelebrationPreviousHtmlOverflow;
+            this._submissionCelebrationPreviousBodyOverflow = '';
+            this._submissionCelebrationPreviousHtmlOverflow = '';
+        };
+
+        this._submissionCelebrationCleanup = cleanup;
+        this._submissionCelebrationPageHideHandler = () => this.clearSubmissionSuccessCelebration();
+        window.addEventListener('pagehide', this._submissionCelebrationPageHideHandler, { once: true });
+
+        return new Promise((resolve) => {
+            this._submissionCelebrationTimeout = window.setTimeout(() => {
+                this._submissionCelebrationTimeout = null;
+                this.clearSubmissionSuccessCelebration();
+                resolve();
+            }, duration);
+        });
+    },
+
     updateInteractiveWebCardLikeState(submissionId, isLiked, likeCount) {
-        document.querySelectorAll(`.interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
             const button = card.querySelector('[data-web-card-action="like"]');
             const countEl = card.querySelector('.interactive-web-like-count');
             const labelEl = card.querySelector('.interactive-web-like .interactive-web-pill-label');
             button?.classList.toggle('is-active', !!isLiked);
             button?.setAttribute('aria-pressed', String(!!isLiked));
             if (countEl) countEl.textContent = String(Math.max(0, Number(likeCount) || 0));
-            if (labelEl) labelEl.textContent = Number(likeCount) > 0 ? String(Math.max(0, Number(likeCount) || 0)) : 'Like';
+            if (labelEl) labelEl.textContent = isLiked ? 'Liked' : 'Like';
         });
     },
 
     updateInteractiveWebCardBookmarkState(submissionId, isSaved) {
-        document.querySelectorAll(`.interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
             const button = card.querySelector('[data-web-card-action="bookmark"]');
             const labelEl = card.querySelector('.interactive-web-bookmark .interactive-web-pill-label');
             button?.classList.toggle('is-active', !!isSaved);
@@ -1986,7 +3515,7 @@ export const UI = {
         const resolvedAverage = this.getAverageRatingValue(avgRating);
         const selectedRating = Number(activeRating || Math.round(resolvedAverage) || 0);
 
-        document.querySelectorAll(`.interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
             const valueEl = card.querySelector('.interactive-web-rating-value');
             const stars = card.querySelectorAll('[data-web-card-action="rate"]');
             if (valueEl) valueEl.textContent = this.formatAverageRating(resolvedAverage);
@@ -2000,7 +3529,7 @@ export const UI = {
 
     updateInteractiveWebCardViewState(submissionId, viewCount) {
         const nextCount = String(Math.max(0, Number(viewCount) || 0));
-        document.querySelectorAll(`.interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
             const viewCountEl = card.querySelector('.interactive-web-view-count');
             if (viewCountEl) viewCountEl.textContent = nextCount;
         });
@@ -2012,11 +3541,28 @@ export const UI = {
         document.body.dataset.livePreviewBound = 'true';
 
         document.addEventListener('click', (event) => {
+            const immersiveOpenButton = event.target.closest('[data-immersive-view-open="true"]');
+            if (immersiveOpenButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.openImmersiveExploreViewer(immersiveOpenButton.dataset.submissionId);
+                return;
+            }
+
             const openButton = event.target.closest('[data-live-preview-open="true"]');
             if (openButton) {
                 event.preventDefault();
                 event.stopPropagation();
                 this.openLivePreview(openButton.dataset.submissionId);
+                return;
+            }
+
+            const immersiveCloseButton = event.target.closest('[data-immersive-view-close="true"]');
+            const immersiveBackdrop = event.target.classList?.contains('immersive-viewer-overlay');
+            if (immersiveCloseButton || immersiveBackdrop) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.closeImmersiveExploreViewer();
                 return;
             }
 
@@ -2030,12 +3576,12 @@ export const UI = {
         });
 
         document.addEventListener('click', (event) => {
-            const card = event.target.closest('.interactive-web-card');
+            const card = event.target.closest('.interactive-web-card, .immersive-explore-card');
             if (!card) return;
 
             const explicitDetailLink = event.target.closest('.interactive-web-detail-link');
             const interactiveControl = event.target.closest(
-                '[data-live-preview-open="true"], [data-web-card-action], .interactive-web-detail-link, a[href], button'
+                '[data-live-preview-open="true"], [data-immersive-view-open="true"], [data-web-card-action], .interactive-web-detail-link, a[href], button'
             );
 
             if (explicitDetailLink) {
@@ -2057,7 +3603,7 @@ export const UI = {
 
             const submissionId = actionButton.dataset.submissionId;
             const submission = this.getRegisteredSubmissionCardState(submissionId);
-            if (!submission || !this.isInteractiveWebCard(submission)) {
+            if (!submission || !this.isExploreImmersiveCard(submission)) {
                 return;
             }
 
@@ -2083,6 +3629,12 @@ export const UI = {
                 stats.like_count = Math.max(0, Number(stats.like_count || 0) + (isLiked ? 1 : -1));
                 this.updateInteractiveWebCardLikeState(submission.id, isLiked, stats.like_count);
                 this.showToast(isLiked ? 'Liked!' : 'Unliked');
+                if (isLiked) {
+                    this.triggerBadgeEvaluation({
+                        userId,
+                        reason: 'like-success'
+                    });
+                }
                 return;
             }
 
@@ -2112,15 +3664,209 @@ export const UI = {
                 submission._interactiveWebUserRating = data.userRating;
                 this.updateInteractiveWebCardRatingState(submission.id, data.avgRating, data.userRating);
                 this.showToast('Rated!', 'success');
+                this.triggerBadgeEvaluation({
+                    userId,
+                    reason: 'rating-success'
+                });
             }
         });
 
         document.addEventListener('keydown', (event) => {
+            const immersiveTrigger = event.target.closest?.('[data-immersive-view-open="true"]');
+            if (immersiveTrigger && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                this.openImmersiveExploreViewer(immersiveTrigger.dataset.submissionId);
+                return;
+            }
+
+            if (event.key === 'Escape' && document.body.classList.contains('immersive-viewer-open')) {
+                event.preventDefault();
+                this.closeImmersiveExploreViewer();
+                return;
+            }
+
             if (event.key === 'Escape' && document.body.classList.contains('live-preview-open')) {
                 event.preventDefault();
                 this.closeLivePreview();
             }
         });
+    },
+
+    renderImmersiveViewerContent(sub = {}) {
+        const htmlPreview = this.resolveHtmlPreviewEntry(sub);
+
+        if (htmlPreview.mode === 'srcdoc') {
+            return this.renderInlinePreviewIframe({
+                className: 'immersive-viewer-frame',
+                sandbox: `${this.getTrustedInlineHtmlSandbox()} allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads`,
+                title: sub.title || 'Immersive viewer',
+                srcdoc: this.wrapCodeForPreview(htmlPreview.inlineHtml || this.resolveInlineHtmlSource(sub).html)
+            });
+        }
+
+        if (htmlPreview.mode === 'url' && htmlPreview.iframeSrc) {
+            return `<iframe class="immersive-viewer-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads" referrerpolicy="no-referrer" src="${htmlPreview.iframeSrc}" title="${sub.title || 'Immersive viewer'}"></iframe>`;
+        }
+
+        if (sub.content_text && String(sub.file_type || '').toLowerCase() !== 'text/html') {
+            return `<article class="immersive-viewer-text">${String(sub.content_text || '')}</article>`;
+        }
+
+        if (this.isPdfSubmission(sub)) {
+            const fileUrl = this.getSubmissionFileUrl(sub);
+            if (fileUrl) {
+                return `<iframe class="immersive-viewer-frame immersive-viewer-pdf-frame" src="${fileUrl}" title="${sub.title || 'Document viewer'}"></iframe>`;
+            }
+        }
+
+        const fileUrl = this.getSubmissionFileUrl(sub);
+        const projectLabel = this.getProjectFileLabel(sub);
+        const extension = this.getSubmissionFileExtension(sub) || 'file';
+        const downloadName = this.buildDownloadFileName(sub.title || 'download', fileUrl || '', extension);
+        const openAction = fileUrl
+            ? `<a href="${fileUrl}" target="_blank" rel="noopener noreferrer" class="preview-action-link">Open file</a>`
+            : '';
+        const downloadAction = fileUrl
+            ? `<a href="${this.buildDownloadProxyUrl(fileUrl, downloadName)}" target="_self" class="preview-action-link" download="${downloadName}">Download</a>`
+            : '';
+
+        const fallbackMessage = htmlPreview.fallbackReason
+            ? `This content could not be rendered because ${htmlPreview.fallbackReason.toLowerCase()}`
+            : `This content is a ${projectLabel}.`;
+
+        return `
+            <div class="immersive-viewer-fallback">
+                <div class="file-placeholder">${fallbackMessage}</div>
+                <div class="immersive-viewer-fallback-actions">
+                    ${openAction}
+                    ${downloadAction}
+                </div>
+            </div>
+        `;
+    },
+
+    lockBodyScrollForOverlay() {
+        const scrollY = window.scrollY || window.pageYOffset || 0;
+        this._immersiveViewerRestoreScrollY = scrollY;
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${scrollY}px`;
+        document.body.style.left = '0';
+        document.body.style.right = '0';
+        document.body.style.width = '100%';
+        document.body.classList.add('body-no-scroll');
+    },
+
+    unlockBodyScrollForOverlay() {
+        const scrollY = this._immersiveViewerRestoreScrollY || 0;
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.left = '';
+        document.body.style.right = '';
+        document.body.style.width = '';
+        if (!document.body.classList.contains('live-preview-open') && !document.querySelector('.fullscreen-active')) {
+            document.body.classList.remove('body-no-scroll');
+        }
+        window.scrollTo({ top: scrollY, behavior: 'auto' });
+    },
+
+    ensureImmersiveViewerPopstateHandler() {
+        if (this._immersiveViewerPopstateHandler) return;
+
+        this._immersiveViewerPopstateHandler = () => {
+            if (!this._immersiveViewerOverlay) return;
+            this.closeImmersiveExploreViewer({ fromPopstate: true });
+        };
+
+        window.addEventListener('popstate', this._immersiveViewerPopstateHandler);
+    },
+
+    async openImmersiveExploreViewer(submissionId) {
+        let submission = this.getRegisteredSubmissionCardState(submissionId);
+        if (!submission || !this.isExploreImmersiveCard(submission)) {
+            this.showToast('This viewer is not available for the selected content.', 'error');
+            return;
+        }
+
+        try {
+            submission = await this.ensureSubmissionCardDetail(submissionId) || submission;
+        } catch (error) {
+            console.warn('[Explore] Could not hydrate submission detail for immersive viewer:', error);
+            this.showToast('Could not open this content right now.', 'error');
+            return;
+        }
+
+        if (this._immersiveViewerOverlay) {
+            this.closeImmersiveExploreViewer({ skipHistoryBack: true, preserveFocus: true });
+        }
+
+        this.ensureImmersiveViewerPopstateHandler();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'immersive-viewer-overlay';
+        overlay.innerHTML = `
+            <div class="immersive-viewer-shell" role="dialog" aria-modal="true" aria-label="${submission.title || 'Immersive viewer'}">
+                <div class="immersive-viewer-topbar">
+                    <button type="button" class="immersive-viewer-close" data-immersive-view-close="true" aria-label="Close immersive viewer">Close</button>
+                    <div class="immersive-viewer-meta">
+                        <h2 class="immersive-viewer-title">${submission.title || 'Untitled'}</h2>
+                        <p class="immersive-viewer-subtitle">${submission.profiles?.display_name || 'Anonymous'} · ${this.getContentTypeLabel(submission.category, submission.content_type)}</p>
+                    </div>
+                </div>
+                <div class="immersive-viewer-content">
+                    ${this.renderImmersiveViewerContent(submission)}
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+        this.lockBodyScrollForOverlay();
+        document.body.classList.add('immersive-viewer-open');
+        this.hydrateInlinePreviewFrames(overlay);
+
+        this._immersiveViewerOverlay = overlay;
+        this._immersiveViewerPreviouslyFocused = document.activeElement;
+
+        history.pushState({
+            ...(history.state || {}),
+            immersiveExploreViewer: true,
+            immersiveSubmissionId: String(submissionId)
+        }, '', window.location.href);
+        this._immersiveViewerHistoryOpen = true;
+
+        overlay.querySelector('[data-immersive-view-close="true"]')?.focus({ preventScroll: true });
+
+        const stats = this.ensureSubmissionStats(submission);
+        API.recordSubmissionView(submission.id, null).then(({ error }) => {
+            if (error) return;
+            stats.view_count = Math.max(0, Number(stats.view_count || 0) + 1);
+            this.updateInteractiveWebCardViewState(submission.id, stats.view_count);
+        }).catch(() => {});
+    },
+
+    closeImmersiveExploreViewer({ fromPopstate = false, skipHistoryBack = false, preserveFocus = false } = {}) {
+        if (!this._immersiveViewerOverlay) return;
+
+        this._immersiveViewerOverlay.remove();
+        this._immersiveViewerOverlay = null;
+        document.body.classList.remove('immersive-viewer-open');
+        this.unlockBodyScrollForOverlay();
+
+        const shouldPopHistory = this._immersiveViewerHistoryOpen && !fromPopstate && !skipHistoryBack;
+        this._immersiveViewerHistoryOpen = false;
+
+        if (shouldPopHistory) {
+            history.back();
+        }
+
+        if (!preserveFocus && this._immersiveViewerPreviouslyFocused?.focus) {
+            try {
+                this._immersiveViewerPreviouslyFocused.focus({ preventScroll: true });
+            } catch (_) {
+                // Ignore focus restoration failures.
+            }
+        }
+
+        this._immersiveViewerPreviouslyFocused = null;
     },
 
     openLivePreview(submissionId) {
@@ -2177,8 +3923,11 @@ export const UI = {
         frame.setAttribute('title', descriptor.title || 'Live preview');
         frame.setAttribute('allow', 'fullscreen');
         frame.setAttribute('allowfullscreen', '');
-        frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
-        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        const sandboxValue = descriptor.mode === 'srcdoc'
+            ? `${this.getTrustedInlineHtmlSandbox()} allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads`
+            : 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads';
+        frame.setAttribute('sandbox', sandboxValue);
 
         let didFinish = false;
         const finishLoading = () => {
@@ -2622,7 +4371,7 @@ export const UI = {
                             <textarea id="code-textarea" name="code_content" class="form-control code-editor" rows="12" placeholder="<!DOCTYPE html>\n<html>...</html>"></textarea>
                             <div class="code-preview-container">
                                 <p class="preview-label">Live Preview</p>
-                                <iframe id="code-preview-frame" class="code-preview-frame" sandbox="allow-scripts"></iframe>
+                                <iframe id="code-preview-frame" class="code-preview-frame" sandbox="${this.getTrustedInlineHtmlSandbox()}"></iframe>
                             </div>
                         </div>
                     </div>
@@ -2641,7 +4390,7 @@ export const UI = {
                                 <button type="button" class="image-remove-btn" id="image-remove-btn" title="Remove image">✕</button>
                                 <div class="image-preview-info" id="image-preview-info"></div>
                             </div>
-                            <input type="file" id="image-file-input" accept="image/jpeg,image/jpg,image/png,image/webp" class="hidden-file-input">
+                            <input type="file" name="image_file" id="image-file-input" accept="image/jpeg,image/jpg,image/png,image/webp" class="hidden-file-input">
                         </div>
                         <div class="image-compression-status" id="image-compression-status" style="display: none;"></div>
                     </div>
@@ -2707,7 +4456,14 @@ export const UI = {
                         <div class="explore-hero-content">
                             <div class="explore-hero-heading">
                                 <span class="explore-hero-kicker">EDTECHRA Spotlight</span>
-                                <h1 class="explore-hero-title">Creative Works</h1>
+                                <h1 class="explore-hero-title" aria-label="Creative Works">
+                                    <span class="explore-hero-title-line explore-hero-title-line-warm" data-text="Creative">
+                                        <span class="explore-hero-title-face">Creative</span>
+                                    </span>
+                                    <span class="explore-hero-title-line explore-hero-title-line-cool" data-text="Works">
+                                        <span class="explore-hero-title-face">Works</span>
+                                    </span>
+                                </h1>
                             </div>
                             <div class="explore-hero-copy">
                                 <p class="explore-hero-subtitle">Discover and learn from diverse and inspiring creations, from digital art and writing to fun and educational projects.</p>
@@ -2739,7 +4495,7 @@ export const UI = {
                                 </div>
                             </section>
 
-                            <section class="explore-row-section explore-creations-section" id="trending-creations">
+                            <section class="explore-row-section explore-card-feed-section explore-creations-section" id="trending-creations">
                                 <div class="explore-section-heading">
                                     <h2 class="explore-row-title">Trending Creations</h2>
                                     <p class="explore-row-copy">A refreshed view of the most loved student work, with all existing Explore functionality preserved.</p>
@@ -2747,7 +4503,7 @@ export const UI = {
                                 <div class="explore-row-grid" id="grid-trending"></div>
                             </section>
 
-                            <section class="explore-row-section">
+                            <section class="explore-row-section explore-card-feed-section" id="explore-feed-section">
                                 <div class="explore-section-heading">
                                     <h2 class="explore-row-title">Newly Submitted</h2>
                                     <p class="explore-row-copy">Fresh ideas and new uploads from across the learning community.</p>
@@ -2755,7 +4511,7 @@ export const UI = {
                                 <div class="explore-row-grid" id="grid-new"></div>
                             </section>
 
-                            <section class="explore-row-section">
+                            <section class="explore-row-section explore-card-feed-section">
                                 <div class="explore-section-heading">
                                     <h2 class="explore-row-title">Top Rated Creations</h2>
                                     <p class="explore-row-copy">Highly rated creative work that learners keep coming back to.</p>
@@ -3091,6 +4847,7 @@ export const UI = {
                             </div>
                         </div>
                         <a href="#explore" class="btn btn-outline sd-saved-explore" data-link="explore">Find More Inspiration →</a>
+                        <div class="sd-badges-section" id="sd-badges-section"></div>
                     </div>
                 </div>
 
@@ -3137,21 +4894,28 @@ export const UI = {
             </div>
         `,
 
-        renderSavedCard: (sub) => {
+        renderSavedCard: (sub = {}) => {
             const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
-            const thumbUrl = UI.getSubmissionImageUrls(sub).previewUrl || UI.getThumbnailFallbackUrl(sub);
-            const fallbackThumbUrl = UI.getThumbnailFallbackUrl(sub);
-            const category = UI.getContentTypeLabel(sub.category, sub.content_type);
+            const previewUrl = UI.getSubmissionImageUrls?.(sub)?.previewUrl;
+            const fallbackThumbUrl = UI.getThumbnailFallbackUrl?.(sub) || '';
+            const thumbUrl = previewUrl || fallbackThumbUrl;
+            const category = UI.getContentTypeLabel?.(sub.category, sub.content_type) || 'Creation';
+            const title = sub.title || 'Untitled creation';
+            const authorName = sub.profiles?.display_name || 'Anonymous';
+            const detailHash = sub.id ? `#detail/${sub.id}` : '#student-dashboard';
+            const formattedRating = typeof UI.formatAverageRating === 'function'
+                ? UI.formatAverageRating(stats)
+                : '0.0';
 
             return `
-                <div class="sd-saved-card animate-fade-in" onclick="window.location.hash='#detail/${sub.id}'">
+                <div class="sd-saved-card animate-fade-in" onclick="window.location.hash='${detailHash}'">
                     <div class="sd-sc-thumb">
-                        <img src="${thumbUrl}" alt="${sub.title}" loading="lazy" onerror="this.src='${fallbackThumbUrl}'">
+                        <img src="${thumbUrl}" alt="${title}" loading="lazy" onerror="this.src='${fallbackThumbUrl}'">
                         <span class="sd-sc-badge">${category}</span>
                     </div>
                     <div class="sd-sc-info">
-                        <h4 class="sd-sc-title" title="${sub.title}">${sub.title}</h4>
-                        <p class="sd-sc-author">by ${sub.profiles?.display_name || 'Anonymous'}</p>
+                        <h4 class="sd-sc-title" title="${title}">${title}</h4>
+                        <p class="sd-sc-author">by ${authorName}</p>
                     </div>
                     <div class="sd-sc-metadata">
                         <div class="sd-sc-stat">
@@ -3164,7 +4928,7 @@ export const UI = {
                         </div>
                         <div class="sd-sc-stat">
                             <span>⭐</span>
-                            <span>${this.formatAverageRating(stats)}</span>
+                            <span>${formattedRating}</span>
                         </div>
                     </div>
                     <div class="sd-sc-action">

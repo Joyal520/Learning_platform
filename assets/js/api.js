@@ -1,16 +1,7 @@
 // assets/js/api.js
 import { supabase } from './supabase.js';
 import { buildAppUrl } from './path-utils.js';
-
-const PROJECT_MIME_BY_EXTENSION = {
-    pdf: 'application/pdf',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    html: 'text/html',
-    htm: 'text/html',
-    zip: 'application/zip'
-};
+import { ProjectUpload } from './project-upload.js';
 
 function withTimeout(promise, ms, label) {
     return Promise.race([
@@ -91,12 +82,50 @@ function getFileExtension(filename = '') {
 }
 
 function resolveUploadContentType(filename = '', contentType = '') {
-    const normalizedType = String(contentType || '').trim().toLowerCase();
-    if (normalizedType) {
-        return normalizedType;
+    return ProjectUpload.getProjectMimeType(filename, contentType)
+        || String(contentType || '').trim().toLowerCase()
+        || 'application/octet-stream';
+}
+
+function shouldLogSubmissionPayloadDebug() {
+    const hostname = globalThis?.location?.hostname || '';
+    return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
+function logSubmissionPayloadKeys(label, payload, context = {}) {
+    if (!shouldLogSubmissionPayloadDebug()) return;
+    console.log(`[API][DEV] ${label} payload keys:`, {
+        keys: Object.keys(payload || {}).sort(),
+        context
+    });
+}
+
+function isPresentationLikeSubmission(payload = {}, existingSubmission = null) {
+    const sources = [payload, existingSubmission].filter(Boolean);
+    return sources.some((source) => {
+        const category = String(source.category || '').trim().toLowerCase();
+        const contentType = String(source.content_type || '').trim().toLowerCase();
+        const fileType = String(source.file_type || source.mime_type || '').trim().toLowerCase();
+
+        return category === 'presentations'
+            || contentType.includes('presentation')
+            || fileType.includes('presentationml')
+            || fileType.includes('powerpoint')
+            || fileType.includes('/pdf')
+            || fileType === 'application/pdf';
+    });
+}
+
+function sanitizeSubmissionPayload(payload = {}, options = {}) {
+    const sanitized = { ...payload };
+    const { existingSubmission = null } = options;
+    const isPresentation = isPresentationLikeSubmission(sanitized, existingSubmission);
+
+    if (!isPresentation) {
+        delete sanitized.presentation_notes;
     }
 
-    return PROJECT_MIME_BY_EXTENSION[getFileExtension(filename)] || 'application/octet-stream';
+    return sanitized;
 }
 
 async function validateUploadedProject({ objectKey, filename, contentType }) {
@@ -109,6 +138,19 @@ async function validateUploadedProject({ objectKey, filename, contentType }) {
             objectKey,
             filename,
             contentType: resolveUploadContentType(filename, contentType)
+        })
+    });
+}
+
+async function processWebsiteProject({ submissionId, objectKey }) {
+    return callServerApi('/api/process-website-project', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            submissionId,
+            objectKey
         })
     });
 }
@@ -231,8 +273,10 @@ async function preflightR2Upload({ assetType, file, filename = file?.name, conte
 }
 
 async function deleteR2Assets(keysOrUrls, submissionId) {
-    const keys = (keysOrUrls || []).filter(Boolean);
-    if (keys.length === 0) return;
+    const entries = (keysOrUrls || []).filter(Boolean);
+    const keys = entries.filter((value) => !String(value).endsWith('/'));
+    const prefixes = entries.filter((value) => String(value).endsWith('/'));
+    if (keys.length === 0 && prefixes.length === 0) return;
 
     await callServerApi('/api/r2-delete', {
         method: 'POST',
@@ -241,7 +285,8 @@ async function deleteR2Assets(keysOrUrls, submissionId) {
         },
         body: JSON.stringify({
             submissionId,
-            keys
+            keys,
+            prefixes
         })
     });
 }
@@ -334,8 +379,6 @@ export const API = {
 
         if (category) {
             query = query.eq('category', category);
-        } else {
-            query = query.neq('category', 'images');
         }
 
         const { data, error } = await query
@@ -343,6 +386,27 @@ export const API = {
             .range(offset, offset + limit - 1);
 
         return { data, error };
+    },
+
+    async getSubmissionById(id) {
+        if (!id) {
+            return { data: null, error: new Error('Submission id is required.') };
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('submissions')
+                .select(`
+                    *,
+                    profiles!author_id (display_name, avatar_url)
+                `)
+                .eq('id', id)
+                .maybeSingle();
+
+            return { data, error };
+        } catch (error) {
+            return { data: null, error };
+        }
     },
 
     async getStatsForSubmissions(ids) {
@@ -498,7 +562,13 @@ export const API = {
                 console.log('[API] Session verified for:', session.user.email);
             }
 
-            const payloadStr = JSON.stringify(submissionData);
+            const sanitizedSubmissionData = sanitizeSubmissionPayload(submissionData);
+            logSubmissionPayloadKeys('uploadSubmission.insert', sanitizedSubmissionData, {
+                fileType: file?.type || null,
+                fileName: file?.name || null
+            });
+
+            const payloadStr = JSON.stringify(sanitizedSubmissionData);
             console.log(`[API] Payload size: ${(payloadStr.length / 1024).toFixed(2)} KB`);
 
             if (thumbnailBlob) {
@@ -528,7 +598,7 @@ export const API = {
 
             console.log('[API] Sending insert request...');
             const { data: sub, error: insertError } = await withTimeout(
-                supabase.from('submissions').insert([submissionData]).select('id').single(),
+                supabase.from('submissions').insert([sanitizedSubmissionData]).select('id').single(),
                 120000,
                 'Database INSERT'
             );
@@ -603,8 +673,21 @@ export const API = {
             }
 
             if (Object.keys(updateObject).length > 0) {
-                const { error: updateError } = await supabase.from('submissions').update(updateObject).eq('id', subId);
+                const sanitizedUpdateObject = sanitizeSubmissionPayload(updateObject, {
+                    existingSubmission: sanitizedSubmissionData
+                });
+                logSubmissionPayloadKeys('uploadSubmission.postUploadUpdate', sanitizedUpdateObject, {
+                    submissionId: subId
+                });
+                const { error: updateError } = await supabase.from('submissions').update(sanitizedUpdateObject).eq('id', subId);
                 if (updateError) throw updateError;
+            }
+
+            if (file && updateObject.mime_type?.includes('zip')) {
+                await processWebsiteProject({
+                    submissionId: subId,
+                    objectKey: updateObject.file_path
+                });
             }
 
             console.log('[API] === UPLOAD COMPLETE ===');
@@ -635,7 +718,18 @@ export const API = {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) console.warn('[API] No session found.');
 
-            delete updateData.thumbnail_path;
+            const nextUpdateData = { ...updateData };
+            delete nextUpdateData.thumbnail_path;
+
+            const { data: existingSubmission, error: existingSubmissionError } = await supabase
+                .from('submissions')
+                .select('id, category, content_type, file_type, mime_type')
+                .eq('id', id)
+                .maybeSingle();
+
+            if (existingSubmissionError) {
+                console.warn('[API] Could not load existing submission metadata for sanitization:', existingSubmissionError);
+            }
 
             if (thumbnailBlob) {
                 console.log('[API] Uploading thumbnail to R2...');
@@ -650,9 +744,9 @@ export const API = {
                     filename: `thumbnail-${id}.webp`,
                     contentType: thumbnailBlob.type || 'image/webp'
                 });
-                updateData.thumbnail_path = thumbUpload.objectKey;
-                updateData.thumbnail_url = thumbUpload.publicUrl;
-                updateData.storage_provider = 'r2';
+                nextUpdateData.thumbnail_path = thumbUpload.objectKey;
+                nextUpdateData.thumbnail_url = thumbUpload.publicUrl;
+                nextUpdateData.storage_provider = 'r2';
                 console.log('[API] Thumbnail stored:', thumbUpload.publicUrl);
             }
 
@@ -669,15 +763,25 @@ export const API = {
                     filename: `display-${id}.webp`,
                     contentType: displayBlob.type || 'image/webp'
                 });
-                updateData.image_url = displayUpload.publicUrl;
-                updateData.storage_provider = 'r2';
+                nextUpdateData.image_url = displayUpload.publicUrl;
+                nextUpdateData.storage_provider = 'r2';
                 console.log('[API] Display image stored:', displayUpload.publicUrl);
             }
+
+            const sanitizedUpdateData = sanitizeSubmissionPayload(nextUpdateData, {
+                existingSubmission
+            });
+            logSubmissionPayloadKeys('updateSubmission.update', sanitizedUpdateData, {
+                submissionId: id,
+                existingCategory: existingSubmission?.category || null,
+                existingContentType: existingSubmission?.content_type || null,
+                existingFileType: existingSubmission?.file_type || null
+            });
 
             console.log('[API] Updating database record...');
             const { data, error } = await supabase
                 .from('submissions')
-                .update(updateData)
+                .update(sanitizedUpdateData)
                 .eq('id', id)
                 .select('id');
 
@@ -719,9 +823,14 @@ export const API = {
                 });
             }
 
+            const sanitizedSubmissionData = sanitizeSubmissionPayload(submissionData);
+            logSubmissionPayloadKeys('uploadImagePost.insert', sanitizedSubmissionData, {
+                imageType: imageBlob?.type || null
+            });
+
             console.log('[API] Inserting image post record...');
             const { data: sub, error: insertError } = await withTimeout(
-                supabase.from('submissions').insert([submissionData]).select('id').single(),
+                supabase.from('submissions').insert([sanitizedSubmissionData]).select('id').single(),
                 60000,
                 'Image Post INSERT'
             );
@@ -777,9 +886,15 @@ export const API = {
             }
 
             if (Object.keys(updateObject).length > 0) {
+                const sanitizedUpdateObject = sanitizeSubmissionPayload(updateObject, {
+                    existingSubmission: sanitizedSubmissionData
+                });
+                logSubmissionPayloadKeys('uploadImagePost.postUploadUpdate', sanitizedUpdateObject, {
+                    submissionId: subId
+                });
                 const { data: updatedRow, error: updateError } = await supabase
                     .from('submissions')
-                    .update(updateObject)
+                    .update(sanitizedUpdateObject)
                     .eq('id', subId)
                     .select('id, file_path, thumbnail_path')
                     .maybeSingle();

@@ -20,6 +20,8 @@ import {
 } from '../assets/js/presentation-remote.js';
 
 export const DetailPage = {
+    _exploreRestoreFlagKey: 'edtechra_explore_restore_once',
+
     async init(id) {
         const main = document.getElementById('main-content');
         console.log('[DETAIL] init called with id:', id);
@@ -104,6 +106,7 @@ export const DetailPage = {
             // Step 3: Initial Render (Show content immediately)
             sub.initialViewCount = Number(sub.submission_stats?.[0]?.view_count || 0);
             main.innerHTML = UI.pages.detail(sub, currentUser, userRole);
+            UI.hydrateInlinePreviewFrames(main);
             this._currentSub = sub;
 
             // Step 4: Parallelize secondary data (Stats + Like Status)
@@ -246,9 +249,39 @@ export const DetailPage = {
                 mutationVersion: this._statsMutationVersion
             });
             UI.showToast('Rated!', 'success');
+            UI.triggerBadgeEvaluation({
+                userId: user.id,
+                reason: 'rating-success'
+            });
         } finally {
             UI.hideLoader();
         }
+    },
+
+    navigateBackToExplore() {
+        try {
+            sessionStorage.setItem(this._exploreRestoreFlagKey, 'true');
+        } catch (_) {
+            // Ignore storage failures and fall back to default Explore behavior.
+        }
+
+        window.location.hash = 'explore';
+    },
+
+    async closeImmersiveViewer({ cleanup } = {}) {
+        if (typeof cleanup === 'function') {
+            await cleanup();
+        }
+
+        if (document.fullscreenElement && document.exitFullscreen) {
+            try {
+                await document.exitFullscreen();
+            } catch (_) {
+                // Ignore native fullscreen exit failures and continue closing the viewer.
+            }
+        }
+
+        this.navigateBackToExplore();
     },
 
     setupBackToExplore() {
@@ -258,14 +291,7 @@ export const DetailPage = {
         backLink.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-
-            try {
-                sessionStorage.setItem('edtechra_explore_restore_once', 'true');
-            } catch (_) {
-                // Ignore storage failures and fall back to default Explore.
-            }
-
-            window.location.hash = 'explore';
+            this.navigateBackToExplore();
         });
     },
 
@@ -877,7 +903,17 @@ export const DetailPage = {
                 await renderPage({ force: true, fitMode: state.isPresenting ? 'page' : 'width' });
             });
             attachClick(presentBtn, () => enterPresentMode());
-            attachClick(exitBtn, () => exitPresentMode());
+            attachClick(exitBtn, async (event) => {
+                event?.preventDefault?.();
+                event?.stopPropagation?.();
+                await this.closeImmersiveViewer({
+                    cleanup: async () => {
+                        if (state.isPresenting) {
+                            await exitPresentMode();
+                        }
+                    }
+                });
+            });
 
             state.keydownHandler = async (event) => {
                 if (!state.isPresenting) return;
@@ -1030,19 +1066,87 @@ export const DetailPage = {
         const floatingClose = document.getElementById('floatingCloseBtn');
         if (!btn || !container) return;
 
+        const showFloatingClose = () => {
+            floatingClose?.classList.add('visible');
+        };
+
+        const hideFloatingClose = () => {
+            floatingClose?.classList.remove('visible');
+        };
+
+        const clearFloatingCloseTimer = () => {
+            if (this._previewCloseHideTimer) {
+                clearTimeout(this._previewCloseHideTimer);
+                this._previewCloseHideTimer = null;
+            }
+        };
+
+        const scheduleFloatingCloseHide = (delay = 1500) => {
+            if (!floatingClose) return;
+            clearFloatingCloseTimer();
+            this._previewCloseHideTimer = window.setTimeout(() => {
+                const activeContainer = document.getElementById('previewContainer');
+                if (!activeContainer?.classList.contains('fullscreen-active')) return;
+                hideFloatingClose();
+            }, delay);
+        };
+
         const toggleFullscreen = () => {
             const isFullscreen = container.classList.toggle('fullscreen-active');
             document.body.classList.toggle('body-no-scroll', isFullscreen);
 
-            // Update button UI
             btn.innerHTML = isFullscreen
                 ? '<span>✕ Close</span>'
                 : '<span>⛶ Fullscreen</span>';
 
             if (isFullscreen) {
-                UI.showToast('Immersive mode — tap Cancel to exit.');
+                showFloatingClose();
+                scheduleFloatingCloseHide();
+                UI.showToast('Immersive mode - tap the X to exit.');
                 btn.focus();
+            } else {
+                hideFloatingClose();
+                clearFloatingCloseTimer();
             }
+            btn.innerHTML = '<span>â›¶ Fullscreen</span>';
+        };
+
+        const resetPreviewFullscreenUi = () => {
+            hideFloatingClose();
+            clearFloatingCloseTimer();
+            container.classList.remove('fullscreen-active');
+            document.body.classList.remove('body-no-scroll');
+            btn.innerHTML = '<span>â›¶ Fullscreen</span>';
+            btn.innerHTML = '<span>â›¶ Fullscreen</span>';
+        };
+
+        const closeViewerToExplore = async (event) => {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+
+            await this.closeImmersiveViewer({
+                cleanup: () => {
+                    resetPreviewFullscreenUi();
+                }
+            });
+            return;
+
+            hideFloatingClose();
+            clearFloatingCloseTimer();
+
+            container.classList.remove('fullscreen-active');
+            document.body.classList.remove('body-no-scroll');
+            btn.innerHTML = '<span>â›¶ Fullscreen</span>';
+
+            if (document.fullscreenElement && document.exitFullscreen) {
+                try {
+                    await document.exitFullscreen();
+                } catch (_) {
+                    // Ignore native fullscreen exit failures and continue returning to Explore.
+                }
+            }
+
+            this.navigateBackToExplore();
         };
 
         const clickHandler = (e) => {
@@ -1051,36 +1155,40 @@ export const DetailPage = {
         };
 
         btn.addEventListener('click', clickHandler);
-        floatingClose?.addEventListener('click', clickHandler);
+        floatingClose?.addEventListener('click', closeViewerToExplore);
 
-        // Listen for scroll messages from iframe
         if (!this._windowListenersAttached) {
             window.addEventListener('message', (e) => {
-                const container = document.getElementById('previewContainer');
-                if (!container || !container.classList.contains('fullscreen-active')) return;
+                const activeContainer = document.getElementById('previewContainer');
+                if (!activeContainer || !activeContainer.classList.contains('fullscreen-active')) return;
                 const closeBtn = document.getElementById('floatingCloseBtn');
                 if (!closeBtn) return;
 
-                if (e.data?.type === 'SHOW_CLOSE_BTN') closeBtn.classList.add('visible');
-                if (e.data?.type === 'HIDE_CLOSE_BTN') closeBtn.classList.remove('visible');
+                if (e.data?.type === 'SHOW_CLOSE_BTN') {
+                    closeBtn.classList.add('visible');
+                    clearFloatingCloseTimer();
+                }
+                if (e.data?.type === 'HIDE_CLOSE_BTN') {
+                    closeBtn.classList.remove('visible');
+                }
             });
 
-            // ESC key to exit
             window.addEventListener('keydown', (e) => {
-                const container = document.getElementById('previewContainer');
-                if (e.key === 'Escape' && container?.classList.contains('fullscreen-active')) {
-                    const isFullscreen = container.classList.toggle('fullscreen-active');
+                const activeContainer = document.getElementById('previewContainer');
+                if (e.key === 'Escape' && activeContainer?.classList.contains('fullscreen-active')) {
+                    const isFullscreen = activeContainer.classList.toggle('fullscreen-active');
                     document.body.classList.toggle('body-no-scroll', isFullscreen);
-                    const btn = document.getElementById('previewFullscreenBtn');
-                    if (btn) {
-                        btn.innerHTML = '<span>⛶ Fullscreen</span>';
+                    document.getElementById('floatingCloseBtn')?.classList.remove('visible');
+                    clearFloatingCloseTimer();
+                    const activeBtn = document.getElementById('previewFullscreenBtn');
+                    if (activeBtn) {
+                        activeBtn.innerHTML = '<span>⛶ Fullscreen</span>';
                     }
                 }
             });
             this._windowListenersAttached = true;
         }
     },
-
     setupInteractions(sub) {
         const likeBtn = document.getElementById('like-btn');
         const starContainer = document.getElementById('rating-stars');
@@ -1110,6 +1218,10 @@ export const DetailPage = {
                 likeBtn.classList.add('liked');
                 UI.showToast('Liked!', 'success');
                 if (likeCountSpan) likeCountSpan.textContent = parseInt(likeCountSpan.textContent || 0) + 1;
+                UI.triggerBadgeEvaluation({
+                    userId: user.id,
+                    reason: 'like-success'
+                });
             }
 
             UI.hideLoader();

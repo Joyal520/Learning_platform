@@ -30,6 +30,7 @@ A production-ready educational platform for student creativity.
 - `npm run dev` starts `dev-server.js`, which serves the SPA and mounts `/api/*` locally.
 - Opening `index.html` with a static server such as Live Server will not execute `api/*.js`, so `/api/r2-metrics` will return `404`.
 - Create `.env` from `.env.example` and fill in `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and `R2_PUBLIC_URL`.
+- Local development reads `.env`, `.env.local`, and `.env.txt`. It accepts aliased keys such as `Endpoint`, `Access Key ID`, and `Secret Access Key`, but `R2_BUCKET` and `R2_PUBLIC_URL` still need to be present explicitly for uploads to work.
 - The repository currently includes `.env.txt`, but its keys do not fully match the runtime requirements and it does not define `R2_BUCKET`, so `.env` is the recommended local setup.
 
 ## Deployment (GitHub Pages)

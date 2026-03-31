@@ -1,4 +1,7 @@
 const ZIP_TAIL_SCAN_BYTES = 128 * 1024;
+const MAX_WEBSITE_FILE_COUNT = 500;
+const MAX_WEBSITE_TOTAL_BYTES = 100 * 1024 * 1024;
+const MAX_WEBSITE_SINGLE_FILE_BYTES = 20 * 1024 * 1024;
 
 const SAFE_SPECIAL_FILENAMES = new Set([
     'cname',
@@ -128,11 +131,19 @@ function parseCentralDirectoryEntries(bytes) {
         const filenameBytes = bytes.subarray(offset + 46, offset + 46 + filenameLength);
         const filename = decodeZipFilename(filenameBytes);
         const externalAttributes = view.getUint32(offset + 38, true);
-        const isDirectory = filename.endsWith('/') || ((externalAttributes >>> 16) & 0o170000) === 0o040000;
+        const compressedSize = view.getUint32(offset + 20, true);
+        const uncompressedSize = view.getUint32(offset + 24, true);
+        const unixMode = (externalAttributes >>> 16) & 0xffff;
+        const fileType = unixMode & 0o170000;
+        const isDirectory = filename.endsWith('/') || fileType === 0o040000;
+        const isSymlink = fileType === 0o120000;
 
         entries.push({
             filename,
-            isDirectory
+            isDirectory,
+            isSymlink,
+            compressedSize,
+            uncompressedSize
         });
 
         offset += recordLength;
@@ -169,8 +180,9 @@ function shouldIgnoreZipEntry(pathname) {
     return lower.startsWith('__macosx/') || lower.endsWith('/.ds_store') || lower.endsWith('/thumbs.db') || lower === '.ds_store' || lower === 'thumbs.db';
 }
 
-function validateZipEntries(entries = []) {
+function buildWebsiteHostingPlan(entries = []) {
     const normalizedEntries = [];
+    let totalUncompressedBytes = 0;
 
     for (const entry of entries) {
         const safePath = normalizeZipEntryPath(entry.filename);
@@ -181,6 +193,10 @@ function validateZipEntries(entries = []) {
         if (entry.isDirectory) {
             normalizedEntries.push({ ...entry, safePath, isDirectory: true });
             continue;
+        }
+
+        if (entry.isSymlink) {
+            throw new Error(`Unsafe files detected in zip: "${safePath}" uses a symbolic link and cannot be hosted.`);
         }
 
         const baseName = safePath.split('/').pop() || '';
@@ -199,7 +215,21 @@ function validateZipEntries(entries = []) {
             throw new Error(`Invalid zip website structure. "${safePath}" must use a supported static file type.`);
         }
 
-        normalizedEntries.push({ ...entry, safePath, isDirectory: false });
+        const fileBytes = Number(entry.uncompressedSize);
+        if (!Number.isFinite(fileBytes) || fileBytes < 0) {
+            throw new Error(`Invalid zip website structure. "${safePath}" could not be measured safely.`);
+        }
+
+        if (fileBytes > MAX_WEBSITE_SINGLE_FILE_BYTES) {
+            throw new Error(`Invalid zip website structure. "${safePath}" exceeds the ${(MAX_WEBSITE_SINGLE_FILE_BYTES / 1024 / 1024).toFixed(0)} MB per-file limit.`);
+        }
+
+        totalUncompressedBytes += fileBytes;
+        if (totalUncompressedBytes > MAX_WEBSITE_TOTAL_BYTES) {
+            throw new Error(`Invalid zip website structure. Extracted website files exceed the ${(MAX_WEBSITE_TOTAL_BYTES / 1024 / 1024).toFixed(0)} MB limit.`);
+        }
+
+        normalizedEntries.push({ ...entry, safePath, isDirectory: false, fileBytes });
     }
 
     const fileEntries = normalizedEntries.filter((entry) => !entry.isDirectory);
@@ -207,16 +237,62 @@ function validateZipEntries(entries = []) {
         throw new Error('Invalid zip website structure. The ZIP archive does not contain any website files.');
     }
 
-    const hasIndexHtml = fileEntries.some((entry) => entry.safePath.split('/').pop()?.toLowerCase() === 'index.html');
-    if (!hasIndexHtml) {
-        throw new Error('Invalid zip website structure. Include an index.html file in the website bundle.');
+    if (fileEntries.length > MAX_WEBSITE_FILE_COUNT) {
+        throw new Error(`Invalid zip website structure. The ZIP archive contains too many files (${fileEntries.length}). Keep website bundles under ${MAX_WEBSITE_FILE_COUNT} files.`);
+    }
+
+    const rootIndexEntry = fileEntries.find((entry) => entry.safePath.toLowerCase() === 'index.html');
+    const wrapperCandidates = new Set(fileEntries.map((entry) => entry.safePath.split('/')[0]).filter(Boolean));
+
+    let wrapperFolder = '';
+    if (!rootIndexEntry) {
+        if (wrapperCandidates.size !== 1) {
+            throw new Error('Invalid zip website structure. Use either a root index.html file or one wrapper folder that contains the whole website.');
+        }
+
+        wrapperFolder = [...wrapperCandidates][0];
+        const wrapperIndexPath = `${wrapperFolder}/index.html`;
+        const wrapperIndexEntry = fileEntries.find((entry) => entry.safePath.toLowerCase() === wrapperIndexPath.toLowerCase());
+        if (!wrapperIndexEntry) {
+            throw new Error('Invalid zip website structure. Include an index.html file at the project root or inside the single wrapper folder.');
+        }
+    }
+
+    const hostedFiles = fileEntries.map((entry) => {
+        const hostedRelativePath = wrapperFolder
+            ? entry.safePath.slice(wrapperFolder.length + 1)
+            : entry.safePath;
+
+        const normalizedHostedPath = hostedRelativePath.replace(/\\/g, '/');
+        if (!normalizedHostedPath || normalizedHostedPath.startsWith('../') || normalizedHostedPath.includes('/../')) {
+            throw new Error(`Unsafe files detected in zip: "${entry.safePath}" could not be normalized into a hosted path.`);
+        }
+
+        return {
+            originalPath: entry.safePath,
+            hostedRelativePath: normalizedHostedPath,
+            fileBytes: entry.fileBytes
+        };
+    });
+
+    const entryFile = hostedFiles.find((entry) => entry.hostedRelativePath.toLowerCase() === 'index.html');
+    if (!entryFile) {
+        throw new Error('Invalid zip website structure. The hosted website must resolve to a root index.html file.');
     }
 
     return {
         fileCount: fileEntries.length,
         hasIndexHtml: true,
+        totalUncompressedBytes,
+        wrapperFolder,
+        entryFilePath: entryFile.hostedRelativePath,
+        hostedFiles,
         entries: normalizedEntries
     };
+}
+
+function validateZipEntries(entries = []) {
+    return buildWebsiteHostingPlan(entries);
 }
 
 async function inspectZipEntriesWithReader({ size, readSlice }) {
@@ -249,6 +325,10 @@ async function inspectZipEntriesWithReader({ size, readSlice }) {
 }
 
 module.exports = {
+    MAX_WEBSITE_FILE_COUNT,
+    MAX_WEBSITE_SINGLE_FILE_BYTES,
+    MAX_WEBSITE_TOTAL_BYTES,
+    buildWebsiteHostingPlan,
     inspectZipEntriesWithReader,
     validateZipEntries
 };

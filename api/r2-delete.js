@@ -1,6 +1,7 @@
 const {
     deleteObjects,
     json,
+    listObjectKeysWithPrefix,
     readJsonBody,
     requireAdmin,
     verifySupabaseUser
@@ -15,9 +16,10 @@ module.exports = async function handler(req, res) {
     try {
         const body = await readJsonBody(req);
         const keys = Array.isArray(body.keys) ? body.keys : [];
+        const prefixes = Array.isArray(body.prefixes) ? body.prefixes : [];
         const submissionId = String(body.submissionId || '').trim();
 
-        if (keys.length === 0) {
+        if (keys.length === 0 && prefixes.length === 0) {
             return json(res, 200, { deleted: [] });
         }
 
@@ -35,13 +37,18 @@ module.exports = async function handler(req, res) {
 
         if (!isAdmin) {
             const expectedPathFragment = `/${userId}/${submissionId}`;
-            const invalidKey = keys.find((key) => !String(key).includes(expectedPathFragment) && !String(key).includes(`${userId}/${submissionId}`));
+            const invalidKey = [...keys, ...prefixes].find((key) => !String(key).includes(expectedPathFragment) && !String(key).includes(`${userId}/${submissionId}`));
             if (invalidKey) {
                 throw new Error('You are not allowed to delete these files.');
             }
         }
 
-        const result = await deleteObjects(keys);
+        const expandedPrefixKeys = [];
+        for (const prefix of prefixes) {
+            expandedPrefixKeys.push(...await listObjectKeysWithPrefix(prefix));
+        }
+
+        const result = await deleteObjects([...keys, ...expandedPrefixKeys]);
         return json(res, 200, result);
     } catch (error) {
         return json(res, 400, { error: error.message || 'Could not delete files.' });

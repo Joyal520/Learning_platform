@@ -9,9 +9,13 @@ export const ExplorePage = {
     _currentGroup: null,
     _currentTheme: null,
     _isLoading: false,
-    _allFetchedData: [],  // holds all fetched submissions for Load More
-    _displayCount: 6,     // initial items to show per section
-    _loadMoreStep: 6,     // how many more to show each click
+    _allFetchedData: [],  // holds all fetched submissions for local Explore batching
+    _feedCacheByCategory: new Map(),
+    _loadRequestId: 0,
+    _displayCount: 12,    // total cards rendered across sections
+    _loadMoreStep: 12,    // cards appended per Load More click
+    _batchSectionSize: 4,
+    _fetchPageSize: 100,
     _topCreators: [],
     _isSearchFocused: false,
 
@@ -20,7 +24,212 @@ export const ExplorePage = {
     },
 
     _getBaseDisplayCount() {
-        return window.matchMedia('(min-width: 993px)').matches ? 4 : 6;
+        return this._batchSectionSize * 3;
+    },
+
+    _getSubmissionId(submission) {
+        return String(submission?.id || '');
+    },
+
+    _getFeedCacheKey(category) {
+        return String(category || 'all');
+    },
+
+    _sortNewCandidates(items) {
+        return [...items].sort((a, b) =>
+            new Date(b.created_at || b.updated_at || 0).getTime() - new Date(a.created_at || a.updated_at || 0).getTime()
+        );
+    },
+
+    _sortTrendingCandidates(items) {
+        return [...items].sort((a, b) => {
+            const statsA = a.submission_stats?.[0] || {};
+            const statsB = b.submission_stats?.[0] || {};
+
+            if ((statsB.like_count || 0) !== (statsA.like_count || 0)) {
+                return (statsB.like_count || 0) - (statsA.like_count || 0);
+            }
+
+            return (statsB.view_count || 0) - (statsA.view_count || 0);
+        });
+    },
+
+    _sortTopRatedCandidates(items) {
+        return [...items].sort((a, b) => {
+            const statsA = a.submission_stats?.[0] || {};
+            const statsB = b.submission_stats?.[0] || {};
+            return (Number(statsB.avg_rating) || 0) - (Number(statsA.avg_rating) || 0);
+        });
+    },
+
+    _takeEligibleCandidates(sourceItems, count, excludedIds) {
+        const selected = [];
+
+        for (const item of sourceItems || []) {
+            const submissionId = this._getSubmissionId(item);
+            if (!submissionId || excludedIds.has(submissionId)) continue;
+
+            selected.push(item);
+            excludedIds.add(submissionId);
+
+            if (selected.length >= count) break;
+        }
+
+        return selected;
+    },
+
+    _buildFeedState(items, totalCardsToRender) {
+        const newCandidates = this._sortNewCandidates(items);
+        const trendingCandidates = this._sortTrendingCandidates(items);
+        const topRatedCandidates = this._sortTopRatedCandidates(items);
+        const sectionTargets = [
+            { key: 'new', items: newCandidates },
+            { key: 'trending', items: trendingCandidates },
+            { key: 'top', items: topRatedCandidates }
+        ];
+        const sections = { new: [], trending: [], top: [] };
+        const renderedIds = new Set();
+        const batchSize = this._getBaseDisplayCount();
+        const batchesToBuild = Math.max(0, Math.ceil((Number(totalCardsToRender) || 0) / batchSize));
+
+        for (let batchIndex = 0; batchIndex < batchesToBuild; batchIndex += 1) {
+            const batchSections = { new: [], trending: [], top: [] };
+            const batchUsedIds = new Set(renderedIds);
+
+            sectionTargets.forEach(({ key, items: sourceItems }) => {
+                batchSections[key] = this._takeEligibleCandidates(sourceItems, this._batchSectionSize, batchUsedIds);
+            });
+
+            const remainingSlots = sectionTargets
+                .map(({ key }) => ({ key, count: Math.max(0, this._batchSectionSize - batchSections[key].length) }))
+                .filter(({ count }) => count > 0);
+
+            if (remainingSlots.length) {
+                const fallbackPool = [
+                    ...newCandidates,
+                    ...trendingCandidates,
+                    ...topRatedCandidates
+                ];
+
+                remainingSlots.forEach(({ key, count }) => {
+                    if (count <= 0) return;
+                    const overflowItems = this._takeEligibleCandidates(fallbackPool, count, batchUsedIds);
+                    batchSections[key].push(...overflowItems);
+                });
+            }
+
+            const batchIds = [];
+            Object.values(batchSections).forEach((groupItems) => {
+                groupItems.forEach((item) => {
+                    const submissionId = this._getSubmissionId(item);
+                    if (!submissionId || renderedIds.has(submissionId)) return;
+                    renderedIds.add(submissionId);
+                    batchIds.push(submissionId);
+                });
+            });
+
+            if (!batchIds.length) break;
+
+            sections.new.push(...batchSections.new);
+            sections.trending.push(...batchSections.trending);
+            sections.top.push(...batchSections.top);
+        }
+
+        return {
+            sections,
+            totalRendered: renderedIds.size,
+            totalAvailableUnique: new Set(items.map((item) => this._getSubmissionId(item)).filter(Boolean)).size
+        };
+    },
+
+    _buildImageFeedState(items, totalCardsToRender) {
+        const newestFirst = this._sortNewCandidates(items);
+        const renderedIds = new Set();
+        const orderedItems = [];
+
+        for (const item of newestFirst) {
+            const submissionId = this._getSubmissionId(item);
+            if (!submissionId || renderedIds.has(submissionId)) continue;
+
+            renderedIds.add(submissionId);
+            orderedItems.push(item);
+
+            if (orderedItems.length >= Math.max(0, Number(totalCardsToRender) || 0)) {
+                break;
+            }
+        }
+
+        return {
+            items: orderedItems,
+            totalRendered: orderedItems.length,
+            totalAvailableUnique: new Set(newestFirst.map((item) => this._getSubmissionId(item)).filter(Boolean)).size
+        };
+    },
+
+    _configureImageFeedSections(isImageFeed) {
+        const trendingSection = document.querySelector('#trending-creations');
+        const topSection = document.querySelector('#grid-top')?.closest('.explore-row-section') || null;
+        const feedSection = document.querySelector('#explore-feed-section');
+        const feedTitle = feedSection?.querySelector('.explore-row-title') || null;
+        const feedCopy = feedSection?.querySelector('.explore-row-copy') || null;
+
+        if (feedTitle && !feedTitle.dataset.defaultTitle) {
+            feedTitle.dataset.defaultTitle = feedTitle.textContent || '';
+        }
+
+        if (feedCopy && !feedCopy.dataset.defaultCopy) {
+            feedCopy.dataset.defaultCopy = feedCopy.textContent || '';
+        }
+
+        if (trendingSection) {
+            trendingSection.hidden = isImageFeed;
+        }
+
+        if (topSection) {
+            topSection.hidden = isImageFeed;
+        }
+
+        if (feedSection) {
+            feedSection.classList.toggle('explore-feed-section-images', !!isImageFeed);
+        }
+
+        if (feedTitle) {
+            feedTitle.textContent = isImageFeed
+                ? 'Latest Images'
+                : (feedTitle.dataset.defaultTitle || 'Newly Submitted');
+        }
+
+        if (feedCopy) {
+            feedCopy.textContent = isImageFeed
+                ? 'A single newest-first stream of image submissions from the community.'
+                : (feedCopy.dataset.defaultCopy || 'Fresh ideas and new uploads from across the learning community.');
+        }
+    },
+
+    async _fetchAllSubmissionsForExplore(category) {
+        const combined = [];
+        let offset = 0;
+
+        while (true) {
+            const { data, error } = await API.getSubmissions(category, 'created_at', this._fetchPageSize, offset);
+            if (error) throw error;
+
+            const pageItems = data || [];
+            combined.push(...pageItems);
+
+            if (pageItems.length < this._fetchPageSize) break;
+            offset += this._fetchPageSize;
+        }
+
+        if (category === 'images') {
+            return combined.filter((submission) => UI.isStrictImageSubmission(submission));
+        }
+
+        if (category === 'songs') {
+            return combined.filter((submission) => UI.isAudioSubmission(submission));
+        }
+
+        return combined;
     },
 
     _readSavedState() {
@@ -29,6 +238,14 @@ export const ExplorePage = {
             return raw ? JSON.parse(raw) : null;
         } catch (_) {
             return null;
+        }
+    },
+
+    _writeSavedState(payload) {
+        try {
+            sessionStorage.setItem(this._stateStorageKey, JSON.stringify(payload));
+        } catch (_) {
+            // Ignore storage failures and keep Explore functional.
         }
     },
 
@@ -42,11 +259,66 @@ export const ExplorePage = {
             scrollY: Math.max(0, Number(scrollY) || 0)
         };
 
-        try {
-            sessionStorage.setItem(this._stateStorageKey, JSON.stringify(payload));
-        } catch (_) {
-            // Ignore storage failures and keep Explore functional.
+        const currentState = this._readSavedState() || {};
+        if (currentState.returnToSubmissionId) {
+            payload.returnToSubmissionId = currentState.returnToSubmissionId;
+            payload.returnCardViewportOffset = currentState.returnCardViewportOffset;
         }
+
+        this._writeSavedState(payload);
+    },
+
+    _storeReturnPoint(cardEl, submissionId = cardEl?.dataset?.id || null) {
+        if (!submissionId || !cardEl) return;
+
+        const currentState = this._readSavedState() || {};
+        const searchValue = document.querySelector('#search-input')?.value || currentState.search || '';
+        const rect = cardEl.getBoundingClientRect();
+
+        this._writeSavedState({
+            category: this._currentCategory || 'all',
+            group: this._currentGroup || null,
+            theme: this._currentTheme || null,
+            search: String(searchValue),
+            displayCount: this._displayCount,
+            scrollY: Math.max(0, Number(window.scrollY) || 0),
+            returnToSubmissionId: String(submissionId),
+            returnCardViewportOffset: Math.max(0, Math.round(rect.top))
+        });
+    },
+
+    _restoreExplorePosition(savedState) {
+        const fallbackScrollY = Math.max(0, Number(savedState?.scrollY) || 0);
+        const targetSubmissionId = savedState?.returnToSubmissionId ? String(savedState.returnToSubmissionId) : '';
+        const viewportOffset = Math.max(0, Number(savedState?.returnCardViewportOffset) || 0);
+        const clearReturnTarget = () => {
+            const nextState = { ...(this._readSavedState() || {}) };
+            delete nextState.returnToSubmissionId;
+            delete nextState.returnCardViewportOffset;
+            this._writeSavedState(nextState);
+        };
+
+        const applyRestore = () => {
+            const targetCard = targetSubmissionId
+                ? document.querySelector(`.explore-container [data-id="${targetSubmissionId}"]`)
+                : null;
+
+            if (targetCard) {
+                const targetTop = targetCard.getBoundingClientRect().top + window.scrollY - viewportOffset;
+                window.scrollTo({ top: Math.max(0, Math.round(targetTop)), behavior: 'auto' });
+                return;
+            }
+
+            window.scrollTo({ top: fallbackScrollY, behavior: 'auto' });
+        };
+
+        requestAnimationFrame(() => {
+            applyRestore();
+            requestAnimationFrame(() => {
+                applyRestore();
+                clearReturnTarget();
+            });
+        });
     },
 
     _consumeRestoreFlag() {
@@ -65,6 +337,8 @@ export const ExplorePage = {
         this._currentTheme = null;
         this._isLoading = false;
         this._allFetchedData = [];
+        this._feedCacheByCategory = new Map();
+        this._loadRequestId = 0;
         this._displayCount = this._getBaseDisplayCount();
         this._topCreators = [];
         this._isSearchFocused = false;
@@ -75,8 +349,9 @@ export const ExplorePage = {
             this._currentCategory = savedState.category || 'all';
             this._currentGroup = savedState.group || null;
             this._currentTheme = savedState.theme || null;
-            this._displayCount = Number(savedState.displayCount) > 0
-                ? Number(savedState.displayCount)
+            const savedDisplayCount = Number(savedState.displayCount) || 0;
+            this._displayCount = savedDisplayCount > 0
+                ? Math.max(this._getBaseDisplayCount(), Math.ceil(savedDisplayCount / this._loadMoreStep) * this._loadMoreStep)
                 : this._getBaseDisplayCount();
         }
 
@@ -347,7 +622,7 @@ export const ExplorePage = {
             const categoriesCard = document.querySelector('[data-mobile-slot="categories"]');
             const sectionsContainer = document.querySelector('.explore-sections-container');
             const creatorsSection = document.querySelector('.explore-creators-section');
-            if (!container || !main || !sidebar || !hero || !desktopDiscovery || !mobileDiscovery || !searchCard || !categoriesCard || !sectionsContainer || !creatorsSection) return;
+            if (!container || !main || !sidebar || !hero || !desktopDiscovery || !mobileDiscovery || !searchCard || !categoriesCard || !sectionsContainer) return;
 
             const isMobile = window.matchMedia('(max-width: 640px)').matches;
             const isDesktop = window.matchMedia('(min-width: 993px)').matches;
@@ -367,7 +642,7 @@ export const ExplorePage = {
                 if (hero.nextElementSibling !== desktopDiscovery) {
                     hero.insertAdjacentElement('afterend', desktopDiscovery);
                 }
-                if (desktopDiscovery.nextElementSibling !== creatorsSection) {
+                if (creatorsSection && desktopDiscovery.nextElementSibling !== creatorsSection) {
                     desktopDiscovery.insertAdjacentElement('afterend', creatorsSection);
                 }
                 sidebar.classList.add('explore-sidebar-empty');
@@ -384,7 +659,7 @@ export const ExplorePage = {
                 if (hero.nextElementSibling !== mobileDiscovery) {
                     hero.insertAdjacentElement('afterend', mobileDiscovery);
                 }
-                sectionsContainer.prepend(creatorsSection);
+                if (creatorsSection) sectionsContainer.prepend(creatorsSection);
                 sidebar.classList.add('explore-sidebar-empty');
                 updateCreatorsVisibility();
             } else {
@@ -393,7 +668,7 @@ export const ExplorePage = {
                 container.classList.remove('explore-desktop-flow');
                 sidebar.classList.remove('explore-sidebar-empty');
                 placeDiscoveryCards(sidebar);
-                sectionsContainer.prepend(creatorsSection);
+                if (creatorsSection) sectionsContainer.prepend(creatorsSection);
                 updateCreatorsVisibility();
             }
         };
@@ -407,7 +682,7 @@ export const ExplorePage = {
         window.addEventListener('resize', this._mobileLayoutHandler);
 
         const loadAllSections = async (isLoadMore = false) => {
-            if (this._isLoading) return;
+            const requestId = ++this._loadRequestId;
             this._isLoading = true;
 
             const gridTrending = document.querySelector('#grid-trending');
@@ -417,35 +692,61 @@ export const ExplorePage = {
             const searchInput = getSearchInput();
 
             const category = this._currentCategory === 'all' ? null : this._currentCategory;
+            const cacheKey = this._getFeedCacheKey(category);
+            const isImages = this._currentCategory === 'images';
             const search = searchInput?.value?.toLowerCase()?.trim() || '';
+
+            this._configureImageFeedSections(isImages);
 
             // Show skeletons only on initial load or filter change
             if (!isLoadMore) {
-                [gridTrending, gridNew, gridTop].forEach(g => {
-                    if (g) g.innerHTML = this.renderSkeletons(3);
+                [gridTrending, gridNew, gridTop].forEach((gridEl) => {
+                    if (gridEl) gridEl.innerHTML = this.renderSkeletons(this._batchSectionSize);
                 });
-                if (creatorsRow) {
-                    creatorsRow.innerHTML = this.renderCreatorSkeletons(3);
-                }
+                if (creatorsRow) creatorsRow.innerHTML = this.renderCreatorSkeletons(3);
             }
 
             try {
-                let filteredData = [];
-                // Fetch a good batch of data if not loading more, or if we need more
-                if (!isLoadMore || this._allFetchedData.length === 0) {
-                    const { data, error } = await API.getSubmissions(category, 'created_at', 50, 0);
-                    if (error) throw error;
-                    filteredData = data || [];
+                let baseData = [];
+                if (!isLoadMore || !this._feedCacheByCategory.has(cacheKey)) {
+                    baseData = await this._fetchAllSubmissionsForExplore(category);
+                    if (requestId !== this._loadRequestId) return;
+
+                    baseData = Array.isArray(baseData) ? [...baseData] : [];
+                    if (baseData.length > 0) {
+                        const ids = baseData.map((submission) => submission.id);
+                        const statsMap = await API.getStatsForSubmissions(ids);
+                        const interactionMap = App.user?.id
+                            ? await API.getUserSubmissionInteractions(ids, App.user.id)
+                            : {};
+
+                        if (requestId !== this._loadRequestId) return;
+
+                        baseData.forEach((submission) => {
+                            const initStat = statsMap[submission.id] || { avg_rating: 0, like_count: 0, view_count: 0 };
+                            const interaction = interactionMap[submission.id] || {};
+                            initStat.user_has_liked = !!interaction.liked;
+                            initStat.user_has_bookmarked = !!interaction.bookmarked;
+                            submission.submission_stats = [initStat];
+                            submission._feedIsLiked = !!interaction.liked;
+                            submission._feedIsBookmarked = !!interaction.bookmarked;
+                            submission._audioFeedIsLiked = !!interaction.liked;
+                        });
+
+                        await UI.hydrateInteractiveWebCardState(baseData);
+                        if (requestId !== this._loadRequestId) return;
+                    }
+
+                    this._feedCacheByCategory.set(cacheKey, baseData);
                 } else {
-                    filteredData = this._allFetchedData;
-                    // Re-apply search locally since we didn't fetch via API
-                    if (search) {
-                       filteredData = filteredData.filter(s =>
-                           s.title?.toLowerCase().includes(search) ||
-                           s.profiles?.display_name?.toLowerCase().includes(search)
-                       );
+                    baseData = [...(this._feedCacheByCategory.get(cacheKey) || [])];
+                    if (baseData.length > 0) {
+                        await UI.hydrateInteractiveWebCardState(baseData);
+                        if (requestId !== this._loadRequestId) return;
                     }
                 }
+
+                let filteredData = [...baseData];
 
                 if (this._currentTheme) {
                     filteredData = filteredData.filter((submission) =>
@@ -461,81 +762,56 @@ export const ExplorePage = {
 
                 // Apply search filter
                 if (search) {
-                    filteredData = filteredData.filter(s =>
-                        s.title?.toLowerCase().includes(search) ||
-                        s.profiles?.display_name?.toLowerCase().includes(search)
+                    filteredData = filteredData.filter((submission) =>
+                        submission.title?.toLowerCase().includes(search) ||
+                        submission.profiles?.display_name?.toLowerCase().includes(search)
                     );
                 }
+                if (requestId !== this._loadRequestId) return;
+                this._allFetchedData = filteredData;
 
-                // Fetch stats for all items if we fetched from API
-                if ((!isLoadMore || this._allFetchedData.length === 0) && filteredData.length > 0) {
-                    const ids = filteredData.map(s => s.id);
-                    const statsMap = await API.getStatsForSubmissions(ids);
-                    filteredData.forEach(s => {
-                        const initStat = statsMap[s.id] || { avg_rating: 0, like_count: 0, view_count: 0 };
-                        s.submission_stats = [initStat];
-                    });
-                    // Store for Load More
-                    this._allFetchedData = filteredData;
-                }
-
-                if (!this._topCreators.length) {
+                if (!isImages && !this._topCreators.length) {
                     const { data: creators } = await API.getTopCreators(10);
                     this._topCreators = creators || [];
                 }
 
-                // Determine if this is images category (uses different card rendering)
-                const isImages = this._currentCategory === 'images';
+                if (isImages) {
+                    const imageFeedState = this._buildImageFeedState(filteredData, this._displayCount);
+                    this._renderGrid(gridNew, imageFeedState.items, null, true);
+                    if (gridTrending) gridTrending.innerHTML = '';
+                    if (gridTop) gridTop.innerHTML = '';
+                    this._updateLoadMoreButton(imageFeedState);
+                } else {
+                    const feedState = this._buildFeedState(filteredData, this._displayCount);
+                    this._renderCreators(creatorsRow, this._topCreators);
+                    this._renderGrid(gridTrending, feedState.sections.trending, { text: 'TRENDING', className: 'badge-trending' }, false);
+                    this._renderGrid(gridNew, feedState.sections.new, { text: 'NEW', className: 'badge-new' }, false);
+                    this._renderGrid(gridTop, feedState.sections.top, { text: 'TOP RATED', className: 'badge-top' }, false);
+                    this._updateLoadMoreButton(feedState);
+                }
 
-                this._renderCreators(creatorsRow, this._topCreators);
-
-                // --- Trending section ---
-                const desktopSectionCount = this._getDesktopSectionCount();
-
-                const trending = [...filteredData].sort((a, b) => {
-                    const sA = a.submission_stats[0];
-                    const sB = b.submission_stats[0];
-                    if (sB.like_count !== sA.like_count) return (sB.like_count || 0) - (sA.like_count || 0);
-                    return (sB.view_count || 0) - (sA.view_count || 0);
-                }).slice(0, desktopSectionCount);
-
-                this._renderGrid(gridTrending, trending, { text: 'TRENDING', className: 'badge-trending' }, isImages);
-
-                // --- New section ---
-                const newItems = filteredData.slice(0, this._displayCount);
-                this._renderGrid(gridNew, newItems, { text: 'NEW', className: 'badge-new' }, isImages);
-
-                // --- Top rated section ---
-                const topRated = [...filteredData].sort((a, b) => {
-                    const avgA = Number(a.submission_stats[0].avg_rating) || 0;
-                    const avgB = Number(b.submission_stats[0].avg_rating) || 0;
-                    return avgB - avgA;
-                }).slice(0, this._displayCount);
-
-                this._renderGrid(gridTop, topRated, { text: 'TOP RATED', className: 'badge-top' }, isImages);
-
-                // Update Load More button visibility
-                this._updateLoadMoreButton();
                 this._persistState(searchInput?.value || '', window.scrollY);
 
             } catch (err) {
+                if (requestId !== this._loadRequestId) return;
                 console.warn('[Explore] Load error:', err);
-                [gridTrending, gridNew, gridTop].forEach(g => {
-                    if (g) {
-                        g.innerHTML = `
-                            <div class="sd-empty-state" style="grid-column: 1/-1; text-align: center; padding: 40px;">
-                                <span style="font-size: 2rem;">⚠️</span>
-                                <h3>Connection issue</h3>
-                                <p class="text-muted">Could not load content. Please try again.</p>
-                                <button class="btn btn-primary explore-retry-btn" style="margin-top: 16px;">Retry</button>
-                            </div>`;
-                        const retryBtn = g.querySelector('.explore-retry-btn');
-                        if (retryBtn) retryBtn.addEventListener('click', () => loadAllSections(), { once: true });
-                    }
+                [gridTrending, gridNew, gridTop].forEach((gridEl) => {
+                    if (!gridEl) return;
+                    gridEl.innerHTML = `
+                        <div class="sd-empty-state" style="grid-column: 1/-1; text-align: center; padding: 40px;">
+                            <span style="font-size: 2rem;">⚠️</span>
+                            <h3>Connection issue</h3>
+                            <p class="text-muted">Could not load content. Please try again.</p>
+                            <button class="btn btn-primary explore-retry-btn" style="margin-top: 16px;">Retry</button>
+                        </div>`;
+                    const retryBtn = gridEl.querySelector('.explore-retry-btn');
+                    if (retryBtn) retryBtn.addEventListener('click', () => loadAllSections(), { once: true });
                 });
             }
 
-            this._isLoading = false;
+            if (requestId === this._loadRequestId) {
+                this._isLoading = false;
+            }
         };
 
         // Category filter click handling
@@ -647,6 +923,29 @@ export const ExplorePage = {
             }
         }
 
+        const sectionsContainer = getSectionsContainer();
+        if (sectionsContainer) {
+            if (this._detailLaunchCaptureHandler) {
+                sectionsContainer.removeEventListener('click', this._detailLaunchCaptureHandler, true);
+            }
+
+            this._detailLaunchCaptureHandler = (event) => {
+                const detailTrigger = event.target.closest('a[href^="#detail/"], [data-link^="detail/"], .masonry-author-stub');
+                if (!detailTrigger) return;
+
+                const cardEl = detailTrigger.closest('[data-id]');
+                const submissionId = cardEl?.dataset?.id
+                    || detailTrigger.dataset?.submissionId
+                    || detailTrigger.getAttribute('href')?.replace(/^#detail\//, '')
+                    || detailTrigger.dataset?.link?.replace(/^detail\//, '');
+
+                if (!cardEl || !submissionId) return;
+                this._storeReturnPoint(cardEl, submissionId);
+            };
+
+            sectionsContainer.addEventListener('click', this._detailLaunchCaptureHandler, true);
+        }
+
         // Search input handling
         const searchInput = getSearchInput();
         if (searchInput) {
@@ -708,9 +1007,9 @@ export const ExplorePage = {
         if (heroCta) {
             heroCta.addEventListener('click', (event) => {
                 event.preventDefault();
-                const trendingCreationsSection = getTrendingCreationsSection();
-                if (!trendingCreationsSection) return;
-                trendingCreationsSection.scrollIntoView({
+                const feedSection = document.querySelector('#explore-feed-section');
+                if (!feedSection) return;
+                feedSection.scrollIntoView({
                     behavior: 'smooth',
                     block: 'start'
                 });
@@ -731,9 +1030,7 @@ export const ExplorePage = {
         window.addEventListener('scroll', this._exploreScrollPersistenceHandler, { passive: true });
 
         if (savedState && shouldRestoreState) {
-            requestAnimationFrame(() => {
-                window.scrollTo({ top: Math.max(0, Number(savedState.scrollY) || 0), behavior: 'auto' });
-            });
+            this._restoreExplorePosition(savedState);
         }
     },
 
@@ -747,13 +1044,44 @@ export const ExplorePage = {
 
         if (isImages) {
             gridEl.classList.add('masonry-grid', 'image-feed-grid');
-            gridEl.innerHTML = items.map(w => UI.renderMasonryCard(w)).join('');
+            const imageItems = items.filter((item) => UI.isStrictImageSubmission(item));
+            if (imageItems.length === 0) {
+                gridEl.classList.remove('masonry-grid', 'image-feed-grid');
+                gridEl.innerHTML = `<p class="text-muted text-center" style="grid-column: 1/-1; padding: 40px;">No matching works found.</p>`;
+                return;
+            }
+            gridEl.innerHTML = imageItems.map((item) => UI.renderMasonryCard(item)).join('');
             this.setupMasonryInteractions(gridEl);
         } else {
             gridEl.classList.remove('masonry-grid', 'image-feed-grid');
             gridEl.innerHTML = items.map(w => UI.renderCard(w, badgeObj)).join('');
             this.setupAudioFeedCards(gridEl, items);
         }
+    },
+
+    _renderUnifiedFeed(gridEl, items) {
+        if (!gridEl) return;
+
+        const isMobileFeed = window.matchMedia('(max-width: 640px)').matches;
+
+        if (items.length === 0) {
+            gridEl.classList.remove('masonry-grid', 'image-feed-grid', 'explore-unified-feed-list', 'explore-unified-feed-grid');
+            gridEl.innerHTML = `<p class="text-muted text-center" style="grid-column: 1/-1; padding: 40px;">No matching works found.</p>`;
+            return;
+        }
+
+        gridEl.classList.remove('masonry-grid', 'image-feed-grid', 'explore-unified-feed-list', 'explore-unified-feed-grid');
+        gridEl.classList.add(isMobileFeed ? 'explore-unified-feed-list' : 'explore-unified-feed-grid');
+        gridEl.innerHTML = items.map((item) => {
+            const isImage = UI.isStrictImageSubmission(item);
+            if (!isMobileFeed && isImage) {
+                return UI.renderMasonryCard(item);
+            }
+            return UI.renderCard(item);
+        }).join('');
+
+        this.setupMasonryInteractions(gridEl);
+        this.setupAudioFeedCards(gridEl, items);
     },
 
     pauseOtherAudioCards(activeAudio) {
@@ -794,6 +1122,17 @@ export const ExplorePage = {
         });
     },
 
+    updateAudioFeedViewState(submissionId, viewCount) {
+        const nextCount = String(Math.max(0, Number(viewCount) || 0));
+
+        document.querySelectorAll(`.audio-feed-card[data-id="${submissionId}"]`).forEach((card) => {
+            const viewCountEl = card.querySelector('.audio-feed-view-count');
+            if (viewCountEl) {
+                viewCountEl.textContent = nextCount;
+            }
+        });
+    },
+
     setupAudioFeedCards(gridEl, items) {
         if (!gridEl) return;
 
@@ -819,6 +1158,7 @@ export const ExplorePage = {
                 like_count: 0,
                 view_count: 0
             }])[0];
+            let hasCountedPlayForCurrentSession = false;
 
             const markAudioAvailability = (isAvailable) => {
                 card.classList.toggle('is-audio-unavailable', !isAvailable);
@@ -862,6 +1202,26 @@ export const ExplorePage = {
                 playButton.setAttribute('aria-label', audio.paused ? 'Play audio' : 'Pause audio');
                 loopButton.setAttribute('aria-label', audio.loop ? 'Disable loop' : 'Enable loop');
                 loopButton.classList.toggle('is-active', !!audio.loop);
+            };
+
+            const resetPlaybackSession = () => {
+                hasCountedPlayForCurrentSession = false;
+            };
+
+            const countPlaybackStart = async () => {
+                if (hasCountedPlayForCurrentSession) {
+                    return;
+                }
+
+                const { error } = await API.recordSubmissionView(submission.id, App.user?.id || null);
+                if (error) {
+                    console.warn('[Explore] Failed to record audio play count:', error);
+                    return;
+                }
+
+                hasCountedPlayForCurrentSession = true;
+                stats.view_count = Math.max(0, Number(stats.view_count || 0) + 1);
+                this.updateAudioFeedViewState(submission.id, stats.view_count);
             };
 
             const ensureSource = async () => {
@@ -978,6 +1338,12 @@ export const ExplorePage = {
                 stats.like_count = Math.max(0, Number(stats.like_count || 0) + (isLiked ? 1 : -1));
                 this.updateAudioFeedLikeState(submission.id, isLiked, stats.like_count);
                 UI.showToast(isLiked ? 'Liked!' : 'Unliked');
+                if (isLiked) {
+                    UI.triggerBadgeEvaluation({
+                        userId: user.id,
+                        reason: 'like-success'
+                    });
+                }
             });
 
             rateButtons.forEach((button) => {
@@ -999,6 +1365,10 @@ export const ExplorePage = {
                     submission._audioFeedUserRating = data.userRating;
                     this.updateAudioFeedRatingState(submission.id, data.avgRating, data.userRating);
                     UI.showToast('Rated!', 'success');
+                    UI.triggerBadgeEvaluation({
+                        userId: user.id,
+                        reason: 'rating-success'
+                    });
                 });
             });
 
@@ -1009,9 +1379,19 @@ export const ExplorePage = {
             audio.addEventListener('loadedmetadata', syncState);
             audio.addEventListener('timeupdate', syncState);
             audio.addEventListener('play', syncState);
+            audio.addEventListener('playing', async () => {
+                syncState();
+                await countPlaybackStart();
+            });
             audio.addEventListener('pause', syncState);
+            audio.addEventListener('seeked', () => {
+                if ((audio.currentTime || 0) <= 0.01 && audio.paused) {
+                    resetPlaybackSession();
+                }
+            });
             audio.addEventListener('ended', () => {
                 if (!audio.loop) {
+                    resetPlaybackSession();
                     audio.currentTime = 0;
                 }
                 syncState();
@@ -1027,18 +1407,26 @@ export const ExplorePage = {
         });
     },
 
-    _updateLoadMoreButton() {
+    _updateLoadMoreButton(feedState = null) {
         const btn = document.querySelector('#explore-load-more');
         if (!btn) return;
 
-        const totalAvailable = this._allFetchedData.length;
-        // Show the button if we have more items than currently displayed
-        if (totalAvailable > this._displayCount) {
+        const resolvedFeedState = feedState || (
+            this._currentCategory === 'images'
+                ? this._buildImageFeedState(this._allFetchedData, this._displayCount)
+                : this._buildFeedState(this._allFetchedData, this._displayCount)
+        );
+        const totalAvailable = Number(resolvedFeedState.totalAvailableUnique) || 0;
+        const totalRendered = Number(resolvedFeedState.totalRendered) || 0;
+
+        if (totalAvailable > totalRendered) {
             btn.style.display = 'inline-flex';
-            const remaining = totalAvailable - this._displayCount;
+            btn.disabled = false;
+            const remaining = totalAvailable - totalRendered;
             btn.querySelector('.load-more-text').textContent = `Load More (${remaining} more)`;
         } else {
             btn.style.display = 'none';
+            btn.disabled = true;
         }
     },
 
@@ -1094,64 +1482,8 @@ export const ExplorePage = {
     },
 
     setupMasonryInteractions(gridEl) {
-        if (!gridEl) return;
-
-        gridEl.addEventListener('click', async (e) => {
-            const btn = e.target.closest('.interaction-btn');
-            const downloadBtn = e.target.closest('.btn-download');
-            const shareBtn = e.target.closest('.btn-share');
-
-            if (downloadBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-                await UI.downloadFile(downloadBtn.href, downloadBtn.dataset.filename || 'image');
-                return;
-            }
-
-            if (shareBtn) {
-                e.stopPropagation();
-                return;
-            }
-            
-            if (btn) {
-                e.stopPropagation();
-                const user = App.user;
-                if (!user) return UI.showToast('Please login to interact', 'error');
-
-                const subId = btn.dataset.id;
-                
-                if (btn.classList.contains('btn-like')) {
-                    const { action, error } = await API.toggleLike(subId, user.id);
-                    if (!error) {
-                        const isLiked = action === 'liked';
-                        gridEl.querySelectorAll(`.btn-like[data-id="${subId}"]`).forEach(el => {
-                            el.classList.toggle('liked', isLiked);
-                            const countSpan = el.querySelector('.like-count');
-                            if (countSpan) {
-                                countSpan.textContent = parseInt(countSpan.textContent) + (isLiked ? 1 : -1);
-                            }
-                        });
-                        UI.showToast(isLiked ? 'Liked!' : 'Unliked');
-                    }
-                } else if (btn.classList.contains('btn-save')) {
-                    const { action, error } = await API.toggleBookmark(subId, user.id);
-                    if (!error) {
-                        const isSaved = action === 'saved';
-                        gridEl.querySelectorAll(`.btn-save[data-id="${subId}"]`).forEach(el => {
-                            el.classList.toggle('bookmarked', isSaved);
-                        });
-                        UI.showToast(isSaved ? 'Saved to collection!' : 'Removed from collection');
-                    }
-                }
-            } else {
-                const imgWrapper = e.target.closest('.masonry-image-wrapper');
-                const card = e.target.closest('.masonry-item');
-                if (imgWrapper && card) {
-                    const fullUrl = card.dataset.fullUrl || card.dataset.previewUrl;
-                    const title = imgWrapper.querySelector('.masonry-img')?.alt || 'Image';
-                    if (fullUrl) UI.showImageLightbox(fullUrl, title);
-                }
-            }
+        UI.setupMasonryCardInteractions(gridEl, {
+            getUserId: () => App.user?.id || null
         });
     }
 };
