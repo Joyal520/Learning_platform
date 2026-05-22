@@ -12,4 +12,3 @@ export const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
     }
 });
 
-console.log('[Supabase] Active project URL:', SUPABASE_URL);

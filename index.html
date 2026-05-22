@@ -27,13 +27,8 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
         rel="stylesheet">
-    <!-- Image Cropping Library -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.js" defer></script>
-
     <!-- Supabase Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
-    <script src="https://unpkg.com/javascript-qrcode@1.0.7/lib/qrcode.js" defer></script>
     <link rel="stylesheet" href="assets/css/styles.css?v=6">
     <link rel="stylesheet" href="assets/css/explore_recovered.css?v=6">
 
@@ -62,7 +57,9 @@
         <!-- Navigation -->
         <nav class="main-nav">
             <div class="container">
-                <a href="#" class="logo" id="nav-home">EDTECHRA</a>
+                <a href="#" class="logo" id="nav-home" aria-label="EDTECHRA Home">
+                    <img class="brand-logo brand-logo-main" src="assets/images/logo.webp" alt="EDTECHRA">
+                </a>
                 <div class="nav-links" id="nav-links">
                     <!-- Dynamic links injected here -->
                 </div>
@@ -84,8 +81,21 @@
         <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Mobile navigation"></nav>
 
         <!-- Global Loader -->
-        <div id="loader" class="page-loader hidden">
-            <div class="spinner"></div>
+        <div id="loader" class="page-loader hidden" role="status" aria-live="polite" aria-label="Preparing your creative space">
+            <div class="edtechra-loader-card">
+                <div class="edtechra-loader-orbit" aria-hidden="true">
+                    <div class="edtechra-loader-logo">
+                        <img src="assets/images/logo.webp" alt="">
+                    </div>
+                </div>
+                <div class="edtechra-loader-copy">
+                    <p class="edtechra-loader-eyebrow">EDTECHRA Studio</p>
+                    <p class="edtechra-loader-text">Preparing your creative space...</p>
+                </div>
+                <div class="edtechra-loader-dots" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
         </div>
 
         <!-- Toast Notifications -->
@@ -93,7 +103,7 @@
     </div>
 
     <!-- Scripts -->
-    <script type="module" src="assets/js/app.js?v=6"></script>
+    <script type="module" src="assets/js/app.js?v=project-badge-check"></script>
 </body>
 
 </html>

@@ -148,7 +148,7 @@ export const StudentDashboardPage = {
                 `)
                 .eq('author_id', userId)
                 .order('created_at', { ascending: false })
-                .limit(3);
+                .limit(1);
 
             if (error) {
                 console.error('[StudentDashboard] Recent creations query error:', error);
@@ -156,19 +156,16 @@ export const StudentDashboardPage = {
                 return;
             }
 
-            if (!data || data.length === 0) {
-                grid.innerHTML = `
-                    <div class="sd-empty-state">
-                        <span class="sd-empty-icon">✨</span>
-                        <h3>No creations yet</h3>
-                        <p>Start sharing your creativity with the world!</p>
-                    </div>
-                `;
+            const recentCreations = (data || []).slice(0, 1);
+            this.renderGalleryPreviewStack(recentCreations);
+
+            if (recentCreations.length === 0) {
+                grid.innerHTML = this.renderRecentActivityEmptyState();
                 return;
             }
 
             // Add empty stats placeholder so renderCard doesn't break
-            const cardsData = data.map(sub => {
+            const cardsData = recentCreations.map(sub => {
                 sub.submission_stats = [{ avg_rating: 0, like_count: 0, view_count: 0 }];
                 return sub;
             });
@@ -180,7 +177,7 @@ export const StudentDashboardPage = {
             });
 
             // Step 2: Lazy load fresh stats (non-blocking)
-            const ids = data.map(s => s.id);
+            const ids = recentCreations.map(s => s.id);
             try {
                 const { data: freshStats } = await supabase
                     .from('submission_stats')
@@ -225,6 +222,58 @@ export const StudentDashboardPage = {
             console.warn('[StudentDashboard] Recent creations error:', err);
             grid.innerHTML = '<p class="text-muted">Could not load your creations.</p>';
         }
+    },
+
+    renderRecentActivityEmptyState() {
+        return `
+            <div class="sd-recent-empty-state">
+                <span class="sd-recent-empty-icon" aria-hidden="true">âœ¨</span>
+                <h3>No recent creation yet</h3>
+                <p>Your latest work will appear here once you share your first creation.</p>
+                <div class="sd-recent-empty-actions">
+                    <a href="#upload" class="sd-recent-empty-btn sd-recent-empty-btn-primary" data-link="upload">Upload your first work</a>
+                </div>
+            </div>
+        `;
+    },
+
+    renderGalleryPreviewStack(submissions = []) {
+        const stack = document.getElementById('sd-gallery-preview-stack');
+        if (!stack) return;
+
+        const placeholderIcons = ['🖼️', '▶'];
+        const cards = submissions.slice(0, 2).map((submission) => {
+            const normalized = UI.normalizeProject(submission);
+            const thumbnail = normalized.thumbnail || UI.getThumbnailFallbackUrl(submission);
+            const title = UI.escapeHtml(normalized.title || 'Creation preview');
+            const isVideo = UI.isVideoSubmission(submission);
+
+            if (!thumbnail) {
+                return `<span class="my-gallery-preview-card my-gallery-preview-card-placeholder">${UI.getCategoryEmoji(submission.category, submission.content_type)}</span>`;
+            }
+
+            return `
+                <span class="my-gallery-preview-card my-gallery-preview-card-image">
+                    <img src="${UI.escapeHtml(thumbnail)}"
+                         alt="${title}"
+                         loading="lazy"
+                         decoding="async"
+                         onerror="this.closest('.my-gallery-preview-card').classList.add('my-gallery-preview-card-placeholder'); this.closest('.my-gallery-preview-card').innerHTML='${UI.getCategoryEmoji(submission.category, submission.content_type)}';">
+                    ${isVideo ? '<span class="my-gallery-preview-play" aria-hidden="true">▶</span>' : ''}
+                </span>
+            `;
+        });
+
+        while (cards.length < 2) {
+            const icon = placeholderIcons[cards.length % placeholderIcons.length];
+            cards.push(`<span class="my-gallery-preview-card my-gallery-preview-card-placeholder">${icon}</span>`);
+        }
+
+        stack.innerHTML = `
+            ${cards.join('')}
+            <span class="my-gallery-preview-paper" aria-hidden="true"></span>
+            <span class="my-gallery-preview-folder" aria-hidden="true"><span></span></span>
+        `;
     },
 
     async loadActivityFeed() {
@@ -490,7 +539,7 @@ export const StudentDashboardPage = {
             const toneIndex = ((initial.charCodeAt(0) || 65) % 4) + 1;
 
             return avatarUrl
-                ? `<img src="${escapeHtml(avatarUrl)}" class="${className}" alt="${escapeHtml(displayName)}">`
+                ? `<img src="${escapeHtml(avatarUrl)}" class="${className}" alt="${escapeHtml(displayName)}" loading="lazy" decoding="async">`
                 : `<span class="${className} sd-avatar-fallback sd-avatar-tone-${toneIndex}" data-initial="${escapeHtml(initial)}">${escapeHtml(initial)}</span>`;
         };
         const getMovementMeta = (creator) => {
@@ -644,7 +693,7 @@ export const StudentDashboardPage = {
         podium.innerHTML = confettiHtml + '<div style="display: flex; justify-content: center; align-items: flex-end; width: 100%; gap: 12px;">' + reordered.map((creator, i) => {
             const config = podiumConfig[i];
             const initials = creator.name.charAt(0).toUpperCase();
-            const avatarHtml = creator.avatar ? `<img src="${creator.avatar}" class="sd-lb-avatar-img">` : initials;
+            const avatarHtml = creator.avatar ? `<img src="${creator.avatar}" class="sd-lb-avatar-img" loading="lazy" decoding="async">` : initials;
             const topPoints = top3[0]?.points || 1;
             const progress = creator.placeholder ? 0 : Math.min(100, (creator.points / topPoints) * 100);
 
@@ -675,7 +724,7 @@ export const StudentDashboardPage = {
             runners.innerHTML = rest.length > 0 ? rest.map((creator, i) => {
                 const rank = i + 4;
                 const initials = creator.name.charAt(0).toUpperCase();
-                const avatarHtml = creator.avatar ? `<img src="${creator.avatar}" class="sd-lb-avatar-img">` : initials;
+                const avatarHtml = creator.avatar ? `<img src="${creator.avatar}" class="sd-lb-avatar-img" loading="lazy" decoding="async">` : initials;
 
                 const topPoints = top3[0]?.points || 1;
                 const runnerProgress = Math.min(100, (creator.points / topPoints) * 100);

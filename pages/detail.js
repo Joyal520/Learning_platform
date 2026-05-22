@@ -19,16 +19,20 @@ import {
     removeChannel
 } from '../assets/js/presentation-remote.js';
 
+const DEBUG_LOGS = false;
+const debugLog = (...args) => { if (DEBUG_LOGS) console.log(...args); };
+
 export const DetailPage = {
     _exploreRestoreFlagKey: 'edtechra_explore_restore_once',
 
     async init(id) {
         const main = document.getElementById('main-content');
-        console.log('[DETAIL] init called with id:', id);
+        debugLog('[DETAIL] init called with id:', id);
         UI.showLoader();
         this._audioPlayer?.destroy();
         this._audioPlayer = null;
         this.teardownPdfViewer();
+        this.teardownCompletionRatingPrompt();
 
         try {
             // Step 1: Fetch submission data
@@ -51,6 +55,11 @@ export const DetailPage = {
             const currentUser = App.user;
             const userRole = App.profile?.role;
             const canViewUnapproved = currentUser && (currentUser.id === sub.author_id || userRole === 'admin');
+            const isPrivateTeacherResource = sub.resource_purpose === 'teaching_resource' && sub.visibility !== 'public';
+            const canViewPrivateTeacherResource = currentUser && (
+                currentUser.id === (sub.owner_id || sub.author_id) ||
+                userRole === 'admin'
+            );
 
             if (sub.status !== 'approved' && !canViewUnapproved) {
                 console.warn('[DETAIL] Blocked non-approved submission for public viewer:', id);
@@ -59,6 +68,16 @@ export const DetailPage = {
                 window.location.hash = 'explore';
                 return;
             }
+
+            if (isPrivateTeacherResource && !canViewPrivateTeacherResource) {
+                console.warn('[DETAIL] Blocked private teacher resource for non-owner:', id);
+                UI.showToast('Submission not found', 'error');
+                UI.hideLoader();
+                window.location.hash = 'explore';
+                return;
+            }
+
+            const isPdfSubmission = UI.isPdfSubmission(sub);
 
             // Step 2: Handle file path/URL
             if (sub.storage_provider === 'r2') {
@@ -88,6 +107,13 @@ export const DetailPage = {
                         sub.thumbnail_url = data.signedUrl;
                     }
                 }
+            } else if (isPdfSubmission && sub.status !== 'approved' && sub.file_path) {
+                const { data, error: signedError } = await supabase.storage
+                    .from('submissions_private')
+                    .createSignedUrl(sub.file_path, 3600);
+                if (!signedError) {
+                    sub.public_url = data.signedUrl;
+                }
             } else if (sub.file_path) {
                 const { data } = supabase.storage
                     .from(sub.status === 'approved' ? 'approved_public' : 'submissions_private')
@@ -95,8 +121,8 @@ export const DetailPage = {
                 sub.public_url = data.publicUrl;
             }
 
-            console.log('[DETAIL] Active backend project URL:', supabase?.supabaseUrl || 'unknown');
-            console.log('[DETAIL] Resolved submission preview source:', {
+            debugLog('[DETAIL] Active backend project URL:', supabase?.supabaseUrl || 'unknown');
+            debugLog('[DETAIL] Resolved submission preview source:', {
                 submissionId: sub.id,
                 publicUrl: sub.public_url || null,
                 fileUrl: sub.file_url || null,
@@ -110,9 +136,20 @@ export const DetailPage = {
             this._currentSub = sub;
 
             // Step 4: Parallelize secondary data (Stats + Like Status)
-            console.log('[DETAIL] Fetching secondary stats in parallel...');
+            debugLog('[DETAIL] Fetching secondary stats in parallel...');
             const statsPromise = this.refreshStats(sub.id);
             const likeStatusPromise = this.checkIfLiked(sub.id);
+            if (currentUser?.id) {
+                try {
+                    const interactions = await API.getUserSubmissionInteractions([sub.id], currentUser.id);
+                    sub._interactiveWebUserRating = Number(interactions?.[sub.id]?.userRating) || null;
+                    if (sub._interactiveWebUserRating) {
+                        UI.storeRatingMarker?.(sub.id, currentUser.id);
+                    }
+                } catch (error) {
+                    console.warn('[Rating] Existing user rating check failed', error);
+                }
+            }
 
             // Setup static UI elements
             this.setupAudioPlayer(sub);
@@ -122,6 +159,7 @@ export const DetailPage = {
             this.setupEditButton(sub);
             this.setupPreviewFullscreen();
             this.setupBookmark(sub);
+            this.setupCompletionRatingPrompt(sub);
 
             // Check for ?fullscreen=true in URL
             const urlParams = new URLSearchParams(window.location.search);
@@ -141,13 +179,14 @@ export const DetailPage = {
             await Promise.all([statsPromise, likeStatusPromise]);
 
             UI.hideLoader();
-            console.log('[DETAIL] ✅ Fully Loaded');
+            debugLog('[DETAIL] ✅ Fully Loaded');
 
             // Clean up fullscreen state on navigation
             window.addEventListener('hashchange', () => {
                 this._audioPlayer?.destroy();
                 this._audioPlayer = null;
                 this.teardownPdfViewer();
+                this.teardownCompletionRatingPrompt();
                 document.body.classList.remove('body-no-scroll');
                 document.querySelectorAll('.fullscreen-active').forEach(el => {
                     el.classList.remove('fullscreen-active');
@@ -170,7 +209,7 @@ export const DetailPage = {
         this._audioPlayer?.destroy();
         this._audioPlayer = new AudioPlayer(mount, sub, {
             onPlaybackStart: async () => {
-                console.log('[DETAIL] Audio playback started, recording view/play count...');
+                debugLog('[DETAIL] Audio playback started, recording view/play count...');
                 await this.recordView(sub.id, { source: 'audio-playback' });
             }
         });
@@ -178,7 +217,7 @@ export const DetailPage = {
     },
 
     isAudioSubmission(sub = {}) {
-        return sub.content_type === 'audio' || sub.file_type?.startsWith?.('audio/');
+        return UI.isAudioSubmission(sub);
     },
 
     ensureSubmissionStats(sub = this._currentSub) {
@@ -229,7 +268,7 @@ export const DetailPage = {
 
         UI.showLoader();
         try {
-            console.log('[DETAIL] Rating mutation start:', {
+            debugLog('[DETAIL] Rating mutation start:', {
                 submissionId: sub.id,
                 ratingValue,
                 backendProjectUrl: supabase?.supabaseUrl || 'unknown'
@@ -243,12 +282,15 @@ export const DetailPage = {
 
             this._statsMutationVersion = (this._statsMutationVersion || 0) + 1;
             this.applyAverageRatingToUi(data.avgRating, sub);
-            console.log('[DETAIL] Rating mutation success:', data);
+            sub._interactiveWebUserRating = data.userRating || Number(ratingValue) || null;
+            UI.storeRatingMarker?.(sub.id, user.id);
+            this.markRatingRated(sub.id);
+            debugLog('[DETAIL] Rating mutation success:', data);
             await this.refreshStats(sub.id, {
                 reason: 'rating-success',
                 mutationVersion: this._statsMutationVersion
             });
-            UI.showToast('Rated!', 'success');
+            UI.showToast('Thank you for rating!', 'success');
             UI.triggerBadgeEvaluation({
                 userId: user.id,
                 reason: 'rating-success'
@@ -258,7 +300,24 @@ export const DetailPage = {
         }
     },
 
-    navigateBackToExplore() {
+    navigateBackToExplore({ skipRatingPrompt = false } = {}) {
+        if (!skipRatingPrompt && this._currentSub?.id && this.shouldUseCompletionRatingPrompt(this._currentSub)) {
+            const sub = this._currentSub;
+            UI.hydrateActiveUserRatingForSubmission?.(sub).then((hasRated) => {
+                if (hasRated || !this.shouldPromptRatingBeforeClose?.(sub)) {
+                    this.navigateBackToExplore({ skipRatingPrompt: true });
+                    return;
+                }
+
+                this.markRatingPrompted(sub?.id);
+                this.showCompletionRatingPrompt(sub, {
+                    onDone: () => this.navigateBackToExplore({ skipRatingPrompt: true }),
+                    onSkip: () => this.navigateBackToExplore({ skipRatingPrompt: true })
+                });
+            });
+            return;
+        }
+
         try {
             sessionStorage.setItem(this._exploreRestoreFlagKey, 'true');
         } catch (_) {
@@ -419,6 +478,25 @@ export const DetailPage = {
                 .forEach((button) => {
                     button.disabled = !enabled;
                 });
+        };
+
+        const showInlinePdfFallback = () => {
+            if (!state.fileUrl || !state.fallback) return;
+            if (state.fallback.dataset.inlinePdfMounted === 'true') return;
+
+            const safeTitle = String(state.sub?.title || 'Document viewer')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            state.fallback.insertAdjacentHTML(
+                'beforeend',
+                `<div class="document-preview-fallback-inline">
+                    <iframe class="document-preview-frame immersive-viewer-pdf-frame" src="${state.fileUrl}" title="${safeTitle}" loading="lazy" referrerpolicy="no-referrer"></iframe>
+                </div>`
+            );
+            state.fallback.dataset.inlinePdfMounted = 'true';
         };
 
         const clearPointerHideTimer = () => {
@@ -995,6 +1073,7 @@ export const DetailPage = {
 
             loading.classList.add('hidden');
             canvas.classList.add('hidden');
+            showInlinePdfFallback();
             fallback.classList.remove('hidden');
             presentBtn.classList.add('hidden');
             document.body.classList.remove('body-no-scroll');
@@ -1234,7 +1313,7 @@ export const DetailPage = {
             await supabase.from('downloads').insert({
                 submission_id: sub.id, user_id: user?.id || null
             });
-            window.open(sub.public_url, '_blank');
+            window.open(UI.getSubmissionFileUrl(sub), '_blank');
         });
     },
 
@@ -1261,6 +1340,115 @@ export const DetailPage = {
         });
     },
 
+    shouldUseCompletionRatingPrompt(sub = {}) {
+        return !!sub && !this.isAudioSubmission(sub) && !UI.isVideoSubmission(sub);
+    },
+
+    markRatingPrompted(submissionId) {
+        UI.markRatingPrompted?.(submissionId);
+    },
+
+    markRatingRated(submissionId) {
+        UI.markRatingRated?.(submissionId);
+    },
+
+    shouldPromptRatingBeforeClose(sub = {}) {
+        return UI.shouldPromptRatingBeforeClose?.(sub) || false;
+    },
+
+    setupCompletionRatingPrompt(sub) {
+        // Rating prompts are intentionally close-triggered, not scroll-triggered.
+    },
+
+    teardownCompletionRatingObserver() {
+        this._completionRatingObserver?.disconnect?.();
+        this._completionRatingObserver = null;
+        if (this._completionRatingScrollHandler) {
+            window.removeEventListener('scroll', this._completionRatingScrollHandler);
+            this._completionRatingScrollHandler = null;
+        }
+    },
+
+    teardownCompletionRatingPrompt() {
+        this._completionRatingDetailOpen = false;
+        this._completionRatingActiveSubmissionId = null;
+        this.teardownCompletionRatingObserver();
+        this._completionRatingSentinel?.remove?.();
+        this._completionRatingSentinel = null;
+        document.querySelector('.detail-rating-prompt-overlay')?.remove();
+    },
+
+    showCompletionRatingPrompt(sub, { onDone = null, onSkip = null } = {}) {
+        document.querySelector('.detail-rating-prompt-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'detail-rating-prompt-overlay rating-modal-overlay';
+        overlay.innerHTML = `
+            <div class="detail-rating-prompt rating-modal-card" role="dialog" aria-modal="true" aria-label="Rate this work">
+                <button type="button" class="detail-rating-prompt-close" aria-label="Close rating prompt">&times;</button>
+                <p class="detail-rating-prompt-kicker">Finished reading?</p>
+                <h2>Rate this work</h2>
+                <p class="detail-rating-prompt-subtitle">Your feedback helps creators improve.</p>
+                <div class="detail-rating-prompt-stars" aria-label="Choose a rating">
+                    ${[1, 2, 3, 4, 5].map((value) => `
+                        <button type="button" class="detail-rating-prompt-star" data-rating="${value}" aria-label="Rate ${value} star${value === 1 ? '' : 's'}">&#9733;</button>
+                    `).join('')}
+                </div>
+                <button type="button" class="detail-rating-prompt-submit">Submit Rating</button>
+                <button type="button" class="detail-rating-prompt-secondary">Not now</button>
+            </div>
+        `;
+
+        const close = ({ skipped = false } = {}) => {
+            overlay.remove();
+            if (skipped && typeof onSkip === 'function') onSkip();
+        };
+        const showThanks = () => {
+            const card = overlay.querySelector('.detail-rating-prompt');
+            if (!card) return;
+            card.classList.add('is-thank-you');
+            card.innerHTML = `
+                <div class="detail-rating-success-icon" aria-hidden="true">✓</div>
+                <h2>Thank you for rating!</h2>
+                <p class="detail-rating-prompt-subtitle">Your feedback has been saved.</p>
+            `;
+            window.setTimeout(() => {
+                overlay.remove();
+                if (typeof onDone === 'function') onDone();
+            }, 1300);
+        };
+        let selectedRating = 0;
+        const syncStars = () => {
+            overlay.querySelectorAll('.detail-rating-prompt-star').forEach((star) => {
+                const value = Number(star.dataset.rating || 0);
+                star.classList.toggle('is-selected', value <= selectedRating);
+            });
+        };
+
+        overlay.querySelector('.detail-rating-prompt-close')?.addEventListener('click', () => close({ skipped: true }));
+        overlay.querySelector('.detail-rating-prompt-secondary')?.addEventListener('click', () => close({ skipped: true }));
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) close({ skipped: true });
+        });
+        overlay.querySelectorAll('.detail-rating-prompt-star').forEach((button) => {
+            button.addEventListener('click', () => {
+                selectedRating = Number(button.dataset.rating || 0);
+                syncStars();
+            });
+        });
+        overlay.querySelector('.detail-rating-prompt-submit')?.addEventListener('click', async () => {
+            if (!selectedRating) {
+                UI.showToast('Choose a rating first', 'error');
+                return;
+            }
+            await this.submitRating(sub, selectedRating);
+            sub._interactiveWebUserRating = selectedRating;
+            this.markRatingRated(sub.id);
+            showThanks();
+        });
+
+        document.body.appendChild(overlay);
+    },
     async refreshStats(subId, { reason = 'general', mutationVersion = this._statsMutationVersion || 0 } = {}) {
         try {
             let likeCount = 0;
@@ -1300,7 +1488,7 @@ export const DetailPage = {
             }
 
             if ((this._statsMutationVersion || 0) !== mutationVersion) {
-                console.log('[DETAIL] Skipping stale stats refresh result:', {
+                debugLog('[DETAIL] Skipping stale stats refresh result:', {
                     submissionId: subId,
                     reason,
                     mutationVersion,
@@ -1309,7 +1497,7 @@ export const DetailPage = {
                 return;
             }
 
-            console.log('[DETAIL] Post-mutation refresh result:', {
+            debugLog('[DETAIL] Post-mutation refresh result:', {
                 submissionId: subId,
                 reason,
                 likeCount,
@@ -1343,7 +1531,7 @@ export const DetailPage = {
                 }
             }
 
-            console.log('[DETAIL] Final rendered count values:', {
+            debugLog('[DETAIL] Final rendered count values:', {
                 submissionId: subId,
                 renderedLikeCount: likeCountSpan?.textContent || null,
                 renderedAvgRating: avgRatingSpan?.textContent || null,
@@ -1358,7 +1546,7 @@ export const DetailPage = {
     async recordView(subId, { source = 'detail-init' } = {}) {
         try {
             const viewerId = App.user ? App.user.id : null;
-            console.log('[DETAIL] Recording view:', {
+            debugLog('[DETAIL] Recording view:', {
                 submissionId: subId,
                 source,
                 viewerId,
@@ -1371,7 +1559,7 @@ export const DetailPage = {
                 console.warn('[DETAIL] Failed to record view:', error);
                 return false;
             } else {
-                console.log('[DETAIL] View recorded successfully');
+                debugLog('[DETAIL] View recorded successfully');
                 this._statsMutationVersion = (this._statsMutationVersion || 0) + 1;
                 this.incrementViewCountDisplays(1);
                 await this.refreshStats(subId, {
@@ -1466,3 +1654,4 @@ export const DetailPage = {
     },
 
 };
+

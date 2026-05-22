@@ -1,0 +1,49 @@
+# Dependencies and local package state
+node_modules
+package-lock.json
+
+# Local environment and editor files
+.env
+.env.*
+.vscode
+.idea
+.git
+.gemini
+
+# Codex/local work artifacts
+_codex_*
+_codex_origin_main.bundle
+unpacked_skill
+unpacked_task
+test-results
+debug.log
+dev-server-codex*.log
+chrome-upload-dom.html
+
+# Screenshots and local verification captures
+*-screenshot*.png
+*screenshot*.png
+*-check.png
+*-verify*.png
+classroom-analytics*.png
+classroom-*-analytics.png
+detail-dashboard*.png
+explore-hero-title*.png
+leaderboard-*.png
+mobile-bottom-nav-*.png
+podium-live-check.png
+student-dashboard-live.png
+error_screenshot*.png
+
+# Local scripts and patches not needed by the deployed static app
+patch.py
+_patch_*.js
+find_overflow.js
+overflow_list.txt
+verify_upload.js
+
+# Source prompt/document archives
+Task.docx
+Task.zip
+Skill.md.docx
+Skill.md.zip

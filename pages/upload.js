@@ -3,8 +3,17 @@ import { UI } from '../assets/js/ui.js';
 import { supabase } from '../assets/js/supabase.js';
 import { ImageUtils } from '../assets/js/image-utils.js';
 import { ProjectUpload } from '../assets/js/project-upload.js';
+import {
+    sanitizeProjectDescription,
+    sanitizeProjectMetadata,
+    sanitizeProjectTitle,
+    validateProjectUrl
+} from '../assets/js/url-submission.js';
 import App from '../assets/js/app.js';
 import { notesFromTextareaValue, notesToTextareaValue } from '../assets/js/presentation-remote.js';
+
+const DEBUG_LOGS = false;
+const debugLog = (...args) => { if (DEBUG_LOGS) console.log(...args); };
 
 export const UploadPage = {
     _imageFile: null,
@@ -14,18 +23,92 @@ export const UploadPage = {
     _imagePreviewUrl: null,
     _isSubmitting: false,
 
+    getActiveRole() {
+        return App.profile?.role || localStorage.getItem('edtechra_role') || null;
+    },
+
+    getUploadContext() {
+        const form = document.querySelector('#upload-form');
+        const hashQuery = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '';
+        const params = new URLSearchParams(hashQuery);
+        const isClassroom = form?.dataset.uploadContext === 'classroom'
+            || params.get('context') === 'classroom'
+            || params.get('source') === 'digital_classroom';
+
+        return {
+            uploadContext: isClassroom ? 'classroom' : 'global',
+            source: isClassroom ? 'digital_classroom' : 'dashboard',
+            classroomId: form?.dataset.classroomId || params.get('classroomId') || null
+        };
+    },
+
+    isTeacherResourceUpload() {
+        const context = this.getUploadContext();
+        return this.getActiveRole() === 'teacher' && context.uploadContext === 'classroom';
+    },
+
+    getUploadIdleText() {
+        return 'Submit';
+    },
+
+    getTeacherVisibility(formData) {
+        const visibility = String(formData.get('visibility') || 'private').toLowerCase();
+        return visibility === 'public' ? 'public' : 'private';
+    },
+
+    buildResourceMetadata(user, formData, category) {
+        const isTeacherResource = this.isTeacherResourceUpload();
+        const role = this.getActiveRole() || 'student';
+        const context = this.getUploadContext();
+        return {
+            owner_id: user.id,
+            owner_role: isTeacherResource ? 'teacher' : role,
+            resource_purpose: isTeacherResource ? 'teaching_resource' : 'creative_work',
+            resource_type: UI.normalizeCategoryValue(category),
+            visibility: isTeacherResource ? this.getTeacherVisibility(formData) : 'public',
+            upload_context: context.uploadContext,
+            source: context.source,
+            classroom_id: isTeacherResource && context.classroomId ? context.classroomId : null,
+            teacher_id: isTeacherResource ? user.id : null,
+            updated_at: new Date().toISOString()
+        };
+    },
+
+    async showTeacherResourceSuccess(resourceId) {
+        UI.showToast('Resource uploaded successfully.', 'success');
+        const actions = document.querySelector('#upload-form .form-actions');
+        if (!actions) return;
+        const context = this.getUploadContext();
+        const classroomParam = context.classroomId ? `?classroomId=${encodeURIComponent(context.classroomId)}` : '';
+        const assignSeparator = context.classroomId ? '&' : '?';
+
+        actions.innerHTML = `
+            <div class="teacher-upload-success-actions">
+                <p class="notice success">Resource uploaded successfully.</p>
+                <a class="btn btn-primary" href="#classroom/resources${classroomParam}">View in My Teaching Resources</a>
+                <a class="btn btn-outline" href="#classroom/resources${classroomParam}${assignSeparator}assignResource=${encodeURIComponent(resourceId || '')}">Assign Now</a>
+            </div>
+        `;
+    },
+
     init() {
         const form = document.querySelector('#upload-form');
         if (!form || form.dataset.uploadInitialized === 'true') return;
         form.dataset.uploadInitialized = 'true';
+        const submitIdleText = this.getUploadIdleText();
         const fileGroup = document.querySelector('#file-input-group');
         const textGroup = document.querySelector('#text-input-group');
         const codeGroup = document.querySelector('#code-input-group');
+        const urlGroup = document.querySelector('#url-input-group');
         const imageGroup = document.querySelector('#image-input-group');
+        const videoGroup = document.querySelector('#video-input-group');
+        const videoUrlInput = document.getElementById('video-url-input');
+        const videoUrlStatus = document.getElementById('video-url-status');
         const thumbnailGroup = document.querySelector('#thumbnail-input-group');
         const modeRadios = document.querySelectorAll('input[name="content_mode"]');
         const thumbnailInput = document.getElementById('thumbnail-input');
         const thumbnailPreview = document.getElementById('thumbnail-preview');
+        const urlInput = document.getElementById('project-url-input');
 
         // Reset image state
         this._resetImageSelection();
@@ -48,12 +131,14 @@ export const UploadPage = {
         const modeTabs = {
             file: document.querySelector('input[name="content_mode"][value="file"]')?.closest('.mode-tab'),
             text: document.querySelector('input[name="content_mode"][value="text"]')?.closest('.mode-tab'),
-            code: document.querySelector('input[name="content_mode"][value="code"]')?.closest('.mode-tab')
+            code: document.querySelector('input[name="content_mode"][value="code"]')?.closest('.mode-tab'),
+            url: document.querySelector('input[name="content_mode"][value="url"]')?.closest('.mode-tab')
         };
         const modeInputs = {
             file: document.querySelector('input[name="content_mode"][value="file"]'),
             text: document.querySelector('input[name="content_mode"][value="text"]'),
-            code: document.querySelector('input[name="content_mode"][value="code"]')
+            code: document.querySelector('input[name="content_mode"][value="code"]'),
+            url: document.querySelector('input[name="content_mode"][value="url"]')
         };
         const supportedProjectAccept = ProjectUpload.PROJECT_ACCEPT_ATTRIBUTE;
         const supportedAudioAccept = [
@@ -98,7 +183,9 @@ export const UploadPage = {
             const modeOptions = UI.getContentModeOptions(selectedCategory);
             const isImageCategory = modeOptions.useImageUploader;
             const activeMode = document.querySelector('input[name="content_mode"]:checked')?.value;
-            const nextMode = modeOptions[activeMode] ? activeMode : (modeOptions.file ? 'file' : modeOptions.code ? 'code' : 'text');
+            const nextMode = modeOptions[activeMode]
+                ? activeMode
+                : (modeOptions.file ? 'file' : modeOptions.url ? 'url' : modeOptions.code ? 'code' : 'text');
             const textInput = textGroup?.querySelector('textarea');
             const codeInput = codeGroup?.querySelector('textarea');
 
@@ -106,17 +193,26 @@ export const UploadPage = {
 
             nonImageFields?.classList.toggle('hidden', isImageCategory);
             imageGroup?.classList.toggle('hidden', !isImageCategory);
+            const isVideoCategory = modeOptions.useVideoUrl;
+            videoGroup?.classList.toggle('hidden', !isVideoCategory);
+            if (videoUrlInput) {
+                videoUrlInput.required = isVideoCategory;
+                videoUrlInput.disabled = !isVideoCategory;
+            }
             thumbnailGroup?.classList.toggle('hidden', isImageCategory);
             fileGroup?.classList.add('hidden');
             textGroup?.classList.add('hidden');
             codeGroup?.classList.add('hidden');
+            urlGroup?.classList.add('hidden');
 
             fileInput?.removeAttribute('required');
             textInput?.removeAttribute('required');
             codeInput?.removeAttribute('required');
+            urlInput?.removeAttribute('required');
             if (fileInput) fileInput.disabled = true;
             if (textInput) textInput.disabled = true;
             if (codeInput) codeInput.disabled = true;
+            if (urlInput) urlInput.disabled = true;
             if (imageInput) {
                 imageInput.required = false;
                 imageInput.disabled = !isImageCategory;
@@ -156,6 +252,12 @@ export const UploadPage = {
                 if (codeInput) {
                     codeInput.required = true;
                     codeInput.disabled = false;
+                }
+            } else if (nextMode === 'url') {
+                urlGroup?.classList.remove('hidden');
+                if (urlInput) {
+                    urlInput.required = true;
+                    urlInput.disabled = false;
                 }
             }
 
@@ -240,6 +342,30 @@ export const UploadPage = {
         // ========== Theme Multi-Select ==========
         refreshThemeOptions();
 
+        const updateVideoUrlStatus = () => {
+            if (!videoUrlInput || !videoUrlStatus || videoUrlInput.disabled) return;
+            const value = videoUrlInput.value.trim();
+            videoUrlStatus.classList.remove('valid', 'invalid');
+            if (!value) {
+                videoUrlStatus.textContent = '';
+                videoUrlStatus.classList.add('hidden');
+                return;
+            }
+
+            const parsed = UI.parseYouTubeUrl(value);
+            videoUrlStatus.classList.remove('hidden');
+            if (parsed) {
+                videoUrlStatus.textContent = 'YouTube link ready.';
+                videoUrlStatus.classList.add('valid');
+            } else {
+                videoUrlStatus.textContent = 'Please paste a valid YouTube watch, short, share, or embed link.';
+                videoUrlStatus.classList.add('invalid');
+            }
+        };
+
+        videoUrlInput?.addEventListener('input', updateVideoUrlStatus);
+        videoUrlInput?.addEventListener('blur', updateVideoUrlStatus);
+
         // Thumbnail preview & Compression prompt
         thumbnailInput?.addEventListener('change', async (e) => {
             const file = e.target.files[0];
@@ -257,7 +383,7 @@ export const UploadPage = {
                 try {
                     // Generate placeholder preview (fast)
                     const placeholder = await ImageUtils.generatePlaceholder(file);
-                    thumbnailPreview.innerHTML = `<img src="${placeholder}" alt="Thumbnail preview" style="filter: blur(4px)">`;
+                    thumbnailPreview.innerHTML = `<img src="${placeholder}" alt="Thumbnail preview" decoding="async" style="filter: blur(4px)">`;
                     thumbnailPreview.classList.add('has-image');
 
                     // --- NEW: Compression Permission Flow ---
@@ -277,7 +403,7 @@ export const UploadPage = {
 
                             // Replace preview with compressed version
                             const compressedUrl = URL.createObjectURL(compressedBlob);
-                            thumbnailPreview.innerHTML = `<img src="${compressedUrl}" alt="Compressed Thumbnail preview">`;
+                            thumbnailPreview.innerHTML = `<img src="${compressedUrl}" alt="Compressed Thumbnail preview" decoding="async">`;
 
                             // Store the compressed blob on the input for form submission
                             // We can use a custom property since we can't easily replace the File in the input
@@ -327,31 +453,50 @@ export const UploadPage = {
                 const category = formData.get('category');
                 const contentMode = formData.get('content_mode');
                 const file = formData.get('file');
+                const projectUrlInput = formData.get('project_url');
                 const selectedImageFile = this._imageFile || this._imageCompressedBlob || null;
                 const isImageCategory = category === 'images';
+                const isVideoCategory = category === 'video';
 
                 // Validation
+                if (isVideoCategory) {
+                    const videoUrlValue = document.getElementById('video-url-input')?.value?.trim() || '';
+                    const parsed = UI.parseYouTubeUrl(videoUrlValue);
+                    if (!parsed) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = submitIdleText;
+                        return UI.showToast('Please enter a valid YouTube watch, short, share, or embed link.', 'error');
+                    }
+                }
                 if (isImageCategory && !selectedImageFile) {
                     submitBtn.disabled = false;
-                    submitBtn.textContent = 'Submit for Review';
+                    submitBtn.textContent = submitIdleText;
                     return UI.showToast('Please select an image to upload.', 'error');
                 }
-                if (!isImageCategory && contentMode === 'file' && (!file || file.size === 0)) {
+                if (!isImageCategory && !isVideoCategory && contentMode === 'file' && (!file || file.size === 0)) {
                     submitBtn.disabled = false;
-                    submitBtn.textContent = 'Submit for Review';
+                    submitBtn.textContent = submitIdleText;
                     return UI.showToast('Please select a file to upload.', 'error');
                 }
-                if (!isImageCategory && contentMode === 'file' && file && file.size > 50 * 1024 * 1024) {
+                if (!isImageCategory && !isVideoCategory && contentMode === 'file' && file && file.size > 50 * 1024 * 1024) {
                     submitBtn.disabled = false;
-                    submitBtn.textContent = 'Submit for Review';
+                    submitBtn.textContent = submitIdleText;
                     return UI.showToast('File size exceeds 50MB limit.', 'error');
+                }
+                if (!isImageCategory && contentMode === 'url') {
+                    const validation = validateProjectUrl(projectUrlInput);
+                    if (!validation.valid) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = submitIdleText;
+                        return UI.showToast(validation.error || 'Invalid URL', 'error');
+                    }
                 }
                 if (!isImageCategory && contentMode === 'file') {
                     const validationError = this.validateProjectFile(file, category);
                     if (validationError) {
                         UI.hideLoader();
                         submitBtn.disabled = false;
-                        submitBtn.textContent = 'Submit for Review';
+                        submitBtn.textContent = submitIdleText;
                         return UI.showToast(validationError, 'error');
                     }
 
@@ -361,7 +506,7 @@ export const UploadPage = {
                         } catch (zipError) {
                             UI.hideLoader();
                             submitBtn.disabled = false;
-                            submitBtn.textContent = 'Submit for Review';
+                            submitBtn.textContent = submitIdleText;
                             return UI.showToast(this.mapUploadError(zipError), 'error');
                         }
                     }
@@ -380,6 +525,7 @@ export const UploadPage = {
                 let fileToUpload = null;
                 let finalFileSize = 0;
                 let finalFileType = 'text/plain';
+                let urlSubmission = null;
 
                 if (contentMode === 'text') {
                     contentText = formData.get('content_text');
@@ -389,7 +535,7 @@ export const UploadPage = {
                     if (htmlValidationError) {
                         UI.hideLoader();
                         submitBtn.disabled = false;
-                        submitBtn.textContent = 'Submit for Review';
+                        submitBtn.textContent = submitIdleText;
                         return UI.showToast(htmlValidationError, 'error');
                     }
 
@@ -402,14 +548,133 @@ export const UploadPage = {
                         finalFileSize = fileToUpload.size;
                         finalFileType = ProjectUpload.getProjectMimeType(fileToUpload.name, fileToUpload.type) || fileToUpload.type || 'application/octet-stream';
                     }
+                } else if (contentMode === 'url') {
+                    const validation = validateProjectUrl(projectUrlInput);
+                    if (!validation.valid) {
+                        UI.hideLoader();
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = submitIdleText;
+                        return UI.showToast(validation.error || 'Invalid URL', 'error');
+                    }
+
+                    let extractedMetadata;
+                    try {
+                        extractedMetadata = await API.fetchProjectUrlMetadata(validation.normalizedUrl);
+                    } catch (metadataError) {
+                        UI.hideLoader();
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = submitIdleText;
+                        return UI.showToast(this.mapUploadError(metadataError) || 'Unable to fetch preview', 'error');
+                    }
+
+                    const mergedMetadata = sanitizeProjectMetadata({
+                        title: formData.get('title') || extractedMetadata?.title || '',
+                        description: formData.get('description') || extractedMetadata?.description || '',
+                        previewImage: extractedMetadata?.previewImage || ''
+                    });
+
+                    urlSubmission = {
+                        url: extractedMetadata?.url || validation.normalizedUrl,
+                        title: sanitizeProjectTitle(mergedMetadata.title || formData.get('title') || ''),
+                        description: sanitizeProjectDescription(mergedMetadata.description || formData.get('description') || ''),
+                        previewImage: mergedMetadata.previewImage || ''
+                    };
+                    finalFileType = 'text/uri-list';
                 }
 
                 const selectedThemes = this.getSelectedThemes();
                 if (selectedThemes.length === 0) {
                     UI.hideLoader();
                     submitBtn.disabled = false;
-                    submitBtn.textContent = 'Submit for Review';
+                    submitBtn.textContent = submitIdleText;
                     return UI.showToast('Please select at least 1 theme.', 'error');
+                }
+
+                // If video category, handle YouTube video submission
+                if (isVideoCategory) {
+                    const videoUrlValue = document.getElementById('video-url-input')?.value?.trim() || '';
+                    const parsed = UI.parseYouTubeUrl(videoUrlValue);
+
+                    if (!parsed) {
+                        UI.hideLoader();
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = submitIdleText;
+                        return UI.showToast('Please enter a valid YouTube watch, short, share, or embed link.', 'error');
+                    }
+
+                    // Fetch metadata via oEmbed
+                    let videoTitle = formData.get('title') || 'Untitled Video';
+                    let channelName = 'Unknown Channel';
+                    let channelUrl = '';
+
+                    try {
+                        const oembedUrl = `https://noembed.com/embed?url=${encodeURIComponent(parsed.normalizedUrl)}`;
+                        const oembedRes = await fetch(oembedUrl);
+                        if (oembedRes.ok) {
+                            const oembedData = await oembedRes.json();
+                            if (oembedData.title) videoTitle = oembedData.title;
+                            if (oembedData.author_name) channelName = oembedData.author_name;
+                            if (oembedData.author_url) channelUrl = oembedData.author_url;
+                        }
+                    } catch (metaErr) {
+                        console.warn('[Upload] YouTube metadata fetch failed, using defaults:', metaErr);
+                    }
+
+                    const videoMetadata = JSON.stringify({
+                        videoId: parsed.videoId,
+                        source: parsed.source,
+                        title: videoTitle,
+                        channel: { name: channelName, url: channelUrl },
+                        thumbnail: UI.getYouTubeThumbnailUrl(parsed.videoId)
+                    });
+
+                    const selectedThemes = this.getSelectedThemes();
+                    if (selectedThemes.length === 0) {
+                        UI.hideLoader();
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = submitIdleText;
+                        return UI.showToast('Please select at least 1 theme.', 'error');
+                    }
+
+                    const submissionData = {
+                        author_id: user.id,
+                        title: videoTitle,
+                        category: 'video',
+                        content_type: 'video',
+                        file_type: 'video/youtube',
+                        mime_type: 'video/youtube',
+                        file_url: parsed.normalizedUrl,
+                        file_size: 0,
+                        description: videoMetadata,
+                        thumbnail_url: UI.getYouTubeThumbnailUrl(parsed.videoId),
+                        themes: selectedThemes,
+                        audience_level: this.normalizeAudienceLevel(formData.get('audience_level')),
+                        status: 'pending',
+                        ...this.buildResourceMetadata(user, formData, 'video')
+                    };
+
+                    debugLog('[Upload] Submitting video:', submissionData);
+                    const { data, error } = await API.uploadSubmission(submissionData, null, null, null);
+
+                    if (error) {
+                        console.error('Video upload error:', error);
+                        UI.showToast(this.mapUploadError(error), 'error');
+                    } else {
+                        UI.hideLoader();
+                        if (this.isTeacherResourceUpload()) {
+                            await this.showTeacherResourceSuccess(data?.id);
+                        } else {
+                            await UI.showSubmissionSuccessCelebration(3500);
+                            await UI.triggerBadgeEvaluation({
+                                userId: user.id,
+                                reason: 'upload-success',
+                                awaitPopups: true
+                            });
+                            window.location.hash = '#my-uploads';
+                        }
+                    }
+
+                    return; // Exit early — video path complete
                 }
 
                 // If image category, we submit as "Image Post" not just normal submission
@@ -417,7 +682,7 @@ export const UploadPage = {
                     if (!this._imageFile && !this._imageCompressedBlob) {
                         UI.hideLoader();
                         submitBtn.disabled = false;
-                        submitBtn.textContent = 'Submit for Review';
+                        submitBtn.textContent = submitIdleText;
                         return UI.showToast('Please select an image to upload.', 'error');
                     }
 
@@ -439,10 +704,11 @@ export const UploadPage = {
                         mime_type: fullSizeImage?.type || 'image/webp',
                         status: 'pending', // Restore moderation flow - images must be approved first
                         themes: selectedThemes,
-                        audience_level: this.normalizeAudienceLevel(formData.get('audience_level'))
+                        audience_level: this.normalizeAudienceLevel(formData.get('audience_level')),
+                        ...this.buildResourceMetadata(user, formData, formData.get('category'))
                     };
 
-                    const { error } = await API.uploadImagePost(
+                    const { data, error } = await API.uploadImagePost(
                         submissionData,
                         fullSizeImage,
                         imageThumbnail
@@ -453,31 +719,43 @@ export const UploadPage = {
                         UI.showToast(error.message || 'Image Upload failed.', 'error');
                     } else {
                         UI.hideLoader();
-                        await UI.showSubmissionSuccessCelebration(3500);
-                        await UI.triggerBadgeEvaluation({
-                            userId: user.id,
-                            reason: 'upload-success',
-                            awaitPopups: true
-                        });
+                        if (this.isTeacherResourceUpload()) {
+                            await this.showTeacherResourceSuccess(data?.id);
+                        } else {
+                            await UI.showSubmissionSuccessCelebration(3500);
+                            await UI.triggerBadgeEvaluation({
+                                userId: user.id,
+                                reason: 'upload-success',
+                                awaitPopups: true
+                            });
+                            window.location.hash = '#my-uploads';
+                        }
                         this._resetImageSelection();
-                        window.location.hash = '#my-uploads';
                     }
 
                 } else {
                     // Normal File/Text/Code Submission Path
                     const submissionData = {
                         author_id: user.id,
-                        title: formData.get('title'),
+                        title: urlSubmission?.title || sanitizeProjectTitle(formData.get('title')),
                         category: formData.get('category'),
                         themes: selectedThemes,
                         audience_level: this.normalizeAudienceLevel(formData.get('audience_level')),
-                        description: formData.get('description') || '',
+                        description: urlSubmission?.description || sanitizeProjectDescription(formData.get('description') || ''),
                         content_text: contentText,
                         file_type: finalFileType,
                         file_size: finalFileSize,
                         mime_type: finalFileType,
-                        status: 'pending' // Normal flows require review
+                        status: 'pending', // Normal flows require review
+                        ...this.buildResourceMetadata(user, formData, formData.get('category'))
                     };
+
+                    if (urlSubmission) {
+                        submissionData.type = 'url';
+                        submissionData.url = urlSubmission.url;
+                        submissionData.content_type = 'url';
+                        submissionData.previewImage = urlSubmission.previewImage;
+                    }
 
                     const presentationNotes = this.getPresentationNotesValue();
                     if (presentationNotes && this.shouldAttachPresentationNotes({
@@ -499,14 +777,14 @@ export const UploadPage = {
                         if (thumbnailFile.size > 10 * 1024 * 1024) {
                             UI.hideLoader();
                             submitBtn.disabled = false;
-                            submitBtn.textContent = 'Submit for Review';
+                            submitBtn.textContent = submitIdleText;
                             return UI.showToast('Thumbnail image exceeds 10MB limit.', 'error');
                         }
 
-                        console.log('[Upload] Starting thumbnail compression pipeline...');
+                        debugLog('[Upload] Starting thumbnail compression pipeline...');
                         try {
                             if (thumbnailInput._compressedBlob) {
-                                console.log('[Upload] Using pre-compressed thumbnail blob');
+                                debugLog('[Upload] Using pre-compressed thumbnail blob');
                                 thumbnailBlob = thumbnailInput._compressedBlob;
                                 displayBlob = await ImageUtils.compressToTarget(thumbnailFile, 500, 1400, 'Display');
                             } else {
@@ -519,21 +797,25 @@ export const UploadPage = {
                         }
                     }
 
-                    console.log('Submitting standard post:', submissionData);
-                    const { error } = await API.uploadSubmission(submissionData, fileToUpload, thumbnailBlob, displayBlob);
+                    debugLog('Submitting standard post:', submissionData);
+                    const { data, error } = await API.uploadSubmission(submissionData, fileToUpload, thumbnailBlob, displayBlob);
 
                     if (error) {
                         console.error('Upload error:', error);
                         UI.showToast(this.mapUploadError(error), 'error');
                     } else {
                         UI.hideLoader();
-                        await UI.showSubmissionSuccessCelebration(3500);
-                        await UI.triggerBadgeEvaluation({
-                            userId: user.id,
-                            reason: 'upload-success',
-                            awaitPopups: true
-                        });
-                        window.location.hash = '#my-uploads';
+                        if (this.isTeacherResourceUpload()) {
+                            await this.showTeacherResourceSuccess(data?.id);
+                        } else {
+                            await UI.showSubmissionSuccessCelebration(3500);
+                            await UI.triggerBadgeEvaluation({
+                                userId: user.id,
+                                reason: 'upload-success',
+                                awaitPopups: true
+                            });
+                            window.location.hash = '#my-uploads';
+                        }
                     }
                 }
             } catch (err) {
@@ -546,7 +828,7 @@ export const UploadPage = {
                 const submitBtn = form.querySelector('button[type="submit"]');
                 if (submitBtn) {
                     submitBtn.disabled = false;
-                    submitBtn.textContent = 'Submit for Review';
+                    submitBtn.textContent = submitIdleText;
                 }
             }
         });
@@ -746,6 +1028,12 @@ export const UploadPage = {
             );
     },
 
+    isUrlSubmissionRecord(sub = {}) {
+        const contentType = String(sub?.content_type || '').trim().toLowerCase();
+        const fileType = String(sub?.file_type || sub?.mime_type || '').trim().toLowerCase();
+        return contentType === 'url' || fileType === 'text/uri-list';
+    },
+
     async initEdit(id) {
         const form = document.querySelector('#upload-form');
         if (!form) return;
@@ -815,7 +1103,18 @@ export const UploadPage = {
                 }
             } else {
                 // For other types, handle content mode
-                if (sub.content_text) {
+                if (this.isUrlSubmissionRecord(sub)) {
+                    const modeRadio = form.querySelector('input[name="content_mode"][value="url"]');
+                    if (modeRadio) {
+                        modeRadio.checked = true;
+                        modeRadio.dispatchEvent(new Event('change'));
+                    }
+
+                    const urlInput = document.getElementById('project-url-input');
+                    if (urlInput) {
+                        urlInput.value = sub.file_url || '';
+                    }
+                } else if (sub.content_text) {
                     const isHTML = sub.file_type === 'text/html';
                     const mode = isHTML ? 'code' : 'text';
                     const modeRadio = form.querySelector(`input[name="content_mode"][value="${mode}"]`);
@@ -864,12 +1163,27 @@ export const UploadPage = {
             const fileGroup = document.querySelector('#file-input-group');
             const textGroup = document.querySelector('#text-input-group');
             const codeGroup = document.querySelector('#code-input-group');
+            const urlGroup = document.querySelector('#url-input-group');
 
-            if (sub.file_type === 'text/html' && sub.content_text) {
+            if (this.isUrlSubmissionRecord(sub)) {
+                form.querySelector('input[name="content_mode"][value="url"]').checked = true;
+                fileGroup?.classList.add('hidden');
+                textGroup?.classList.add('hidden');
+                codeGroup?.classList.add('hidden');
+                urlGroup?.classList.remove('hidden');
+                const urlInput = document.getElementById('project-url-input');
+                if (urlInput) {
+                    urlInput.value = sub.file_url || '';
+                    urlInput.required = true;
+                    urlInput.disabled = false;
+                }
+                fileGroup?.querySelector('input')?.removeAttribute('required');
+            } else if (sub.file_type === 'text/html' && sub.content_text) {
                 form.querySelector('input[name="content_mode"][value="code"]').checked = true;
                 fileGroup?.classList.add('hidden');
                 textGroup?.classList.add('hidden');
                 codeGroup?.classList.remove('hidden');
+                urlGroup?.classList.add('hidden');
                 form.querySelector('textarea[name="code_content"]').value = sub.content_text || '';
                 fileGroup?.querySelector('input')?.removeAttribute('required');
                 this.updateCodePreview(sub.content_text, document.getElementById('code-preview-frame'));
@@ -878,9 +1192,11 @@ export const UploadPage = {
                 fileGroup?.classList.add('hidden');
                 textGroup?.classList.remove('hidden');
                 codeGroup?.classList.add('hidden');
+                urlGroup?.classList.add('hidden');
                 form.querySelector('textarea[name="content_text"]').value = sub.content_text || '';
                 fileGroup?.querySelector('input')?.removeAttribute('required');
             } else {
+                urlGroup?.classList.add('hidden');
                 fileGroup?.querySelector('input')?.removeAttribute('required');
             }
 
@@ -897,7 +1213,7 @@ export const UploadPage = {
                 || (sub.storage_provider === 'r2' ? null : UI.resolveMediaUrl(sub.thumbnail_path))
                 || UI.getThumbnailFallbackUrl(sub);
             if (sub.category !== 'images' && existingThumb) {
-                thumbnailPreview.innerHTML = `<img src="${existingThumb}" alt="Current thumbnail">`;
+                thumbnailPreview.innerHTML = `<img src="${existingThumb}" alt="Current thumbnail" loading="lazy" decoding="async">`;
                 thumbnailPreview.classList.add('has-image');
             }
             if (sub.category === 'images') {
@@ -915,7 +1231,7 @@ export const UploadPage = {
                     thumbnailPreview.innerHTML = '<div class="loader-inline"><div class="spinner"></div></div>';
                     try {
                         const placeholder = await ImageUtils.generatePlaceholder(file);
-                        thumbnailPreview.innerHTML = `<img src="${placeholder}" alt="Preview" style="filter:blur(4px)">`;
+                        thumbnailPreview.innerHTML = `<img src="${placeholder}" alt="Preview" decoding="async" style="filter:blur(4px)">`;
 
                         // --- NEW: Compression Permission Flow (Edit Mode) ---
                         const sizeKB = file.size / 1024;
@@ -931,7 +1247,7 @@ export const UploadPage = {
                                 );
                                 await UI.showCompressionSuccess(sizeKB, compressedBlob.size / 1024);
                                 const compressedUrl = URL.createObjectURL(compressedBlob);
-                                thumbnailPreview.innerHTML = `<img src="${compressedUrl}" alt="Compressed Preview">`;
+                                thumbnailPreview.innerHTML = `<img src="${compressedUrl}" alt="Compressed Preview" decoding="async">`;
                                 thumbnailInput._compressedBlob = compressedBlob;
                             } else {
                                 thumbnailInput._compressedBlob = null;
@@ -952,7 +1268,9 @@ export const UploadPage = {
                 try {
                     const formData = new FormData(form);
                     const contentMode = formData.get('content_mode');
+                    const projectUrlInput = formData.get('project_url');
                     let contentText = null;
+                    let urlSubmission = null;
                     if (contentMode === 'text') contentText = formData.get('content_text');
                     else if (contentMode === 'code') {
                         contentText = formData.get('code_content');
@@ -960,12 +1278,37 @@ export const UploadPage = {
                         if (htmlValidationError) {
                             throw new Error(htmlValidationError);
                         }
+                    } else if (contentMode === 'url') {
+                        const validation = validateProjectUrl(projectUrlInput);
+                        if (!validation.valid) {
+                            throw new Error(validation.error || 'Invalid URL');
+                        }
+
+                        let extractedMetadata;
+                        try {
+                            extractedMetadata = await API.fetchProjectUrlMetadata(validation.normalizedUrl);
+                        } catch (metadataError) {
+                            throw new Error(this.mapUploadError(metadataError) || 'Unable to fetch preview');
+                        }
+
+                        const mergedMetadata = sanitizeProjectMetadata({
+                            title: formData.get('title') || extractedMetadata?.title || '',
+                            description: formData.get('description') || extractedMetadata?.description || '',
+                            previewImage: extractedMetadata?.previewImage || ''
+                        });
+
+                        urlSubmission = {
+                            url: extractedMetadata?.url || validation.normalizedUrl,
+                            title: sanitizeProjectTitle(mergedMetadata.title || formData.get('title') || ''),
+                            description: sanitizeProjectDescription(mergedMetadata.description || formData.get('description') || ''),
+                            previewImage: mergedMetadata.previewImage || ''
+                        };
                     }
 
                     const updateData = {
-                        title: formData.get('title'),
+                        title: urlSubmission?.title || sanitizeProjectTitle(formData.get('title')),
                         category: formData.get('category'),
-                        description: formData.get('description') || '',
+                        description: urlSubmission?.description || sanitizeProjectDescription(formData.get('description') || ''),
                         themes: this.getSelectedThemes(),
                         audience_level: this.normalizeAudienceLevel(formData.get('audience_level')),
                         status: 'pending'
@@ -973,7 +1316,15 @@ export const UploadPage = {
 
                     const presentationNotes = this.getPresentationNotesValue();
 
-                    if (contentText !== null) {
+                    if (urlSubmission) {
+                        updateData.type = 'url';
+                        updateData.url = urlSubmission.url;
+                        updateData.content_type = 'url';
+                        updateData.file_type = 'text/uri-list';
+                        updateData.mime_type = 'text/uri-list';
+                        updateData.file_size = 0;
+                        updateData.previewImage = urlSubmission.previewImage;
+                    } else if (contentText !== null) {
                         updateData.content_text = contentText;
                         updateData.file_type = contentMode === 'code' ? 'text/html' : 'text/plain';
                         updateData.mime_type = updateData.file_type;
@@ -1228,3 +1579,4 @@ export const UploadPage = {
         }
     }
 };
+

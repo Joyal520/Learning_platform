@@ -33,6 +33,7 @@ export const UI = {
     _submissionCelebrationPreviousBodyOverflow: '',
     _submissionCelebrationPreviousHtmlOverflow: '',
     _badgeCelebrationQueue: Promise.resolve(),
+    _croppieLoadPromise: null,
 
     contentTypeOptions: [
         { value: 'short_stories', label: 'Short Story', navLabel: 'Short Stories', group: 'Stories' },
@@ -50,7 +51,8 @@ export const UI = {
         { value: 'puzzle', label: 'Puzzle', navLabel: 'Puzzles', group: 'Fun' },
         { value: 'game', label: 'Game', navLabel: 'Games', group: 'Fun' },
         { value: 'images', label: 'Image', navLabel: 'Images', group: 'Media' },
-        { value: 'songs', label: 'Audio', navLabel: 'Audio', group: 'Media' }
+        { value: 'songs', label: 'Audio', navLabel: 'Audio', group: 'Media' },
+        { value: 'video', label: 'Video', navLabel: 'Videos', group: 'Media' }
     ],
 
     themeOptions: [
@@ -87,14 +89,83 @@ export const UI = {
         }
     },
 
+    async setupMobileHome(currentUser = null) {
+        const list = document.getElementById('mobile-home-trending-list');
+        if (!list) return;
+        if (!window.matchMedia('(max-width: 768px)').matches) return;
+
+        try {
+            const mobileTrendingLimit = 3;
+            const { data, error } = await API.getSubmissions(null, 'created_at', mobileTrendingLimit, 0);
+            if (error) throw error;
+
+            const submissions = data || [];
+            if (!submissions.length) {
+                list.innerHTML = `
+                    <div class="mobile-home-trending-empty">
+                        <strong>No trending creations yet</strong>
+                        <span>Be the first to share something wonderful.</span>
+                    </div>
+                `;
+                return;
+            }
+
+            const previewSubmissions = submissions.slice(0, mobileTrendingLimit);
+            const statsMap = await API.getStatsForSubmissions(previewSubmissions.map((item) => item.id));
+            list.innerHTML = previewSubmissions.map((submission) => {
+                const stats = statsMap[submission.id] || submission.submission_stats?.[0] || {};
+                return this.renderMobileHomeTrendingCard(submission, stats);
+            }).join('');
+        } catch (error) {
+            console.warn('[MobileHome] Trending load error:', error);
+            list.innerHTML = `
+                <div class="mobile-home-trending-empty">
+                    <strong>Trending is taking a moment</strong>
+                    <span>Please try again soon.</span>
+                </div>
+            `;
+        }
+    },
+
+    renderMobileHomeTrendingCard(submission, stats = {}) {
+        const normalized = this.normalizeProject(submission);
+        const title = this.escapeHtml(normalized.title || submission.title || 'Untitled creation');
+        const author = this.escapeHtml(submission.profiles?.display_name || normalized.author || 'Creator');
+        const category = this.escapeHtml(this.getContentTypeLabel(submission.category, submission.content_type) || 'Creation');
+        const thumbnail = normalized.thumbnail || this.getThumbnailFallbackUrl(submission) || 'assets/images/default.png';
+        const likes = this.formatCompactNumber(stats.like_count || 0);
+        const views = this.formatCompactNumber(stats.view_count || 0);
+
+        return `
+            <a href="#explore" class="mobile-home-trending-card" data-link="explore">
+                <span class="mobile-home-trending-media">
+                    <img src="${this.escapeHtml(thumbnail)}" alt="${title}" loading="lazy" decoding="async" onerror="this.src='assets/images/default.png';">
+                    <span class="mobile-home-trending-badge">✦ ${category}</span>
+                    <span class="mobile-home-trending-stats">
+                        <span>♥ ${likes}</span>
+                        <span>◉ ${views}</span>
+                    </span>
+                </span>
+                <span class="mobile-home-trending-body">
+                    <strong>${title}</strong>
+                    <small>By ${author}</small>
+                </span>
+            </a>
+        `;
+    },
+
+    formatCompactNumber(value = 0) {
+        const number = Number(value) || 0;
+        if (number >= 1000000) return `${(number / 1000000).toFixed(number >= 10000000 ? 0 : 1)}M`;
+        if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`;
+        return String(number);
+    },
+
     setupMobileMenu() {
         const toggle = document.getElementById('menu-toggle');
         const nav = document.querySelector('.main-nav');
         const navLinks = document.getElementById('nav-links');
         const navAuth = document.getElementById('nav-auth');
-
-        console.log('[Mobile Nav] hamburger found:', !!toggle);
-        console.log('[Mobile Nav] mobile menu found:', !!nav && !!navLinks && !!navAuth);
 
         if (!toggle || !nav || !navLinks || !navAuth || toggle.dataset.mobileMenuBound === 'true') {
             return;
@@ -104,7 +175,6 @@ export const UI = {
         const setMenuState = (isOpen) => {
             nav.classList.toggle('mobile-open', isOpen);
             toggle.setAttribute('aria-expanded', String(isOpen));
-            console.log(`[Mobile Nav] menu ${isOpen ? 'opened' : 'closed'}`);
         };
 
         const handleToggle = (source) => {
@@ -113,7 +183,6 @@ export const UI = {
                 return;
             }
             const isOpen = !nav.classList.contains('mobile-open');
-            console.log(`[Mobile Nav] hamburger clicked (${source})`);
             setMenuState(isOpen);
         };
 
@@ -139,6 +208,46 @@ export const UI = {
         });
 
         toggle.dataset.mobileMenuBound = 'true';
+    },
+
+    loadCroppie() {
+        if (window.Croppie) return Promise.resolve(window.Croppie);
+        if (this._croppieLoadPromise) return this._croppieLoadPromise;
+
+        this._croppieLoadPromise = new Promise((resolve, reject) => {
+            const cssHref = 'https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.css';
+            const scriptSrc = 'https://cdnjs.cloudflare.com/ajax/libs/croppie/2.6.5/croppie.min.js';
+
+            if (!document.querySelector(`link[href="${cssHref}"]`)) {
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = cssHref;
+                link.dataset.lazyCroppie = 'true';
+                document.head.appendChild(link);
+            }
+
+            const existingScript = document.querySelector(`script[src="${scriptSrc}"]`);
+            if (existingScript) {
+                if (window.Croppie) {
+                    resolve(window.Croppie);
+                    return;
+                }
+                existingScript.addEventListener('load', () => resolve(window.Croppie), { once: true });
+                existingScript.addEventListener('error', () => reject(new Error('Croppie failed to load.')), { once: true });
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = scriptSrc;
+            script.async = true;
+            script.defer = true;
+            script.dataset.lazyCroppie = 'true';
+            script.onload = () => resolve(window.Croppie);
+            script.onerror = () => reject(new Error('Croppie failed to load.'));
+            document.head.appendChild(script);
+        });
+
+        return this._croppieLoadPromise;
     },
 
     // Hero Animations: Cycling Subtitle + Confetti Dots
@@ -366,7 +475,9 @@ export const UI = {
             audio: 'songs',
             audios: 'songs',
             song: 'songs',
-            songs: 'songs'
+            songs: 'songs',
+            videos: 'video',
+            video: 'video'
         };
 
         return aliasMap[raw] || raw || 'songs';
@@ -407,7 +518,8 @@ export const UI = {
             puzzle: '#f97316',
             game: '#10b981',
             images: '#22c55e',
-            songs: '#64748b'
+            songs: '#64748b',
+            video: '#ef4444'
         };
 
         return colorMap[normalized] || '#64748b';
@@ -431,7 +543,8 @@ export const UI = {
             puzzle: '🧩',
             game: '🎮',
             images: '🖼️',
-            songs: '🎵'
+            songs: '🎵',
+            video: '🎬'
         };
 
         return map[normalized] || '📄';
@@ -455,7 +568,8 @@ export const UI = {
             puzzle: 'fun',
             game: 'fun',
             songs: 'media',
-            images: 'media'
+            images: 'media',
+            video: 'media'
         };
 
         return fallbackCategoryMap[normalized] || String(category || '').toLowerCase();
@@ -492,36 +606,97 @@ export const UI = {
         ]);
 
         if (normalized === 'images') {
-            return { file: true, text: false, code: false, useImageUploader: true };
+            return { file: true, text: false, code: false, url: false, useImageUploader: true };
         }
         if (normalized === 'songs') {
-            return { file: true, text: false, code: false, useImageUploader: false };
+            return { file: true, text: false, code: false, url: false, useImageUploader: false, useVideoUrl: false };
+        }
+        if (normalized === 'video') {
+            return { file: false, text: false, code: false, url: false, useImageUploader: false, useVideoUrl: true };
         }
         if (toolTypes.has(normalized)) {
-            return { file: true, text: false, code: true, useImageUploader: false };
+            return { file: true, text: false, code: true, url: true, useImageUploader: false };
         }
         if (writingTypes.has(normalized)) {
-            return { file: true, text: true, code: true, useImageUploader: false };
+            return { file: true, text: true, code: true, url: true, useImageUploader: false };
         }
 
-        return { file: true, text: true, code: true, useImageUploader: false };
+        return { file: true, text: true, code: true, url: true, useImageUploader: false };
     },
 
     getSubmissionMediaKind(sub = {}) {
         if (!sub || typeof sub !== 'object') return '';
+        if (this.isGitHubProject(sub)) return 'project';
 
-        const contentType = String(sub.content_type || '').trim().toLowerCase();
+        const contentType = String(sub.content_type || sub.type || '').trim().toLowerCase();
         const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
         const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
-
         const hasImageSignal = contentType === 'image' || fileType.startsWith('image/');
-        const hasAudioSignal = contentType === 'audio' || fileType.startsWith('audio/');
 
+        if (this.isVideoItem(sub)) return 'video';
+        if (this.isAudioItem(sub)) return 'audio';
         if (hasImageSignal) return 'image';
-        if (hasAudioSignal) return 'audio';
         if (normalizedCategory === 'images') return 'image';
-        if (normalizedCategory === 'songs') return 'audio';
         return '';
+    },
+
+    isGitHubProject(sub = {}) {
+        if (!sub || typeof sub !== 'object') return false;
+
+        if (this.getGitHubProjectUrl(sub)) return true;
+
+        const platform = String(sub.platform || '').trim().toLowerCase();
+        const source = String(sub.source || '').trim().toLowerCase();
+        const contentType = String(sub.content_type || sub.type || '').trim().toLowerCase().replace(/[_-]+/g, ' ');
+
+        return platform === 'github'
+            || source === 'github'
+            || contentType === 'github project';
+    },
+
+    isVideoItem(sub = {}) {
+        if (!sub || typeof sub !== 'object') return false;
+
+        const contentType = `${sub.content_type || ''} ${sub.media_type || ''} ${sub.type || sub.submission_type || ''}`.trim().toLowerCase();
+        const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const platform = String(sub.platform || '').trim().toLowerCase();
+        const sourceRef = [
+            sub.video_url,
+            sub.youtube_url,
+            sub.file_url,
+            sub.public_url,
+            sub.url,
+            sub.external_url,
+            sub.link
+        ].map((value) => String(value || '').trim().toLowerCase()).join(' ');
+
+        return contentType.includes('video')
+            || platform === 'youtube'
+            || sourceRef.includes('youtube.com')
+            || sourceRef.includes('youtu.be')
+            || fileType === 'video/youtube'
+            || fileType.startsWith('video/')
+            || /\.(mp4|mov|m4v|webm|ogv)(?:\?|#|$)/i.test(sourceRef);
+    },
+
+    isAudioItem(sub = {}) {
+        if (!sub || typeof sub !== 'object') return false;
+
+        const contentType = `${sub.content_type || ''} ${sub.media_type || ''} ${sub.type || sub.submission_type || ''}`.trim().toLowerCase();
+        const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const sourceRef = [
+            sub.audio_url,
+            sub.audio_file,
+            sub.file_url,
+            sub.public_url,
+            sub.file_path
+        ].map((value) => String(value || '').trim().toLowerCase()).join(' ');
+
+        return contentType.includes('audio')
+            || fileType.startsWith('audio/')
+            || /\.(mp3|wav|m4a|ogg)(?:\?|#|$)/i.test(sourceRef)
+            || String(sub.audio_url || '').trim() !== ''
+            || String(sub.audio_file || '').trim() !== '';
     },
 
     isImageSubmission(sub = {}) {
@@ -530,6 +705,62 @@ export const UI = {
 
     isAudioSubmission(sub = {}) {
         return this.getSubmissionMediaKind(sub) === 'audio';
+    },
+
+    isVideoSubmission(sub = {}) {
+        return this.getSubmissionMediaKind(sub) === 'video';
+    },
+
+    parseYouTubeUrl(url = '') {
+        const raw = String(url || '').trim();
+        if (!raw) return null;
+        const videoIdPattern = /^[a-zA-Z0-9_-]{11}$/;
+        const buildResult = (videoId) => {
+            if (!videoId || !videoIdPattern.test(videoId)) return null;
+            return {
+                videoId,
+                normalizedUrl: `https://www.youtube.com/watch?v=${videoId}`,
+                embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`,
+                source: 'youtube'
+            };
+        };
+
+        try {
+            const parsed = new URL(raw);
+            const hostname = parsed.hostname.replace(/^www\./, '');
+
+            // youtube.com/watch?v=VIDEO_ID
+            if ((hostname === 'youtube.com' || hostname === 'm.youtube.com') && parsed.pathname === '/watch') {
+                return buildResult(parsed.searchParams.get('v'));
+            }
+
+            // youtu.be/VIDEO_ID
+            if (hostname === 'youtu.be') {
+                const videoId = parsed.pathname.slice(1).split('/')[0];
+                return buildResult(videoId);
+            }
+
+            // youtube.com/embed/VIDEO_ID
+            if ((hostname === 'youtube.com' || hostname === 'm.youtube.com') && parsed.pathname.startsWith('/embed/')) {
+                const videoId = parsed.pathname.split('/embed/')[1]?.split('/')[0];
+                return buildResult(videoId);
+            }
+
+            // youtube.com/shorts/VIDEO_ID
+            if ((hostname === 'youtube.com' || hostname === 'm.youtube.com') && parsed.pathname.startsWith('/shorts/')) {
+                const videoId = parsed.pathname.split('/shorts/')[1]?.split('/')[0];
+                return buildResult(videoId);
+            }
+        } catch (_) {
+            // Invalid URL
+        }
+
+        return null;
+    },
+
+    getYouTubeThumbnailUrl(videoId = '') {
+        if (!videoId) return '';
+        return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
     },
 
     isStrictImageSubmission(sub = {}) {
@@ -704,34 +935,545 @@ export const UI = {
         return this.audienceLevels.map((level) => `<option value="${level}">${level}</option>`).join('');
     },
 
-    getProjectFileLabel(sub = {}) {
-        const fileReference = String(sub.file_url || sub.public_url || sub.file_path || '').toLowerCase();
-        const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
+    escapeHtml(value = '') {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
 
-        if (fileReference.endsWith('.zip') || fileType.includes('zip')) return 'Website project (ZIP)';
-        if (fileReference.endsWith('.html') || fileReference.endsWith('.htm') || fileType === 'text/html') return 'HTML website project';
-        if (fileReference.endsWith('.pdf') || fileType === 'application/pdf') return 'PDF document';
-        if (fileReference.endsWith('.ppt') || fileType.includes('powerpoint')) return 'PowerPoint presentation';
-        if (fileReference.endsWith('.pptx') || fileType.includes('presentationml')) return 'PowerPoint presentation';
-        if (fileReference.endsWith('.doc') || fileType === 'application/msword') return 'Word document';
-        if (fileReference.endsWith('.docx') || fileType.includes('wordprocessingml')) return 'Word document';
+    isUrlSubmission(sub = {}) {
+        const contentType = String(sub?.content_type || '').trim().toLowerCase();
+        const fileType = String(sub?.file_type || sub?.mime_type || '').trim().toLowerCase();
+        const contentMode = String(sub?.content_mode || sub?.contentMode || '').trim().toLowerCase();
+        const submissionType = String(sub?.type || sub?.submission_type || '').trim().toLowerCase();
+        return contentType === 'url'
+            || fileType === 'text/uri-list'
+            || contentMode === 'url'
+            || submissionType === 'url';
+    },
+
+    getUrlSubmissionLink(sub = {}) {
+        const candidates = [
+            sub?.url,
+            sub?.external_url,
+            sub?.file_url,
+            sub?.public_url
+        ];
+
+        for (const candidate of candidates) {
+            const rawValue = String(candidate || '').trim();
+            if (!rawValue) continue;
+
+            try {
+                const parsedUrl = new URL(rawValue, window.location.href);
+                const hostname = parsedUrl.hostname.toLowerCase();
+                const isInvalidHost = hostname === 'localhost'
+                    || hostname.endsWith('.localhost')
+                    || hostname === '127.0.0.1'
+                    || hostname.startsWith('127.')
+                    || hostname === '::1';
+
+                if (parsedUrl.protocol !== 'https:' || isInvalidHost) {
+                    continue;
+                }
+
+                return parsedUrl.toString();
+            } catch (_) {
+                // Keep trying other URL-shaped fields.
+            }
+        }
+
+        return '';
+    },
+
+    normalizeUrl(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        if (/^https?:\/\//i.test(raw)) return raw;
+        if (/^(www\.|github\.com|.+\.github\.io)/i.test(raw)) {
+            return `https://${raw}`;
+        }
+        return '';
+    },
+
+    normalizeOpenUrl(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        if (/^https?:\/\//i.test(raw)) return raw;
+        if (raw.startsWith('www.') || raw.includes('github.io') || raw.includes('github.com')) {
+            return `https://${raw}`;
+        }
+        return '';
+    },
+
+    getOpenableUrl(sub = {}) {
+        const candidates = [
+            sub?.github_url,
+            sub?.githubUrl,
+            sub?.repo_url,
+            sub?.repository_url,
+            sub?.project_url,
+            sub?.live_url,
+            sub?.demo_url,
+            sub?.source_url,
+            sub?.external_url,
+            sub?.content_url,
+            sub?.resource_url,
+            sub?.url,
+            sub?.link
+        ];
+
+        if (this.isUrlSubmission(sub)) {
+            candidates.push(sub?.file_url);
+        }
+
+        for (const candidate of candidates) {
+            const normalized = this.normalizeOpenUrl(candidate);
+            if (normalized) return normalized;
+        }
+
+        return '';
+    },
+
+    getGitHubProjectUrl(sub = {}) {
+        const candidates = [
+            sub?.github_url,
+            sub?.githubUrl,
+            sub?.repo_url,
+            sub?.repository_url,
+            sub?.project_url,
+            sub?.live_url,
+            sub?.demo_url,
+            sub?.source_url,
+            sub?.external_url,
+            sub?.url,
+            sub?.link
+        ];
+
+        for (const candidate of candidates) {
+            const normalizedValue = this.normalizeUrl(candidate);
+            if (!normalizedValue) continue;
+
+            try {
+                const parsedUrl = new URL(normalizedValue, window.location.href);
+                if (!/^https?:$/.test(parsedUrl.protocol)) continue;
+                const lowerValue = parsedUrl.toString().toLowerCase();
+                if (!lowerValue.includes('github.com') && !lowerValue.includes('github.io')) continue;
+                return parsedUrl.toString();
+            } catch (_) {
+                // Keep trying URL-shaped fields.
+            }
+        }
+
+        return '';
+    },
+
+    hasValidUrl(value) {
+        return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+    },
+
+    getFirstValidUrl(sub = {}, fields = []) {
+        for (const field of fields) {
+            const value = sub?.[field];
+            if (this.hasValidUrl(value)) return String(value).trim();
+        }
+        return '';
+    },
+
+    getExternalProjectLink(sub = {}) {
+        const openableUrl = this.getOpenableUrl(sub);
+        if (openableUrl) return openableUrl;
+
+        const explicitGithubSource = String(sub?.platform || '').trim().toLowerCase() === 'github'
+            || String(sub?.source || '').trim().toLowerCase() === 'github'
+            || String(sub?.content_type || sub?.type || '').trim().toLowerCase().replace(/[_-]+/g, ' ') === 'github project';
+        if (!explicitGithubSource) return '';
+
+        const fallbackCandidates = [sub?.github_url, sub?.githubUrl, sub?.repo_url, sub?.repository_url, sub?.project_url, sub?.live_url, sub?.demo_url, sub?.source_url, sub?.external_url, sub?.url, sub?.link];
+        for (const candidate of fallbackCandidates) {
+            const normalizedValue = this.normalizeUrl(candidate);
+            if (!normalizedValue) continue;
+            return normalizedValue;
+        }
+
+        return '';
+    },
+
+    getRatingStorageKeys(submissionId, userId = null) {
+        if (!submissionId) return [];
+        const id = String(submissionId);
+        const viewer = userId ? String(userId) : 'guest';
+        return [
+            `edtechra:rated:${viewer}:${id}`,
+            `edtechra_submission_rated_${id}`
+        ];
+    },
+
+    hasStoredRating(submissionId, userId = null) {
+        return this.getRatingStorageKeys(submissionId, userId).some((key) => {
+            try {
+                return localStorage.getItem(key) === 'true' || sessionStorage.getItem(key) === 'true';
+            } catch (_) {
+                return false;
+            }
+        });
+    },
+
+    storeRatingMarker(submissionId, userId = null) {
+        this.getRatingStorageKeys(submissionId, userId).forEach((key) => {
+            try {
+                localStorage.setItem(key, 'true');
+                sessionStorage.setItem(key, 'true');
+            } catch (_) {
+                // Ignore storage failures.
+            }
+        });
+    },
+
+    async hydrateUserRatingState(submission = {}, userId = null) {
+        if (!submission?.id || !userId) return false;
+        submission._ratingUserId = userId;
+        if (this.hasKnownUserRating(submission) || this.hasStoredRating(submission.id, userId)) return true;
+
+        try {
+            const { data, error } = await supabase
+                .from('ratings')
+                .select('rating')
+                .eq('submission_id', submission.id)
+                .eq('user_id', userId)
+                .maybeSingle();
+            if (error) throw error;
+            const userRating = Number(data?.rating) || null;
+            if (userRating) {
+                submission._interactiveWebUserRating = userRating;
+                this.storeRatingMarker(submission.id, userId);
+                return true;
+            }
+        } catch (error) {
+            console.warn('[Rating] Existing user rating check failed', error);
+        }
+
+        if (submission._ratingLookupAttempted && submission._interactiveWebUserRating == null) {
+            return false;
+        }
+        submission._ratingLookupAttempted = true;
+        return false;
+    },
+
+    getSubmissionReadableText(sub = {}) {
+        const candidates = [
+            sub?.content_text,
+            sub?.text_content,
+            sub?.story_text,
+            sub?.html_content,
+            sub?.content_html,
+            sub?.content,
+            sub?.body,
+            sub?.description
+        ];
+
+        for (const candidate of candidates) {
+            const value = String(candidate || '').trim();
+            if (value) return value;
+        }
+
+        return '';
+    },
+
+    getSubmissionVideoSourceUrl(sub = {}) {
+        const candidates = [
+            sub?.youtube_url,
+            sub?.video_url,
+            sub?.source_url,
+            sub?.external_url,
+            sub?.url,
+            sub?.link,
+            sub?.file_url,
+            sub?.public_url
+        ];
+
+        for (const candidate of candidates) {
+            const rawValue = String(candidate || '').trim();
+            if (!rawValue) continue;
+            const youtube = this.parseYouTubeUrl(rawValue);
+            if (youtube?.normalizedUrl || youtube?.embedUrl) {
+                return youtube.normalizedUrl || youtube.embedUrl;
+            }
+            if (/\.(mp4|mov|m4v|webm|ogv)(?:\?|#|$)/i.test(rawValue) || String(sub?.mime_type || sub?.file_type || '').toLowerCase().startsWith('video/')) {
+                return this.resolveMediaUrl(rawValue) || rawValue;
+            }
+        }
+
+        return '';
+    },
+
+    getSubmissionAudioSourceUrl(sub = {}) {
+        const candidates = [
+            sub?.audio_url,
+            sub?.audio_file,
+            sub?.file_url,
+            sub?.public_url,
+            sub?.file_path
+        ];
+
+        for (const candidate of candidates) {
+            const rawValue = String(candidate || '').trim();
+            if (!rawValue) continue;
+            if (/\.(mp3|wav|m4a|ogg)(?:\?|#|$)/i.test(rawValue) || String(sub?.mime_type || sub?.file_type || '').toLowerCase().startsWith('audio/')) {
+                return this.resolveMediaUrl(rawValue) || rawValue;
+            }
+        }
+
+        return '';
+    },
+
+    isDocumentItem(sub = {}) {
+        if (!sub || typeof sub !== 'object') return false;
+
+        const documentUrl = this.getFirstValidUrl(sub, [
+            'document_url',
+            'pdf_url',
+            'ppt_url',
+            'doc_url',
+            'attachment_url'
+        ]);
+        if (documentUrl) return true;
+
+        const fileType = String(sub.file_type || sub.mime_type || '').trim().toLowerCase();
+        const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
+        const contentType = String(sub.content_type || sub.type || '').trim().toLowerCase().replace(/[_-]+/g, ' ');
+        const sourceRef = [
+            sub.file_url,
+            sub.public_url,
+            sub.file_path,
+            sub.storage_path,
+            sub.attachment_url
+        ].map((value) => String(value || '').trim()).join(' ');
+        const documentExtension = /\.(pdf|pptx?|docx?|zip|html?)(?:\?|#|$)/i.test(sourceRef);
+        const documentMime = fileType === 'application/pdf'
+            || fileType.includes('presentationml')
+            || fileType.includes('powerpoint')
+            || fileType.includes('wordprocessingml')
+            || fileType === 'application/msword'
+            || fileType === 'text/html'
+            || fileType.includes('zip');
+        const fileBackedEducationalType = [
+            'lessons',
+            'presentations',
+            'flashcards',
+            'quiz',
+            'puzzle',
+            'game'
+        ].includes(normalizedCategory) || ['pdf', 'worksheet', 'document', 'uploaded file', 'presentation'].includes(contentType);
+
+        return documentExtension
+            || documentMime
+            || ((fileBackedEducationalType || !!sub.storage_path || !!sub.file_path) && !!this.getSubmissionFileUrl(sub));
+    },
+
+    getSubmissionImageSourceUrl(sub = {}) {
+        const mimeOrType = String(sub?.mime_type || sub?.file_type || '').toLowerCase();
+        const contentType = String(sub?.content_type || sub?.type || '').toLowerCase();
+        const isImageTyped = mimeOrType.startsWith('image/') || contentType.includes('image');
+        const candidates = [
+            sub?.image_url,
+            sub?.public_url,
+            sub?.file_url,
+            isImageTyped ? sub?.thumbnail_url : '',
+            isImageTyped ? sub?.thumbnail_path : '',
+            sub?.file_path
+        ];
+
+        for (const candidate of candidates) {
+            const rawValue = String(candidate || '').trim();
+            if (!rawValue) continue;
+            if (isImageTyped || /\.(avif|bmp|gif|jpe?g|png|svg|webp)(?:\?|#|$)/i.test(rawValue)) {
+                return this.resolveMediaUrl(rawValue) || rawValue;
+            }
+        }
+
+        return '';
+    },
+
+    getSubmissionViewerType(sub = {}) {
+        if (!sub || typeof sub !== 'object') return '';
+        if (this.getOpenableUrl(sub) || this.isGitHubProject(sub) || this.getExternalProjectLink(sub)) return 'project';
+        if (this.isVideoItem(sub) || this.getSubmissionVideoSourceUrl(sub)) return 'video';
+        if (this.isAudioItem(sub) || this.getSubmissionAudioSourceUrl(sub)) return 'audio';
+        if (this.isDocumentItem(sub)) return 'file';
+        const imageUrl = this.getSubmissionImageSourceUrl(sub);
+        const readableText = this.getSubmissionReadableText(sub);
+        if (imageUrl && (this.isImageSubmission(sub) || !readableText)) return 'image';
+        if (readableText) return 'text';
+        if (this.getSubmissionFileUrl(sub)) return 'file';
+        if (imageUrl) return 'image';
+        return '';
+    },
+
+    getSourceType(sub = {}) {
+        if (!sub || typeof sub !== 'object') return 'unknown';
+        if (this.isGitHubProject(sub)) return 'github';
+        if (this.getOpenableUrl(sub)) return 'external';
+        if (this.isVideoItem(sub)) {
+            const refs = [sub.youtube_url, sub.video_url, sub.source_url, sub.external_url, sub.url, sub.link, sub.file_url, sub.public_url]
+                .map((value) => String(value || '').toLowerCase())
+                .join(' ');
+            return refs.includes('youtube.com') || refs.includes('youtu.be') || String(sub.platform || '').toLowerCase().includes('youtube')
+                ? 'youtube'
+                : 'video';
+        }
+        if (this.isAudioItem(sub)) return 'audio';
+        if (this.getSubmissionFileUrl(sub)) return 'upload';
+        if (this.getSubmissionReadableText(sub)) return 'text';
+        if (this.getFirstValidUrl(sub, ['source_url', 'external_url', 'url', 'link'])) return 'external';
+        return 'unknown';
+    },
+
+    getDisplayContentType(sub = {}) {
+        return this.getContentTypeLabel(sub?.category, sub?.content_type) || 'Creation';
+    },
+
+    shouldUseProjectCardLayout(sub = {}) {
+        if (!sub || typeof sub !== 'object') return false;
+        const normalized = this.normalizeCategoryValue(sub.category, sub.content_type);
+        const rawType = String(`${sub.category || ''} ${sub.content_type || ''} ${sub.type || ''}`).trim().toLowerCase().replace(/[_-]+/g, ' ');
+        const projectCategories = new Set(['game']);
+        const projectTypeSignals = [
+            'project',
+            'github project',
+            'web app',
+            'app',
+            'coding project',
+            'code project'
+        ];
+        const nonProjectCategories = new Set([
+            'short_stories',
+            'long_stories',
+            'articles',
+            'essays',
+            'speech',
+            'poems',
+            'classroom_play',
+            'conversations',
+            'lessons',
+            'presentations',
+            'flashcards',
+            'quiz',
+            'puzzle',
+            'images',
+            'songs',
+            'video'
+        ]);
+
+        if (nonProjectCategories.has(normalized)) return false;
+        if (projectCategories.has(normalized)) return true;
+        if (projectTypeSignals.some((signal) => rawType === signal)) return true;
+
+        const hasKnownDisplayType = this.contentTypeOptions.some((option) => option.value === normalized);
+        return !hasKnownDisplayType && this.isGitHubProject(sub);
+    },
+
+    getProjectFileLabel(sub = {}) {
+        const fileReference = this.getSubmissionFileReferences(sub).join(' ').toLowerCase();
+        const fileType = this.getSubmissionMimeCandidates(sub).join(' ');
+
+        if (fileReference.includes('.zip') || fileType.includes('zip')) return 'Website project (ZIP)';
+        if (fileReference.includes('.html') || fileReference.includes('.htm') || fileType === 'text/html') return 'HTML website project';
+        if (this.isPdfSubmission(sub)) return 'PDF document';
+        if (fileReference.includes('.ppt') || fileType.includes('powerpoint')) return 'PowerPoint presentation';
+        if (fileReference.includes('.pptx') || fileType.includes('presentationml')) return 'PowerPoint presentation';
+        if (fileReference.includes('.doc') || fileType === 'application/msword') return 'Word document';
+        if (fileReference.includes('.docx') || fileType.includes('wordprocessingml')) return 'Word document';
         return sub.file_type || 'file';
     },
 
+    getSubmissionFileReferences(sub = {}) {
+        const references = [
+            sub.file_url,
+            sub.public_url,
+            sub.file_path,
+            sub.document_url,
+            sub.pdf_url,
+            sub.ppt_url,
+            sub.doc_url,
+            sub.storage_path,
+            sub.attachment_url,
+            sub.file_name,
+            sub.filename,
+            sub.original_filename,
+            sub.name,
+            sub.storage_object?.path,
+            sub.storage_object?.url,
+            sub.storage_object?.name,
+            sub.storage_metadata?.path,
+            sub.storage_metadata?.url,
+            sub.storage_metadata?.name
+        ];
+
+        return references
+            .map((value) => String(value || '').trim())
+            .filter(Boolean);
+    },
+
     getSubmissionFileUrl(sub = {}) {
-        const resolvedUrl = this.resolveMediaUrl(sub.public_url || sub.file_url || sub.file_path || '') || null;
-        console.log('[UI] Resolved file preview URL:', {
-            submissionId: sub?.id || null,
-            raw: sub.public_url || sub.file_url || sub.file_path || null,
-            resolvedUrl
-        });
-        return resolvedUrl;
+        if (false) {
+            return null;
+        }
+
+        const candidates = [
+            sub.public_url,
+            sub.file_url,
+            sub.document_url,
+            sub.pdf_url,
+            sub.ppt_url,
+            sub.doc_url,
+            sub.attachment_url,
+            sub.file_path,
+            sub.storage_path
+        ];
+
+        for (const candidate of candidates) {
+            const resolvedUrl = this.resolveMediaUrl(String(candidate || '').trim());
+            if (resolvedUrl) return resolvedUrl;
+        }
+
+        return null;
+    },
+
+    getSubmissionMimeCandidates(sub = {}) {
+        return [
+            sub.file_type,
+            sub.mime_type,
+            sub.content_mime_type,
+            sub.storage_content_type,
+            sub.storage_object_content_type,
+            sub.storageObjectContentType,
+            sub.contentType,
+            sub.storage_object?.content_type,
+            sub.storage_object?.contentType,
+            sub.storage_metadata?.content_type,
+            sub.storage_metadata?.contentType,
+            sub.metadata?.content_type,
+            sub.metadata?.contentType
+        ]
+            .map((value) => String(value || '').trim().toLowerCase())
+            .filter(Boolean);
     },
 
     getSubmissionFileExtension(sub = {}) {
-        const reference = String(sub.file_url || sub.public_url || sub.file_path || '').toLowerCase();
-        const match = reference.match(/\.([a-z0-9]+)(?:\?|#|$)/i);
-        return match?.[1] || '';
+        const references = this.getSubmissionFileReferences(sub);
+
+        for (const reference of references) {
+            const match = String(reference).toLowerCase().match(/\.([a-z0-9]+)(?:\?|#|$)/i);
+            if (match?.[1]) {
+                return match[1];
+            }
+        }
+
+        return '';
     },
 
     getLivePreviewSource(sub = {}) {
@@ -1060,7 +1802,8 @@ export const UI = {
 
     isInteractiveWebCard(sub = {}) {
         if (!sub || typeof sub !== 'object') return false;
-        if (this.isAudioSubmission(sub) || this.isImageSubmission(sub)) return false;
+        if (this.isUrlSubmission(sub)) return false;
+        if (this.isAudioSubmission(sub) || this.isImageSubmission(sub) || this.isVideoSubmission(sub)) return false;
         if (this.isPdfSubmission(sub) || this.isPowerPointSubmission(sub)) return false;
 
         const preview = this.resolveHtmlPreviewEntry(sub);
@@ -1162,6 +1905,8 @@ export const UI = {
     },
 
     getFeedDownloadConfig(sub = {}) {
+        if (this.isUrlSubmission(sub)) return null;
+
         const title = sub.title || 'download';
         const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
         const extension = this.getSubmissionFileExtension(sub);
@@ -1186,7 +1931,7 @@ export const UI = {
                 <div class="feed-card-author">
                     <div class="feed-card-avatar" style="--feed-avatar-accent:${color}">
                         ${avatarUrl
-                            ? `<img src="${avatarUrl}" alt="${authorName}" class="feed-card-avatar-img">`
+                            ? `<img src="${avatarUrl}" alt="${authorName}" class="feed-card-avatar-img" loading="lazy" decoding="async">`
                             : `<span class="feed-card-avatar-fallback">${initials}</span>`}
                     </div>
                     <div class="feed-card-author-copy">
@@ -1370,9 +2115,11 @@ export const UI = {
     },
 
     isPdfSubmission(sub = {}) {
-        const fileType = String(sub.file_type || sub.mime_type || '').toLowerCase();
+        const mimeCandidates = this.getSubmissionMimeCandidates(sub);
         const extension = this.getSubmissionFileExtension(sub);
-        return fileType === 'application/pdf' || extension === 'pdf';
+        const hasPdfMime = mimeCandidates.includes('application/pdf');
+        const hasPdfType = mimeCandidates.includes('pdf');
+        return hasPdfMime || hasPdfType || extension === 'pdf';
     },
 
     isPowerPointSubmission(sub = {}) {
@@ -1432,6 +2179,11 @@ export const UI = {
         if (!id || !label) return '';
 
         return `<button type="button" id="${id}" class="preview-action-button ${className} ${hidden ? 'hidden' : ''}" title="${title || label}" aria-label="${label}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+    },
+
+    renderInlinePdfEmbed(fileUrl = '', title = 'Document viewer', className = 'document-preview-frame immersive-viewer-pdf-frame') {
+        if (!fileUrl) return '';
+        return `<iframe class="${className}" src="${fileUrl}" title="${title}" loading="lazy" referrerpolicy="no-referrer"></iframe>`;
     },
 
     renderPdfPreview(sub = {}) {
@@ -1737,9 +2489,45 @@ export const UI = {
 
     renderContentPreview(sub) {
         // High-performance display image priority
-        const displayUrl = sub.image_url || sub.public_url || sub.thumbnail_url || sub.thumbnail_path;
+        const displayUrl = this.getSubmissionImageSourceUrl(sub) || sub.image_url || sub.public_url || sub.thumbnail_url || sub.thumbnail_path;
         const inlineHtmlSource = this.resolveInlineHtmlSource(sub);
         const livePreview = this.getLivePreviewDescriptor(sub);
+        const projectUrl = this.getOpenableUrl(sub) || this.getExternalProjectLink(sub) || (this.isUrlSubmission(sub) ? this.getUrlSubmissionLink(sub) : '');
+        const videoUrl = this.getSubmissionVideoSourceUrl(sub);
+        const audioUrl = this.getSubmissionAudioSourceUrl(sub);
+        const readableText = this.getSubmissionReadableText(sub);
+
+        if (this.isPdfSubmission(sub)) return this.renderPdfPreview(sub);
+        if (this.isPowerPointSubmission(sub)) return this.renderPresentationPreview(sub);
+        if (this.isDocumentItem(sub) && this.getSubmissionFileUrl(sub)) return `<div class="file-placeholder">📄 This content is a ${this.getProjectFileLabel(sub)} and can be downloaded below.</div>`;
+
+        if (projectUrl && !livePreview?.src) {
+            const { previewUrl } = this.getSubmissionImageUrls(sub);
+            const isEmbeddable = this.isEmbeddableUrl(projectUrl);
+            return `
+                <div class="external-project-preview">
+                    ${this.renderSourceLinkFrame(projectUrl, sub.title || 'Project preview')}
+                    ${previewUrl ? `
+                        <div class="source-link-preview-thumbnail" hidden>
+                            <img src="${previewUrl}" alt="${this.escapeHtml(sub.title || 'Project preview')}" loading="lazy" decoding="async">
+                        </div>
+                    ` : ''}
+                    ${isEmbeddable ? `
+                        <div class="preview-actions-row">
+                            <a href="${projectUrl}" target="_blank" rel="noopener noreferrer" class="preview-action-link">Open Project</a>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        if (this.isVideoItem(sub) && videoUrl) {
+            const youtube = this.parseYouTubeUrl(videoUrl);
+            if (youtube?.embedUrl) {
+                return `<iframe class="code-preview-frame" src="${youtube.embedUrl}" loading="lazy" referrerpolicy="no-referrer" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen title="${this.escapeHtml(sub.title || 'Video viewer')}"></iframe>`;
+            }
+            return `<video class="preview-video" src="${videoUrl}" controls preload="metadata"></video>`;
+        }
 
         if (inlineHtmlSource.html) {
             const wrappedCode = this.wrapCodeForPreview(inlineHtmlSource.html);
@@ -1782,9 +2570,9 @@ export const UI = {
                         ></iframe>
                     </div>`;
         }
-        if (sub.content_text) return `<div class="text-presentation">${sub.content_text}</div>`;
+        if (readableText && !this.isImageSubmission(sub) && !this.isAudioSubmission(sub)) return `<div class="text-presentation">${readableText}</div>`;
 
-        if (sub.file_type?.startsWith('image/') && displayUrl) {
+        if ((this.isImageSubmission(sub) || displayUrl) && displayUrl) {
             return `<div class="image-presentation-container">
                         <img src="${displayUrl}" 
                              class="preview-img" 
@@ -1794,10 +2582,9 @@ export const UI = {
                     </div>`;
         }
 
-        if (sub.file_type?.startsWith('audio/')) return `<div class="audio-player-host" id="audioPlayerMount"></div>`;
-        if (this.isPdfSubmission(sub)) return this.renderPdfPreview(sub);
-        if (this.isPowerPointSubmission(sub)) return this.renderPresentationPreview(sub);
-        return `<div class="file-placeholder">📄 This content is a ${this.getProjectFileLabel(sub)} and can be downloaded below.</div>`;
+        if (this.isAudioSubmission(sub) || audioUrl) return `<div class="audio-player-host" id="audioPlayerMount"></div>`;
+        if (this.getSubmissionFileUrl(sub)) return `<div class="file-placeholder">📄 This content is a ${this.getProjectFileLabel(sub)} and can be downloaded below.</div>`;
+        return `<div class="file-placeholder">Viewer unavailable because this work has no readable file, text, or project link.</div>`;
     },
 
     renderStars(rating) {
@@ -1839,7 +2626,6 @@ export const UI = {
             || pathOrUrl.startsWith('manifest.json')
         ) {
             const resolvedAssetUrl = buildAppPath(pathOrUrl);
-            console.log('[UI] Resolved asset URL:', { raw: pathOrUrl, resolvedAssetUrl });
             return resolvedAssetUrl;
         }
 
@@ -1861,7 +2647,9 @@ export const UI = {
             || ''
         ).trim();
         const customThumbnailUrl = thumbnailValue !== '' ? this.resolveMediaUrl(thumbnailValue) : null;
-        const uploadedImageUrl = this.resolveMediaUrl(sub?.image_url || sub?.public_url || sub?.file_url || sub?.file_path);
+        const uploadedImageUrl = this.isUrlSubmission(sub)
+            ? this.resolveMediaUrl(sub?.image_url || sub?.thumbnail_url || sub?.thumbnail_path)
+            : this.resolveMediaUrl(sub?.image_url || sub?.public_url || sub?.file_url || sub?.file_path);
         const defaultThumbnailUrl = this.getThumbnailFallbackUrl(sub);
         const category = this.getCategoryFallbackKey(sub?.category, sub?.content_type);
 
@@ -1877,6 +2665,240 @@ export const UI = {
             previewUrl: this.appendCacheBust(previewUrl, sub),
             fullUrl: this.appendCacheBust(fullUrl || previewUrl, sub)
         };
+    },
+
+    normalizeProject(project = {}) {
+        const { previewUrl } = this.getSubmissionImageUrls(project);
+        const authorName = project.profiles?.display_name
+            || project.author_name
+            || project.display_name
+            || project.creator_name
+            || project.user_name
+            || project.author
+            || 'Student Creator';
+        return {
+            id: project.id,
+            title: project.title || 'Untitled',
+            thumbnail: project.thumbnail || previewUrl || this.getThumbnailFallbackUrl(project),
+            description: project.description || '',
+            author: authorName,
+            avatar: project.profiles?.avatar_url
+                || project.avatar_url
+                || project.profile_image
+                || project.user_avatar
+                || ''
+        };
+    },
+
+    async openProject(project = {}) {
+        if (!project?.id) return;
+
+        let resolvedProject = project;
+        let link = this.getOpenableUrl(resolvedProject) || this.getExternalProjectLink(resolvedProject);
+        if (!link) {
+            try {
+                resolvedProject = await this.ensureSubmissionCardDetail(project.id) || project;
+                link = this.getOpenableUrl(resolvedProject) || this.getExternalProjectLink(resolvedProject);
+            } catch (error) {
+                console.warn('[Project Open] Could not hydrate project before opening:', error);
+            }
+        }
+
+        if (link) {
+            if (this.isExploreImmersiveCard(resolvedProject)) {
+                this.openImmersiveExploreViewer(resolvedProject.id);
+            } else {
+                window.location.hash = `detail/${resolvedProject.id}`;
+            }
+            return;
+        }
+
+        if (this.isGitHubProject(resolvedProject)) {
+            this.showToast('Project link is missing or unavailable.', 'error');
+            return;
+        }
+
+        window.location.hash = `detail/${resolvedProject.id}`;
+    },
+
+    openUrlProjectViewer(project, url) {
+        if (this._immersiveViewerOverlay) {
+            this.closeImmersiveExploreViewer({ skipHistoryBack: true, preserveFocus: true });
+        }
+
+        this.ensureImmersiveViewerPopstateHandler();
+
+        const title = this.escapeHtml(project.title || 'Untitled');
+        const author = this.escapeHtml(project.profiles?.display_name || 'Anonymous');
+        const categoryLabel = this.isGitHubProject(project) ? 'GitHub Project' : (this.getContentTypeLabel(project.category, project.content_type) || 'Project');
+        const thumbnail = this.escapeHtml(this.getSubmissionImageSourceUrl(project) || this.normalizeProject(project).thumbnail || this.getThumbnailFallbackUrl(project));
+        const description = this.escapeHtml(project.description || '');
+        const buttonLabel = /github\.(com|io)/i.test(url) ? 'Open GitHub' : 'Open Project';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'immersive-viewer-overlay';
+        overlay.innerHTML = `
+            <div class="immersive-viewer-shell" role="dialog" aria-modal="true" aria-label="${title}">
+                <div class="immersive-viewer-topbar">
+                    <button type="button" class="immersive-viewer-close" data-immersive-view-close="true" aria-label="Close viewer">Close</button>
+                    <div class="immersive-viewer-meta">
+                        <h2 class="immersive-viewer-title">${title}</h2>
+                        <p class="immersive-viewer-subtitle">${author} · ${categoryLabel}</p>
+                    </div>
+                    <a href="${url}" target="_blank" rel="noopener noreferrer" class="immersive-viewer-external-link" aria-label="${buttonLabel}" title="${buttonLabel}">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    </a>
+                </div>
+                <div class="immersive-viewer-content">
+                    <article class="external-project-preview">
+                        <div class="image-presentation-container">
+                            <img src="${thumbnail}" class="preview-img" alt="${title}" loading="lazy" decoding="async">
+                        </div>
+                        <div class="preview-actions-row">
+                            <span class="badge badge-category project-card-category">${categoryLabel}</span>
+                            ${description ? `<p class="feed-description">${description}</p>` : ''}
+                            <a href="${url}" target="_blank" rel="noopener noreferrer" class="preview-action-link">${buttonLabel}</a>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+        this.lockBodyScrollForOverlay();
+        document.body.classList.add('immersive-viewer-open');
+        document.documentElement.classList.add('immersive-viewer-open');
+
+        this._immersiveViewerOverlay = overlay;
+        this._immersiveViewerSubmission = project;
+        this._immersiveViewerPreviouslyFocused = document.activeElement;
+
+        history.pushState({
+            ...(history.state || {}),
+            immersiveExploreViewer: true,
+            immersiveSubmissionId: String(project.id)
+        }, '', window.location.href);
+        this._immersiveViewerHistoryOpen = true;
+
+        overlay.querySelector('[data-immersive-view-close="true"]')?.focus({ preventScroll: true });
+
+        const stats = this.ensureSubmissionStats(project);
+        API.recordSubmissionView(project.id, null).then(({ error }) => {
+            if (error) return;
+            stats.view_count = Math.max(0, Number(stats.view_count || 0) + 1);
+            this.updateInteractiveWebCardViewState(project.id, stats.view_count);
+        }).catch(() => {});
+
+        this.hydrateActiveUserRatingForSubmission(project);
+    },
+
+    isEmbeddableUrl(url) {
+        if (!url) return false;
+        try {
+            const parsed = new URL(url);
+            const hostname = parsed.hostname.toLowerCase();
+
+            // Explicitly blocked/blocked-by-default repo hosts
+            if (
+                hostname === 'github.com' || hostname.endsWith('.github.com') ||
+                hostname === 'gitlab.com' || hostname.endsWith('.gitlab.com') ||
+                hostname === 'bitbucket.org' || hostname.endsWith('.bitbucket.org')
+            ) {
+                return false;
+            }
+
+            // Standard embedding friendly domains:
+            if (
+                hostname.endsWith('.github.io') ||
+                hostname.endsWith('.vercel.app') ||
+                hostname.endsWith('.netlify.app') ||
+                hostname.endsWith('.replit.app') ||
+                hostname.endsWith('.repl.co') ||
+                hostname.endsWith('.codesandbox.io') ||
+                hostname.endsWith('.stackblitz.io') ||
+                hostname.endsWith('.codepen.io')
+            ) {
+                return true;
+            }
+
+            // By default, if it's git/github repositories, it's not embeddable.
+            // Let's assume other domains might be live URLs that support embedding.
+            return true;
+        } catch (e) {
+            const lowerUrl = url.toLowerCase();
+            if (lowerUrl.includes('github.com') || lowerUrl.includes('gitlab.com') || lowerUrl.includes('bitbucket.org')) {
+                return false;
+            }
+            return true;
+        }
+    },
+
+    renderSourceLinkFrame(url = '', title = 'Project preview', className = 'code-preview-frame') {
+        const safeUrl = this.escapeHtml(this.normalizeOpenUrl(url));
+        const safeTitle = this.escapeHtml(title || 'Project preview');
+        if (!safeUrl) return '';
+
+        const embeddable = this.isEmbeddableUrl(safeUrl);
+
+        if (!embeddable) {
+            return `
+                <div class="source-link-preview is-not-embeddable animate-fade-in">
+                    <div class="source-link-fallback-premium glass-card">
+                        <div class="premium-fallback-glow"></div>
+                        <div class="premium-fallback-icon">
+                            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <line x1="10" y1="14" x2="21" y2="3"></line>
+                            </svg>
+                        </div>
+                        <h3 class="premium-fallback-title">Interactive Preview Unavailable</h3>
+                        <p class="premium-fallback-message">This project cannot be previewed inside EdTechra.</p>
+                        <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="preview-action-link premium-btn">
+                            <span>Open Project</span>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <line x1="10" y1="14" x2="21" y2="3"></line>
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="source-link-preview">
+                <iframe
+                    class="${className}"
+                    src="${safeUrl}"
+                    title="${safeTitle}"
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads"
+                    allow="fullscreen"
+                    allowfullscreen
+                    onload="this.closest('.source-link-preview')?.classList.add('is-loaded')"
+                ></iframe>
+                <div class="source-link-fallback">
+                    <p>This project cannot be previewed inside EdTechra.</p>
+                    <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="preview-action-link">Open Project</a>
+                </div>
+            </div>
+        `;
+    },
+
+    openLiveSourcePreview({ url = '', title = 'Project preview' } = {}) {
+        const openUrl = this.normalizeOpenUrl(url);
+        if (!openUrl) return;
+        const key = `source-preview-${Date.now()}`;
+        this._livePreviewConfigs.set(key, {
+            mode: 'url',
+            src: openUrl,
+            sourceUrl: openUrl,
+            title,
+            fallbackMessage: 'This project cannot be previewed inside EdTechra.'
+        });
+        this.openLivePreview(key);
     },
 
     async getAudioR2PublicBaseUrl() {
@@ -1895,6 +2917,14 @@ export const UI = {
     },
 
     async resolveAudioSourceUrl(submission) {
+        if (submission?.audio_url) {
+            return submission.audio_url;
+        }
+
+        if (submission?.audio_file) {
+            return this.resolveMediaUrl(submission.audio_file) || submission.audio_file;
+        }
+
         if (submission?.file_url) {
             return submission.file_url;
         }
@@ -1920,6 +2950,10 @@ export const UI = {
         return barHeights.map((height, index) => `
             <span class="audio-feed-wave-bar" style="--bar-height:${height}px; --bar-index:${index};"></span>
         `).join('');
+    },
+
+    renderWhatsAppIcon() {
+        return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.08.54 4.11 1.56 5.9L0 24l6.37-1.67a11.86 11.86 0 0 0 5.69 1.45h.01c6.55 0 11.89-5.34 11.9-11.9a11.82 11.82 0 0 0-3.45-8.4Zm-8.46 18.3h-.01a9.87 9.87 0 0 1-5.04-1.38l-.36-.22-3.78.99 1.01-3.69-.24-.38a9.82 9.82 0 0 1-1.52-5.24c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.11 1.03 6.98 2.9a9.82 9.82 0 0 1 2.89 6.99c0 5.46-4.44 9.9-9.89 9.9Zm5.42-7.4c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.29-.76.96-.94 1.16-.17.2-.35.22-.64.07-.3-.14-1.26-.46-2.39-1.47-.89-.79-1.49-1.76-1.66-2.06-.18-.29-.02-.45.13-.6.13-.14.3-.35.45-.53.15-.17.2-.29.3-.49.1-.2.05-.37-.03-.53-.07-.14-.67-1.61-.91-2.2-.24-.58-.49-.5-.67-.51h-.58c-.19 0-.5.07-.76.37-.27.29-1.03 1-1.03 2.44 0 1.44 1.05 2.83 1.2 3.03.15.2 2.07 3.16 5.02 4.43.7.31 1.25.49 1.68.63.72.23 1.38.2 1.89.12.58-.08 1.76-.72 2.01-1.41.25-.69.25-1.28.17-1.41-.07-.12-.27-.2-.56-.34Z"></path></svg>`;
     },
 
     renderInteractiveWebCard(sub, {
@@ -2020,30 +3054,49 @@ export const UI = {
         hasPreviewMedia = false,
         categoryLabel = '',
         color = '#64748b',
-        title = 'Untitled'
+        title = 'Untitled',
+        sourceType = 'unknown'
     } = {}) {
         const stats = this.ensureSubmissionStats(sub);
-        const activeRating = Number(sub._interactiveWebUserRating || Math.round(stats.avg_rating) || 0);
         const authorName = sub.profiles?.display_name || 'Anonymous';
-        const shareUrl = this.createWhatsAppShareUrl(title, sub.id);
+        const avatarUrl = sub.profiles?.avatar_url || '';
+        const initials = authorName.charAt(0).toUpperCase();
         const displayTitle = this.formatExploreCardTitle(title);
-        const ratingControls = Array.from({ length: 5 }, (_, index) => {
-            const value = index + 1;
-            return `
-                <button class="interactive-web-rate-star ${value <= activeRating ? 'is-active' : ''}"
-                        type="button"
-                        data-web-card-action="rate"
-                        data-rating="${value}"
-                        data-submission-id="${sub.id}"
-                        aria-label="Rate ${value} star${value === 1 ? '' : 's'}">&#9733;</button>
-            `;
-        }).join('');
+        const shareUrl = this.createWhatsAppShareUrl(title, sub.id);
+        const openUrl = this.getOpenableUrl(sub);
+        const sourceOpenAttrs = openUrl
+            ? `data-open-source-link="true" data-source-url="${this.escapeHtml(openUrl)}" data-submission-id="${sub.id}"`
+            : '';
+        const mediaOpenAttrs = `data-immersive-view-open="true" data-submission-id="${sub.id}"`;
 
         return `
-            <article class="content-card clay-card immersive-explore-card animate-fade-in ${hasPreviewMedia ? 'content-card-has-preview-media' : ''}" data-id="${sub.id}" data-explore-immersive-card="true">
+            <article class="content-card clay-card immersive-explore-card animate-fade-in ${hasPreviewMedia ? 'content-card-has-preview-media' : ''}" data-id="${sub.id}" data-explore-immersive-card="true" ${sourceOpenAttrs}>
+                <div class="immersive-card-creator-row">
+                    <div class="immersive-card-creator-main">
+                        <div class="immersive-card-avatar">
+                            ${avatarUrl
+                                ? `<img src="${avatarUrl}" alt="${authorName}" class="immersive-card-avatar-img" loading="lazy" decoding="async">`
+                                : `<span class="immersive-card-avatar-fallback">${initials}</span>`}
+                        </div>
+                        <span class="immersive-card-creator-name">${authorName}</span>
+                    </div>
+                    <div class="immersive-card-stats immersive-card-compact-stats" aria-label="Content stats">
+                        <span class="immersive-card-stat immersive-card-rating-stat">
+                            <span class="immersive-card-stat-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false"><path d="m12 2.5 2.9 5.87 6.48.94-4.69 4.57 1.11 6.47L12 17.32 6.2 20.35l1.11-6.47L2.62 9.31l6.48-.94Z"></path></svg>
+                            </span>
+                            <span class="interactive-web-rating-value">${this.formatAverageRating(stats)}</span>
+                        </span>
+                        <span class="immersive-card-stat immersive-card-view-stat">
+                            <span class="immersive-card-stat-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false"><path d="M1.5 12s3.8-7 10.5-7 10.5 7 10.5 7-3.8 7-10.5 7S1.5 12 1.5 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg>
+                            </span>
+                            <span class="interactive-web-view-count">${stats.view_count || 0}</span>
+                        </span>
+                    </div>
+                </div>
                 <div class="immersive-card-media"
-                     data-immersive-view-open="true"
-                     data-submission-id="${sub.id}"
+                     ${mediaOpenAttrs}
                      role="button"
                      tabindex="0"
                      aria-label="Open ${title}">
@@ -2053,14 +3106,7 @@ export const UI = {
                 <div class="immersive-card-body">
                     <span class="badge badge-category immersive-card-category" style="--cat-color:${color}">${categoryLabel}</span>
                     <h3 class="card-title immersive-card-title explore-standard-card-title">${displayTitle}</h3>
-                    <p class="card-author immersive-card-author">By ${authorName}</p>
-                    <div class="immersive-card-stats">
-                        <span class="immersive-card-stat">
-                            <span class="immersive-card-stat-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" focusable="false"><path d="m12 2.5 2.9 5.87 6.48.94-4.69 4.57 1.11 6.47L12 17.32 6.2 20.35l1.11-6.47L2.62 9.31l6.48-.94Z"></path></svg>
-                            </span>
-                            <span class="interactive-web-rating-value">${this.formatAverageRating(stats)}</span>
-                        </span>
+                    <div class="immersive-card-actions" aria-label="Content actions">
                         <button type="button"
                                 class="immersive-card-stat immersive-card-stat-button immersive-card-like-btn interactive-web-like ${sub._interactiveWebLiked ? 'is-active' : ''}"
                                 data-web-card-action="like"
@@ -2072,14 +3118,10 @@ export const UI = {
                             </span>
                             <span class="interactive-web-like-count">${stats.like_count}</span>
                         </button>
-                        <span class="immersive-card-stat">
+                        <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="immersive-card-stat immersive-card-share-btn immersive-card-whatsapp-share" title="Share on WhatsApp" aria-label="Share on WhatsApp">
                             <span class="immersive-card-stat-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" focusable="false"><path d="M1.5 12s3.8-7 10.5-7 10.5 7 10.5 7-3.8 7-10.5 7S1.5 12 1.5 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg>
+                                ${this.renderWhatsAppIcon()}
                             </span>
-                            <span class="interactive-web-view-count">${stats.view_count || 0}</span>
-                        </span>
-                        <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="immersive-card-stat immersive-card-stat-whatsapp" title="Share on WhatsApp" aria-label="Share on WhatsApp">
-                            <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.08.54 4.11 1.56 5.9L0 24l6.37-1.67a11.86 11.86 0 0 0 5.69 1.45h.01c6.55 0 11.89-5.34 11.9-11.9a11.82 11.82 0 0 0-3.45-8.4Zm-8.46 18.3h-.01a9.87 9.87 0 0 1-5.04-1.38l-.36-.22-3.78.99 1.01-3.69-.24-.38a9.82 9.82 0 0 1-1.52-5.24c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.11 1.03 6.98 2.9a9.82 9.82 0 0 1 2.89 6.99c0 5.46-4.44 9.9-9.89 9.9Zm5.42-7.4c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.29-.76.96-.94 1.16-.17.2-.35.22-.64.07-.3-.14-1.26-.46-2.39-1.47-.89-.79-1.49-1.76-1.66-2.06-.18-.29-.02-.45.13-.6.13-.14.3-.35.45-.53.15-.17.2-.29.3-.49.1-.2.05-.37-.03-.53-.07-.14-.67-1.61-.91-2.2-.24-.58-.49-.5-.67-.51h-.58c-.19 0-.5.07-.76.37-.27.29-1.03 1-1.03 2.44 0 1.44 1.05 2.83 1.2 3.03.15.2 2.07 3.16 5.02 4.43.7.31 1.25.49 1.68.63.72.23 1.38.2 1.89.12.58-.08 1.76-.72 2.01-1.41.25-.69.25-1.28.17-1.41-.07-.12-.27-.2-.56-.34Z"></path></svg>
                         </a>
                         <button type="button"
                                 class="immersive-card-stat immersive-card-stat-button immersive-card-bookmark-btn interactive-web-bookmark ${sub._interactiveWebBookmarked ? 'is-active' : ''}"
@@ -2092,9 +3134,117 @@ export const UI = {
                             </span>
                         </button>
                     </div>
-                    <div class="immersive-card-rating-stars-row">
-                        <div class="interactive-web-rating-stars immersive-card-rating-stars" aria-label="Rate this content">
-                            ${ratingControls}
+                </div>
+            </article>
+        `;
+    },
+
+    renderVideoCard(sub) {
+        this.registerSubmissionCardState(sub);
+        const stats = this.ensureSubmissionStats(sub);
+        const title = this.escapeHtml(sub.title || 'Untitled Video');
+        const authorName = sub.profiles?.display_name || 'Anonymous';
+        const avatarUrl = sub.profiles?.avatar_url || '';
+        const initials = authorName.charAt(0).toUpperCase();
+        const timestamp = this.formatRelativeTime(this.getSubmissionPrimaryTimestamp(sub));
+
+let videoId = '';
+        
+        // Try to get videoId from JSON description first
+        let videoMeta = {};
+        try {
+            videoMeta = typeof sub.description === 'string' && sub.description.startsWith('{')
+                ? JSON.parse(sub.description)
+                : {};
+        } catch (_) {
+            videoMeta = {};
+        }
+        
+        videoId = /^[a-zA-Z0-9_-]{11}$/.test(videoMeta.videoId || '') ? videoMeta.videoId : '';
+        
+        // If no videoId in description, check file_url/public_url for YouTube URL
+        if (!videoId) {
+            const url = sub.file_url || sub.public_url || '';
+            const parsedYouTubeUrl = this.parseYouTubeUrl(url);
+            if (parsedYouTubeUrl) videoId = parsedYouTubeUrl.videoId;
+        }
+        
+        const channelName = this.escapeHtml(videoMeta.channel?.name || 'Unknown Channel');
+        const channelUrl = this.escapeHtml(videoMeta.channel?.url || '');
+        const videoTitle = this.escapeHtml(videoMeta.title || sub.title || 'Untitled Video');
+        const embedUrl = videoId ? this.escapeHtml(`https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`) : '';
+        const ytThumbnail = this.getYouTubeThumbnailUrl(videoId);
+        const thumbnailUrl = this.escapeHtml(sub.thumbnail_url || ytThumbnail);
+
+        const channelHtml = channelUrl
+            ? `<a href="${channelUrl}" target="_blank" rel="noopener noreferrer" class="video-feed-channel-link">${channelName}</a>`
+            : `<span class="video-feed-channel-name">${channelName}</span>`;
+
+        return `
+            <article class="content-card clay-card video-feed-card animate-fade-in" data-id="${sub.id}">
+                <div class="video-feed-shell">
+                    <div class="video-feed-creator-row">
+                        <div class="video-feed-avatar">
+                            ${avatarUrl
+                                ? `<img src="${avatarUrl}" alt="${authorName}" class="video-feed-avatar-img" loading="lazy" decoding="async">`
+                                : `<span class="video-feed-avatar-fallback">${initials}</span>`}
+                        </div>
+                        <div class="video-feed-creator-copy">
+                            <h3 class="video-feed-creator-name">${authorName}</h3>
+                            <span class="video-feed-time">${timestamp}</span>
+                        </div>
+                    </div>
+
+                    ${embedUrl ? `
+                        <div class="video-feed-player" data-video-id="${videoId}" data-youtube-embed-url="${embedUrl}" data-video-title="${videoTitle}">
+                            <div class="video-feed-thumbnail">
+                                <img
+                                    class="video-feed-thumbnail-img"
+                                    src="${thumbnailUrl}"
+                                    alt="${videoTitle}"
+                                    loading="lazy"
+                                    decoding="async">
+                                <button class="video-feed-play-btn" type="button" aria-label="Play video">
+                                    <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="video-feed-player video-feed-player-fallback">
+                            <div class="video-feed-fallback-content">
+                                <span class="video-feed-fallback-icon">\u{1F3AC}</span>
+                                <p>Video unavailable</p>
+                            </div>
+                        </div>
+                    `}
+
+                    <div class="video-feed-footer">
+                        <div class="video-feed-meta">
+                            <h3 class="card-title video-feed-title">${videoTitle}</h3>
+                            <div class="video-feed-attribution">
+                                ${channelHtml}
+                                <span class="video-feed-source-badge">YouTube</span>
+                            </div>
+                        </div>
+
+                        <div class="video-feed-stats">
+                            <button class="video-feed-stat video-feed-like-btn ${sub._interactiveWebLiked ? 'is-active' : ''}" type="button" data-video-action="like" data-id="${sub.id}" aria-label="Like video" aria-pressed="${sub._interactiveWebLiked ? 'true' : 'false'}">
+                                <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                                    <path d="m12 21 -1.45-1.32C5.4 15.02 2 11.93 2 8.13 2 5.04 4.42 2.5 7.5 2.5c1.74 0 3.41.81 4.5 2.09A5.94 5.94 0 0 1 16.5 2.5C19.58 2.5 22 5.04 22 8.13c0 3.8-3.4 6.89-8.55 11.55Z"></path>
+                                </svg>
+                                <span class="video-feed-like-count">${stats.like_count || 0}</span>
+                            </button>
+                            <span class="video-feed-stat video-feed-view-pill">
+                                <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                                    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path>
+                                </svg>
+                                <span class="video-feed-view-count">${stats.view_count || 0}</span>
+                            </span>
+                            <button class="video-feed-stat video-feed-bookmark-btn ${sub._interactiveWebBookmarked ? 'is-active' : ''}" type="button" data-video-action="bookmark" data-id="${sub.id}" aria-label="Save video" aria-pressed="${sub._interactiveWebBookmarked ? 'true' : 'false'}">
+                                <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                                    <path d="M6 4.75A1.75 1.75 0 0 1 7.75 3h8.5A1.75 1.75 0 0 1 18 4.75V21l-6-3.6L6 21V4.75Z"></path>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2105,15 +3255,25 @@ export const UI = {
     renderCard(sub, badgeObj = null) {
         this.registerSubmissionCardState(sub);
         const stats = this.ensureSubmissionStats(sub);
-        const avgRating = this.getAverageRatingValue(stats);
-        const normalizedCategory = this.normalizeCategoryValue(sub.category, sub.content_type);
+        const data = this.normalizeProject(sub);
         const color = this.getCategoryColor(sub.category, sub.content_type);
         const categoryLabel = this.getContentTypeLabel(sub.category, sub.content_type);
-        const title = sub.title || 'Untitled';
-
-        const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
-        const thumbnailUrl = previewUrl;
+        const title = this.escapeHtml(data.title);
+        const description = this.escapeHtml(data.description);
+        const author = this.escapeHtml(data.author);
+        const avatarUrl = data.avatar;
+        const authorInitials = String(data.author || 'S').charAt(0).toUpperCase();
+        const thumbnailUrl = data.thumbnail;
         const fallbackThumbnailUrl = this.getThumbnailFallbackUrl(sub);
+        const projectUrl = this.getOpenableUrl(sub) || this.getExternalProjectLink(sub);
+        const sourceType = this.getSourceType(sub);
+        const useProjectLayout = this.shouldUseProjectCardLayout(sub);
+        const isVideo = sourceType !== 'github' && this.isVideoItem(sub);
+        const isAudio = sourceType !== 'github' && !isVideo && this.isAudioItem(sub);
+        const isGithubProject = sourceType === 'github' && useProjectLayout;
+        const projectTypeLabel = isGithubProject
+            ? 'GitHub Project'
+            : (categoryLabel || 'Project');
 
         const thumbnailHtml = thumbnailUrl
             ? `<div class="card-thumbnail-container card-thumbnail-container-preview">
@@ -2138,30 +3298,107 @@ export const UI = {
                 ${badgeObj.text}
             </div>
         ` : '';
+        const projectStatusBadgeHtml = isGithubProject && badgeObj ? `
+            <div class="corner-badge project-status-badge ${badgeObj.className}">
+                ${badgeObj.text}
+            </div>
+        ` : '';
+        const projectThumbnailHtml = thumbnailUrl
+            ? `<div class="card-thumbnail-container card-thumbnail-container-preview project-card-thumbnail">
+                 <img src="${thumbnailUrl}" 
+                      class="card-thumbnail-img card-thumbnail-img-preview" 
+                      loading="lazy" 
+                      decoding="async" 
+                      alt="${title}"
+                      onerror="if(this.dataset.fallbackApplied==='true'){this.style.opacity='0'; this.parentElement.querySelector('.card-thumb-gradient').style.display='flex'; return;} this.dataset.fallbackApplied='true'; this.src='${fallbackThumbnailUrl}';">
+                 <div class="card-thumbnail card-thumb-gradient" style="display:none; background:linear-gradient(135deg, ${color}22, ${color}44); position:absolute; top:0; left:0;">
+                    <span class="thumb-emoji">${this.getCategoryEmoji(sub.category, sub.content_type)}</span>
+                 </div>
+                 ${projectStatusBadgeHtml}
+               </div>`
+            : `<div class="card-thumbnail-container project-card-thumbnail">
+                <div class="card-thumbnail card-thumb-gradient" style="background:linear-gradient(135deg, ${color}22, ${color}44)">
+                    <span class="thumb-emoji">${this.getCategoryEmoji(sub.category, sub.content_type)}</span>
+                </div>
+                ${projectStatusBadgeHtml}
+               </div>`;
 
-        if (this.isExploreImmersiveCard(sub)) {
+        if (isVideo) {
+            return this.renderVideoCard(sub);
+        }
+
+        if (!useProjectLayout && (this.isExploreImmersiveCard(sub) || (sourceType === 'github' && !this.isImageSubmission(sub)))) {
             return this.renderExploreImmersiveCard(sub, {
                 badgeObj,
                 thumbnailHtml,
                 hasPreviewMedia: !!thumbnailUrl,
                 categoryLabel,
                 color,
-                title
+                title,
+                sourceType
             });
         }
 
-        if (this.isAudioSubmission(sub)) {
+        if (false) {
+            const projectUrl = this.getUrlSubmissionLink(sub);
+            const safeTitle = this.escapeHtml(title);
+            const safeAuthor = this.escapeHtml(sub.profiles?.display_name || 'Anonymous');
+            const safeDescription = this.escapeHtml(sub.description || '');
+
+            return `
+                <div class="content-card clay-card animate-fade-in ${thumbnailUrl ? 'content-card-has-preview-media' : ''}" data-id="${sub.id}">
+                    ${badgeHtml}
+                    ${thumbnailHtml}
+                    <div class="card-body">
+                        <span class="badge badge-category" style="--cat-color:${color}">${categoryLabel}</span>
+                        <h3 class="card-title">${safeTitle}</h3>
+                        <p class="card-author">By ${safeAuthor}</p>
+                        <p class="feed-description">${safeDescription}</p>
+                        <div class="card-stats-row">
+                            <span class="card-stat-item"><span class="card-stat-icon" style="color:#fbbf24">â˜…</span> ${this.formatAverageRating(stats)}</span>
+                            <span class="card-stat-item"><span class="card-stat-icon" style="color:#ef4444">â™¥</span> ${stats.like_count}</span>
+                            <span class="card-stat-item"><span class="card-stat-icon">ðŸ‘</span> ${stats.view_count || 0}</span>
+                        </div>
+                        <div class="card-action-row">
+                            <button type="button"
+                                    class="card-action-pill card-action-pill-like interactive-web-like ${sub._feedIsLiked ? 'is-active' : ''}"
+                                    data-web-card-action="like"
+                                    data-submission-id="${sub.id}"
+                                    aria-label="Like"
+                                    aria-pressed="${sub._feedIsLiked ? 'true' : 'false'}">
+                                <span class="card-action-pill-icon">â™¥</span>
+                                <span class="card-action-pill-label">Like</span>
+                            </button>
+                            <button type="button"
+                                    class="card-action-pill card-action-pill-save interactive-web-bookmark ${sub._feedIsBookmarked ? 'is-active' : ''}"
+                                    data-web-card-action="bookmark"
+                                    data-submission-id="${sub.id}"
+                                    aria-label="Save"
+                                    aria-pressed="${sub._feedIsBookmarked ? 'true' : 'false'}">
+                                <span class="card-action-pill-icon">ðŸ”–</span>
+                                <span class="card-action-pill-label">Save</span>
+                            </button>
+                            ${projectUrl ? '' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (isAudio) {
+            const { fullUrl } = this.getSubmissionImageUrls(sub);
+            const avgRating = this.getAverageRatingValue(stats);
             const authorName = sub.profiles?.display_name || 'Anonymous';
             const initials = authorName.charAt(0).toUpperCase();
             const shareUrl = this.createWhatsAppShareUrl(title, sub.id);
-            const audioArtworkUrl = previewUrl || fullUrl || fallbackThumbnailUrl;
+            const audioArtworkUrl = thumbnailUrl || fullUrl || fallbackThumbnailUrl;
             const activeRating = Math.round(avgRating);
             const ratingControls = Array.from({ length: 5 }, (_, index) => {
                 const value = index + 1;
                 return `
                     <button class="audio-feed-rate-star ${value <= activeRating ? 'is-active' : ''}"
                             type="button"
-                            data-audio-action="rate"
+                            data-audio-action="select-rate"
                             data-rating="${value}"
                             aria-label="Rate ${value} star${value === 1 ? '' : 's'}">★</button>
                 `;
@@ -2173,7 +3410,7 @@ export const UI = {
                         <div class="audio-feed-creator-row">
                             <div class="audio-feed-avatar">
                                 ${sub.profiles?.avatar_url
-                                    ? `<img src="${sub.profiles.avatar_url}" alt="${authorName}" class="audio-feed-avatar-img">`
+                                    ? `<img src="${sub.profiles.avatar_url}" alt="${authorName}" class="audio-feed-avatar-img" loading="lazy" decoding="async">`
                                     : `<span class="audio-feed-avatar-fallback">${initials}</span>`}
                             </div>
                             <div class="audio-feed-creator-copy">
@@ -2190,8 +3427,6 @@ export const UI = {
                                  onerror="if(this.dataset.fallbackApplied==='true'){return;} this.dataset.fallbackApplied='true'; this.src='${fallbackThumbnailUrl}';">
                             <div class="audio-feed-media-overlay"></div>
                             <div class="audio-feed-media-sheen"></div>
-                            <span class="audio-feed-badge">${categoryLabel}</span>
-
                             <div class="audio-feed-wave" aria-hidden="true">
                                 ${this.renderAudioVisualizerMarkup()}
                             </div>
@@ -2228,42 +3463,56 @@ export const UI = {
 
                         <div class="audio-feed-footer">
                             <div class="audio-feed-meta">
+                                <span class="badge badge-category audio-feed-category" style="--cat-color:${color}">${categoryLabel}</span>
                                 <h3 class="card-title audio-feed-card-title">${title}</h3>
                                 <div class="audio-feed-stats">
-                                    <span class="audio-feed-stat audio-feed-stat-rating">
-                                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                                            <path d="m12 2.5 2.9 5.87 6.48.94-4.69 4.57 1.11 6.47L12 17.32 6.2 20.35l1.11-6.47L2.62 9.31l6.48-.94Z"></path>
-                                        </svg>
-                                        <span class="audio-feed-rating-value">${this.formatAverageRating(stats)}</span>
-                                    </span>
-                                    <button class="audio-feed-stat audio-feed-like-btn" type="button" data-audio-action="like" aria-label="Like audio">
+                                    <button class="audio-feed-stat audio-feed-action-btn audio-feed-like-btn ${sub._audioFeedIsLiked ? 'is-active' : ''}" type="button" data-audio-action="like" aria-label="Like audio" aria-pressed="${sub._audioFeedIsLiked ? 'true' : 'false'}">
                                         <svg viewBox="0 0 24 24" aria-hidden="true">
                                             <path d="m12 21-1.45-1.32C5.4 15.02 2 11.93 2 8.13 2 5.04 4.42 2.5 7.5 2.5c1.74 0 3.41.81 4.5 2.09A5.94 5.94 0 0 1 16.5 2.5C19.58 2.5 22 5.04 22 8.13c0 3.8-3.4 6.89-8.55 11.55Z"></path>
                                         </svg>
                                         <span class="audio-feed-like-count">${stats.like_count || 0}</span>
                                     </button>
-                                    <span class="audio-feed-stat">
+                                    <span class="audio-feed-stat audio-feed-listen-pill" aria-label="Listen count">
                                         <svg viewBox="0 0 24 24" aria-hidden="true">
                                             <path d="M1.5 12s3.8-7 10.5-7 10.5 7 10.5 7-3.8 7-10.5 7S1.5 12 1.5 12Z"></path>
                                             <circle cx="12" cy="12" r="3.2"></circle>
                                         </svg>
                                         <span class="audio-feed-view-count">${stats.view_count || 0}</span>
                                     </span>
+                                    <button class="audio-feed-stat audio-feed-action-btn audio-feed-bookmark-btn ${sub._audioFeedIsBookmarked ? 'is-active' : ''}" type="button" data-audio-action="bookmark" aria-label="Save audio" aria-pressed="${sub._audioFeedIsBookmarked ? 'true' : 'false'}">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M6 4.75A1.75 1.75 0 0 1 7.75 3h8.5A1.75 1.75 0 0 1 18 4.75V21l-6-3.6L6 21V4.75Z"></path>
+                                        </svg>
+                                    </button>
+                                    <div class="audio-feed-menu-wrap">
+                                        <button class="audio-feed-stat audio-feed-action-btn audio-feed-menu-btn" type="button" data-audio-action="menu" aria-label="More audio actions" aria-expanded="false">
+                                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                <circle cx="5" cy="12" r="1.9"></circle>
+                                                <circle cx="12" cy="12" r="1.9"></circle>
+                                                <circle cx="19" cy="12" r="1.9"></circle>
+                                            </svg>
+                                        </button>
+                                        <div class="audio-feed-menu" role="menu" aria-label="Audio actions">
+                                            <button type="button" class="audio-feed-menu-option" data-audio-action="open-rate" role="menuitem">Rate this audio</button>
+                                            <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="audio-feed-menu-share audio-feed-share" role="menuitem" title="Share on WhatsApp" aria-label="Share audio on WhatsApp">
+                                                ${this.renderWhatsAppIcon()}
+                                                <span>Share</span>
+                                            </a>
+                                        </div>
+                                    </div>
                                 </div>
-
-                                <div class="audio-feed-rating-row">
-                                    <span class="audio-feed-rating-label">Rate</span>
-                                    <div class="audio-feed-rating-stars" aria-label="Rate this audio">
-                                        ${ratingControls}
+                                <div class="audio-feed-rating-modal" role="dialog" aria-modal="true" aria-label="Rate this audio">
+                                    <div class="audio-feed-rating-dialog rating-modal-card">
+                                        <button type="button" class="audio-feed-rating-close" data-audio-action="close-rate" aria-label="Close rating">&times;</button>
+                                        <h4>Rate this audio</h4>
+                                        <p class="detail-rating-prompt-subtitle">Your feedback helps creators improve.</p>
+                                        <div class="audio-feed-rating-stars" aria-label="Choose audio rating">
+                                            ${ratingControls}
+                                        </div>
+                                        <button type="button" class="audio-feed-rating-submit" data-audio-action="submit-rate">Submit Rating</button>
                                     </div>
                                 </div>
                             </div>
-
-                            <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="audio-feed-share" title="Share on WhatsApp" aria-label="Share on WhatsApp">
-                                <svg viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.08.54 4.11 1.56 5.9L0 24l6.37-1.67a11.86 11.86 0 0 0 5.69 1.45h.01c6.55 0 11.89-5.34 11.9-11.9a11.82 11.82 0 0 0-3.45-8.4Zm-8.46 18.3h-.01a9.87 9.87 0 0 1-5.04-1.38l-.36-.22-3.78.99 1.01-3.69-.24-.38a9.82 9.82 0 0 1-1.52-5.24c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.11 1.03 6.98 2.9a9.82 9.82 0 0 1 2.89 6.99c0 5.46-4.44 9.9-9.89 9.9Zm5.42-7.4c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.29-.76.96-.94 1.16-.17.2-.35.22-.64.07-.3-.14-1.26-.46-2.39-1.47-.89-.79-1.49-1.76-1.66-2.06-.18-.29-.02-.45.13-.6.13-.14.3-.35.45-.53.15-.17.2-.29.3-.49.1-.2.05-.37-.03-.53-.07-.14-.67-1.61-.91-2.2-.24-.58-.49-.5-.67-.51h-.58c-.19 0-.5.07-.76.37-.27.29-1.03 1-1.03 2.44 0 1.44 1.05 2.83 1.2 3.03.15.2 2.07 3.16 5.02 4.43.7.31 1.25.49 1.68.63.72.23 1.38.2 1.89.12.58-.08 1.76-.72 2.01-1.41.25-.69.25-1.28.17-1.41-.07-.12-.27-.2-.56-.34Z"></path>
-                                </svg>
-                            </a>
                         </div>
                     </div>
                 </article>
@@ -2295,7 +3544,7 @@ export const UI = {
                              <div class="author-info">
                                 <div class="mini-avatar" style="background: linear-gradient(135deg, ${color}, var(--secondary))">
                                     ${sub.profiles?.avatar_url 
-                                        ? `<img src="${sub.profiles.avatar_url}" alt="${sub.profiles.display_name}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">` 
+                                        ? `<img src="${sub.profiles.avatar_url}" alt="${sub.profiles.display_name}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">` 
                                         : (sub.profiles?.display_name || 'U').charAt(0).toUpperCase()}
                                 </div>
                                 <span class="author-name">By ${sub.profiles?.display_name || 'Anonymous'}</span>
@@ -2320,20 +3569,55 @@ export const UI = {
             `;
         }
 
-        // Standard Document Card
-        const shareUrl = this.createWhatsAppShareUrl(sub.title, sub.id);
+        // Standard project card
+        const shareUrl = this.createWhatsAppShareUrl(data.title, sub.id);
+        const sourceOpenAttrs = projectUrl
+            ? `data-open-source-link="true" data-source-url="${this.escapeHtml(projectUrl)}" data-submission-id="${data.id}"`
+            : '';
         return `
-            <div class="content-card clay-card animate-fade-in ${thumbnailUrl ? 'content-card-has-preview-media' : ''}" data-id="${sub.id}">
-                ${badgeHtml}
-                ${thumbnailHtml}
+            <div class="content-card clay-card standard-project-card animate-fade-in ${thumbnailUrl ? 'content-card-has-preview-media' : ''}"
+                 data-id="${data.id}"
+                 data-submission-id="${data.id}"
+                 data-open-project="true"
+                 ${sourceOpenAttrs}
+                 role="button"
+                 tabindex="0"
+                 aria-label="Open ${title}">
+                ${isGithubProject ? '' : badgeHtml}
+                <div class="immersive-card-creator-row project-card-header">
+                    <div class="immersive-card-creator-main project-card-creator">
+                        <div class="immersive-card-avatar project-card-avatar">
+                            ${avatarUrl
+                                ? `<img src="${avatarUrl}" alt="${author}" class="immersive-card-avatar-img" loading="lazy" decoding="async">`
+                                : `<span class="immersive-card-avatar-fallback">${authorInitials}</span>`}
+                        </div>
+                        <span class="immersive-card-creator-name project-card-creator-name">${author}</span>
+                    </div>
+                    <div class="immersive-card-stats immersive-card-compact-stats project-card-meta" aria-label="Project stats">
+                        <span class="immersive-card-stat immersive-card-rating-stat project-card-meta-badge">
+                            <span class="immersive-card-stat-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false"><path d="m12 2.5 2.9 5.87 6.48.94-4.69 4.57 1.11 6.47L12 17.32 6.2 20.35l1.11-6.47L2.62 9.31l6.48-.94Z"></path></svg>
+                            </span>
+                            <span class="interactive-web-rating-value">${this.formatAverageRating(stats)}</span>
+                        </span>
+                        <span class="immersive-card-stat immersive-card-view-stat project-card-meta-badge">
+                            <span class="immersive-card-stat-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false"><path d="M1.5 12s3.8-7 10.5-7 10.5 7 10.5 7-3.8 7-10.5 7S1.5 12 1.5 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg>
+                            </span>
+                            <span class="interactive-web-view-count">${stats.view_count || 0}</span>
+                        </span>
+                    </div>
+                </div>
+                ${isGithubProject ? projectThumbnailHtml : thumbnailHtml}
                 <div class="card-body">
-                    <span class="badge badge-category" style="--cat-color:${color}">${categoryLabel}</span>
+                    <span class="badge badge-category project-card-category" style="--cat-color:${color}">${projectTypeLabel}</span>
                     <h3 class="card-title">${title}</h3>
-                    <p class="card-author">By ${sub.profiles?.display_name || 'Anonymous'}</p>
+                    <p class="card-author">by ${author}</p>
+                    ${description ? `<p class="feed-description">${description}</p>` : ''}
                     <div class="card-stats-row">
-                        <span class="card-stat-item"><span class="card-stat-icon" style="color:#fbbf24">★</span> ${this.formatAverageRating(stats)}</span>
-                        <span class="card-stat-item"><span class="card-stat-icon" style="color:#ef4444">♥</span> ${stats.like_count}</span>
-                        <span class="card-stat-item"><span class="card-stat-icon">👁</span> ${stats.view_count || 0}</span>
+                        <span class="card-stat-item"><span class="card-stat-icon" style="color:#fbbf24">★</span> <span class="interactive-web-rating-value">${this.formatAverageRating(stats)}</span></span>
+                        <span class="card-stat-item"><span class="card-stat-icon" style="color:#ef4444">♥</span> <span class="interactive-web-like-count">${stats.like_count}</span></span>
+                        <span class="card-stat-item"><span class="card-stat-icon">👁</span> <span class="interactive-web-view-count">${stats.view_count || 0}</span></span>
                         <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="card-stat-item card-stat-whatsapp" title="Share on WhatsApp" aria-label="Share on WhatsApp">
                             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.888-.788-1.489-1.761-1.663-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/>
@@ -2350,6 +3634,10 @@ export const UI = {
                             <span class="card-action-pill-icon">♥</span>
                             <span class="card-action-pill-label">Like</span>
                         </button>
+                        <a href="${shareUrl}" target="_blank" rel="noopener noreferrer" class="card-action-pill card-action-pill-share card-action-pill-whatsapp" title="Share on WhatsApp" aria-label="Share on WhatsApp">
+                            <span class="card-action-pill-icon">${this.renderWhatsAppIcon()}</span>
+                            <span class="card-action-pill-label">Share</span>
+                        </a>
                         <button type="button"
                                 class="card-action-pill card-action-pill-save interactive-web-bookmark ${sub._feedIsBookmarked ? 'is-active' : ''}"
                                 data-web-card-action="bookmark"
@@ -2359,15 +3647,6 @@ export const UI = {
                             <span class="card-action-pill-icon">🔖</span>
                             <span class="card-action-pill-label">Save</span>
                         </button>
-                        <a href="#detail/${sub.id}" class="card-action-pill card-action-pill-view" data-link="detail/${sub.id}" aria-label="View Details">
-                            <span class="card-action-pill-icon">
-                                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                            </span>
-                            <span class="card-action-pill-label">View</span>
-                        </a>
                     </div>
                 </div>
             </div>
@@ -2375,6 +3654,7 @@ export const UI = {
     },
 
     renderMasonryCard(sub) {
+        this.registerSubmissionCardState(sub);
         const stats = sub.submission_stats?.[0] || { avg_rating: 0, like_count: 0, view_count: 0 };
         const { previewUrl, fullUrl } = this.getSubmissionImageUrls(sub);
         const thumbUrl = previewUrl || fullUrl;
@@ -2385,6 +3665,7 @@ export const UI = {
         const imageUrl = fullUrl || thumbUrl || fallbackThumbnailUrl;
         const shareUrl = this.createWhatsAppShareUrl(sub.title, sub.id);
         const isLiked = !!(sub._feedIsLiked ?? stats.user_has_liked);
+        const isBookmarked = !!(sub._feedIsBookmarked ?? stats.user_has_bookmarked);
 
         return `
             <div class="masonry-item animate-fade-in" data-id="${sub.id}" data-full-url="${fullUrl || ''}" data-preview-url="${thumbUrl || ''}">
@@ -2392,7 +3673,7 @@ export const UI = {
                     <div class="masonry-card-header">
                         <div class="masonry-author-stub" onclick="window.location.hash='#detail/${sub.id}'">
                             <div class="masonry-avatar-mini">
-                                ${avatarUrl ? `<img src="${avatarUrl}" alt="${authorName}">` : initials}
+                                ${avatarUrl ? `<img src="${avatarUrl}" alt="${authorName}" loading="lazy" decoding="async">` : initials}
                             </div>
                             <div class="masonry-header-copy">
                                 <h3 class="masonry-feed-title">${sub.title}</h3>
@@ -2423,16 +3704,14 @@ export const UI = {
                            aria-label="Share on WhatsApp">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.52 3.48A11.86 11.86 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.08.54 4.11 1.56 5.9L0 24l6.37-1.67a11.86 11.86 0 0 0 5.69 1.45h.01c6.55 0 11.89-5.34 11.9-11.9a11.82 11.82 0 0 0-3.45-8.4Zm-8.46 18.3h-.01a9.87 9.87 0 0 1-5.04-1.38l-.36-.22-3.78.99 1.01-3.69-.24-.38a9.82 9.82 0 0 1-1.52-5.24c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.11 1.03 6.98 2.9a9.82 9.82 0 0 1 2.89 6.99c0 5.46-4.44 9.9-9.89 9.9Zm5.42-7.4c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.29-.76.96-.94 1.16-.17.2-.35.22-.64.07-.3-.14-1.26-.46-2.39-1.47-.89-.79-1.49-1.76-1.66-2.06-.18-.29-.02-.45.13-.6.13-.14.3-.35.45-.53.15-.17.2-.29.3-.49.1-.2.05-.37-.03-.53-.07-.14-.67-1.61-.91-2.2-.24-.58-.49-.5-.67-.51h-.58c-.19 0-.5.07-.76.37-.27.29-1.03 1-1.03 2.44 0 1.44 1.05 2.83 1.2 3.03.15.2 2.07 3.16 5.02 4.43.7.31 1.25.49 1.68.63.72.23 1.38.2 1.89.12.58-.08 1.76-.72 2.01-1.41.25-.69.25-1.28.17-1.41-.07-.12-.27-.2-.56-.34Z"></path></svg>
                         </a>
-                        <a href="${imageUrl}"
-                           class="action-mini action-mini-icon-only btn-download"
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           download
-                           data-filename="${this.buildDownloadFileName(sub.title, imageUrl)}"
-                           title="Download image"
-                           aria-label="Download image">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
-                        </a>
+                        <button type="button"
+                                class="action-mini action-mini-icon-only btn-save interaction-btn ${isBookmarked ? 'bookmarked' : ''}"
+                                data-id="${sub.id}"
+                                title="Save"
+                                aria-label="Save image"
+                                aria-pressed="${isBookmarked ? 'true' : 'false'}">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.75A1.75 1.75 0 0 1 7.75 3h8.5A1.75 1.75 0 0 1 18 4.75V21l-6-3.6L6 21V4.75Z"></path></svg>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -2501,6 +3780,22 @@ export const UI = {
                     return;
                 }
 
+                if (btn.classList.contains('btn-save')) {
+                    const { action, error } = await API.toggleBookmark(subId, userId);
+                    if (error) {
+                        this.showToast(error.message || 'Could not update save.', 'error');
+                        return;
+                    }
+
+                    const isBookmarked = action === 'saved';
+                    gridEl.querySelectorAll(`.btn-save[data-id="${subId}"]`).forEach((element) => {
+                        element.classList.toggle('bookmarked', isBookmarked);
+                        element.setAttribute('aria-pressed', String(isBookmarked));
+                    });
+                    this.showToast(isBookmarked ? 'Saved to collection!' : 'Removed from collection');
+                    return;
+                }
+
                 return;
             }
 
@@ -2563,7 +3858,6 @@ export const UI = {
     },
 
     showImageLightbox(imageUrl, title) {
-        console.log(`[UI] opening lightbox with source: ${imageUrl}`);
         // Remove existing if any
         document.querySelector('.lightbox-overlay')?.remove();
 
@@ -3490,7 +4784,7 @@ export const UI = {
     },
 
     updateInteractiveWebCardLikeState(submissionId, isLiked, likeCount) {
-        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"], .content-card[data-id="${submissionId}"]`).forEach((card) => {
             const button = card.querySelector('[data-web-card-action="like"]');
             const countEl = card.querySelector('.interactive-web-like-count');
             const labelEl = card.querySelector('.interactive-web-like .interactive-web-pill-label');
@@ -3502,7 +4796,7 @@ export const UI = {
     },
 
     updateInteractiveWebCardBookmarkState(submissionId, isSaved) {
-        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"], .content-card[data-id="${submissionId}"]`).forEach((card) => {
             const button = card.querySelector('[data-web-card-action="bookmark"]');
             const labelEl = card.querySelector('.interactive-web-bookmark .interactive-web-pill-label');
             button?.classList.toggle('is-active', !!isSaved);
@@ -3515,7 +4809,7 @@ export const UI = {
         const resolvedAverage = this.getAverageRatingValue(avgRating);
         const selectedRating = Number(activeRating || Math.round(resolvedAverage) || 0);
 
-        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"], .content-card[data-id="${submissionId}"]`).forEach((card) => {
             const valueEl = card.querySelector('.interactive-web-rating-value');
             const stars = card.querySelectorAll('[data-web-card-action="rate"]');
             if (valueEl) valueEl.textContent = this.formatAverageRating(resolvedAverage);
@@ -3529,9 +4823,27 @@ export const UI = {
 
     updateInteractiveWebCardViewState(submissionId, viewCount) {
         const nextCount = String(Math.max(0, Number(viewCount) || 0));
-        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"]`).forEach((card) => {
+        document.querySelectorAll(`.immersive-explore-card[data-id="${submissionId}"], .interactive-web-card[data-id="${submissionId}"], .content-card[data-id="${submissionId}"]`).forEach((card) => {
             const viewCountEl = card.querySelector('.interactive-web-view-count');
             if (viewCountEl) viewCountEl.textContent = nextCount;
+        });
+    },
+
+    updateVideoFeedLikeState(submissionId, isLiked, likeCount) {
+        document.querySelectorAll(`.video-feed-card[data-id="${submissionId}"]`).forEach((card) => {
+            const button = card.querySelector('[data-video-action="like"]');
+            const countEl = card.querySelector('.video-feed-like-count');
+            button?.classList.toggle('is-active', !!isLiked);
+            button?.setAttribute('aria-pressed', String(!!isLiked));
+            if (countEl) countEl.textContent = String(Math.max(0, Number(likeCount) || 0));
+        });
+    },
+
+    updateVideoFeedBookmarkState(submissionId, isSaved) {
+        document.querySelectorAll(`.video-feed-card[data-id="${submissionId}"]`).forEach((card) => {
+            const button = card.querySelector('[data-video-action="bookmark"]');
+            button?.classList.toggle('is-active', !!isSaved);
+            button?.setAttribute('aria-pressed', String(!!isSaved));
         });
     },
 
@@ -3540,7 +4852,50 @@ export const UI = {
 
         document.body.dataset.livePreviewBound = 'true';
 
+        const isCardControlClick = (event) => !!event.target.closest(
+            '[data-web-card-action], [data-video-action], [data-audio-action], [data-live-preview-open="true"], [data-immersive-view-open="true"], a[href], button'
+        );
+
+        // General click listeners (bubble phase) for action/open triggers
         document.addEventListener('click', (event) => {
+            const sourceCard = event.target.closest('[data-open-source-link="true"]');
+            if (sourceCard) {
+                if (!isCardControlClick(event)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const submissionId = sourceCard.dataset.submissionId || sourceCard.dataset.id;
+                    const submission = this.getRegisteredSubmissionCardState(submissionId);
+                    const openUrl = this.normalizeOpenUrl(sourceCard.dataset.sourceUrl)
+                        || this.getOpenableUrl(submission || {});
+                    if (openUrl) {
+                        const detailId = submission?.id || submissionId;
+                        if (detailId) {
+                            this.openImmersiveExploreViewer(detailId);
+                        } else {
+                            this.openLiveSourcePreview({
+                                url: openUrl,
+                                title: sourceCard.getAttribute('aria-label') || 'Project preview'
+                            });
+                        }
+                    }
+                    return;
+                }
+            }
+
+            const projectCard = event.target.closest('[data-open-project="true"]');
+            if (projectCard) {
+                if (!isCardControlClick(event)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const submissionId = projectCard.dataset.submissionId || projectCard.dataset.id;
+                    const submission = this.getRegisteredSubmissionCardState(submissionId);
+                    if (submission) {
+                        this.openProject(submission);
+                    }
+                }
+                return;
+            }
+
             const immersiveOpenButton = event.target.closest('[data-immersive-view-open="true"]');
             if (immersiveOpenButton) {
                 event.preventDefault();
@@ -3562,35 +4917,42 @@ export const UI = {
             if (immersiveCloseButton || immersiveBackdrop) {
                 event.preventDefault();
                 event.stopPropagation();
-                this.closeImmersiveExploreViewer();
+                this.requestCloseImmersiveExploreViewer();
                 return;
             }
 
             const closeButton = event.target.closest('[data-live-preview-close="true"]');
             const isBackdrop = event.target.classList?.contains('live-preview-overlay');
-            if (!closeButton && !isBackdrop) return;
+            if (closeButton || isBackdrop) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.closeLivePreview();
+                return;
+            }
 
-            event.preventDefault();
-            event.stopPropagation();
-            this.closeLivePreview();
         });
 
+        // Card body click redirection (capture phase) to prioritize in-app detail page routing
         document.addEventListener('click', (event) => {
-            const card = event.target.closest('.interactive-web-card, .immersive-explore-card');
+            const card = event.target.closest('.interactive-web-card, .immersive-explore-card, .standard-project-card');
             if (!card) return;
 
             const explicitDetailLink = event.target.closest('.interactive-web-detail-link');
             const interactiveControl = event.target.closest(
-                '[data-live-preview-open="true"], [data-immersive-view-open="true"], [data-web-card-action], .interactive-web-detail-link, a[href], button'
+                '[data-live-preview-open="true"], [data-immersive-view-open="true"], [data-web-card-action], [data-video-action], [data-audio-action], .interactive-web-detail-link, a[href], button'
             );
 
-            if (explicitDetailLink) {
-                return;
-            }
-
-            if (!interactiveControl) {
+            if (!explicitDetailLink && !interactiveControl) {
                 event.preventDefault();
                 event.stopPropagation();
+                const submissionId = card.dataset.submissionId || card.dataset.id;
+                if (submissionId) {
+                    if (card.matches('[data-open-source-link="true"]')) {
+                        this.openImmersiveExploreViewer(submissionId);
+                    } else {
+                        window.location.hash = `detail/${submissionId}`;
+                    }
+                }
             }
         }, true);
 
@@ -3601,10 +4963,18 @@ export const UI = {
             event.preventDefault();
             event.stopPropagation();
 
-            const submissionId = actionButton.dataset.submissionId;
-            const submission = this.getRegisteredSubmissionCardState(submissionId);
-            if (!submission || !this.isExploreImmersiveCard(submission)) {
-                return;
+            const submissionId = actionButton.dataset.submissionId
+                || actionButton.closest('[data-submission-id], [data-id]')?.dataset.submissionId
+                || actionButton.closest('[data-submission-id], [data-id]')?.dataset.id;
+            let submission = this.getRegisteredSubmissionCardState(submissionId);
+            if (!submission) {
+                const { data, error } = await API.getSubmissionById(submissionId);
+                if (error || !data) {
+                    this.showToast('Could not update this action right now.', 'error');
+                    return;
+                }
+                submission = data;
+                this.registerSubmissionCardState(submission);
             }
 
             const { data: { session } } = await supabase.auth.getSession();
@@ -3662,6 +5032,7 @@ export const UI = {
 
                 stats.avg_rating = data.avgRating;
                 submission._interactiveWebUserRating = data.userRating;
+                this.storeRatingMarker(submission.id, userId);
                 this.updateInteractiveWebCardRatingState(submission.id, data.avgRating, data.userRating);
                 this.showToast('Rated!', 'success');
                 this.triggerBadgeEvaluation({
@@ -3671,7 +5042,105 @@ export const UI = {
             }
         });
 
+        document.addEventListener('click', async (event) => {
+            const actionButton = event.target.closest('[data-video-action]');
+            if (!actionButton) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (actionButton.dataset.busy === 'true') return;
+            const submissionId = actionButton.dataset.id;
+            const submission = this.getRegisteredSubmissionCardState(submissionId);
+            if (!submission) return;
+
+            const { data: { session } } = await supabase.auth.getSession();
+            const userId = session?.user?.id || null;
+            if (!userId) {
+                this.showToast('Please login to interact', 'error');
+                return;
+            }
+
+            const stats = this.ensureSubmissionStats(submission);
+            const action = actionButton.dataset.videoAction;
+            actionButton.dataset.busy = 'true';
+            actionButton.disabled = true;
+
+            try {
+                if (action === 'like') {
+                    const { action: likeAction, error } = await API.toggleLike(submission.id, userId);
+                    if (error) {
+                        this.showToast(error.message || 'Could not update like.', 'error');
+                        return;
+                    }
+
+                    const isLiked = likeAction === 'liked';
+                    submission._interactiveWebLiked = isLiked;
+                    stats.like_count = Math.max(0, Number(stats.like_count || 0) + (isLiked ? 1 : -1));
+                    this.updateVideoFeedLikeState(submission.id, isLiked, stats.like_count);
+                    this.showToast(isLiked ? 'Liked!' : 'Unliked');
+                    return;
+                }
+
+                if (action === 'bookmark') {
+                    const { action: bookmarkAction, error } = await API.toggleBookmark(submission.id, userId);
+                    if (error) {
+                        this.showToast(error.message || 'Could not update save.', 'error');
+                        return;
+                    }
+
+                    const isSaved = bookmarkAction === 'saved';
+                    submission._interactiveWebBookmarked = isSaved;
+                    this.updateVideoFeedBookmarkState(submission.id, isSaved);
+                    this.showToast(isSaved ? 'Saved to collection!' : 'Removed from collection');
+                }
+            } finally {
+                actionButton.dataset.busy = 'false';
+                actionButton.disabled = false;
+            }
+        });
+
         document.addEventListener('keydown', (event) => {
+            const sourceCard = event.target.closest?.('[data-open-source-link="true"]');
+            if (sourceCard && (event.key === 'Enter' || event.key === ' ')) {
+                const interactiveControl = event.target.closest?.('[data-web-card-action], [data-video-action], [data-audio-action], a[href], button');
+                if (interactiveControl && interactiveControl !== sourceCard) {
+                    return;
+                }
+                event.preventDefault();
+                const submissionId = sourceCard.dataset.submissionId || sourceCard.dataset.id;
+                const submission = this.getRegisteredSubmissionCardState(submissionId);
+                const openUrl = this.normalizeOpenUrl(sourceCard.dataset.sourceUrl)
+                    || this.getOpenableUrl(submission || {});
+                if (openUrl) {
+                    const detailId = submission?.id || submissionId;
+                    if (detailId) {
+                        this.openImmersiveExploreViewer(detailId);
+                    } else {
+                        this.openLiveSourcePreview({
+                            url: openUrl,
+                            title: sourceCard.getAttribute('aria-label') || 'Project preview'
+                        });
+                    }
+                }
+                return;
+            }
+
+            const projectCard = event.target.closest?.('[data-open-project="true"]');
+            if (projectCard && (event.key === 'Enter' || event.key === ' ')) {
+                const interactiveControl = event.target.closest?.('[data-web-card-action], [data-video-action], [data-audio-action], a[href], button');
+                if (interactiveControl && interactiveControl !== projectCard) {
+                    return;
+                }
+                event.preventDefault();
+                const submissionId = projectCard.dataset.submissionId || projectCard.dataset.id;
+                const submission = this.getRegisteredSubmissionCardState(submissionId);
+                if (submission) {
+                    this.openProject(submission);
+                }
+                return;
+            }
+
             const immersiveTrigger = event.target.closest?.('[data-immersive-view-open="true"]');
             if (immersiveTrigger && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
@@ -3681,7 +5150,7 @@ export const UI = {
 
             if (event.key === 'Escape' && document.body.classList.contains('immersive-viewer-open')) {
                 event.preventDefault();
-                this.closeImmersiveExploreViewer();
+                this.requestCloseImmersiveExploreViewer();
                 return;
             }
 
@@ -3694,6 +5163,43 @@ export const UI = {
 
     renderImmersiveViewerContent(sub = {}) {
         const htmlPreview = this.resolveHtmlPreviewEntry(sub);
+        const viewerType = this.getSubmissionViewerType(sub);
+        const projectUrl = this.getExternalProjectLink(sub);
+        const videoUrl = this.getSubmissionVideoSourceUrl(sub);
+        const audioUrl = this.getSubmissionAudioSourceUrl(sub);
+        const imageUrl = this.getSubmissionImageSourceUrl(sub);
+        const readableText = this.getSubmissionReadableText(sub);
+
+        if (viewerType === 'project' && projectUrl && htmlPreview.mode !== 'url') {
+            const isEmbeddable = this.isEmbeddableUrl(projectUrl);
+            return `
+                <div class="external-project-preview">
+                    ${this.renderSourceLinkFrame(projectUrl, sub.title || 'Project preview', 'immersive-viewer-frame')}
+                    ${imageUrl ? `<div class="source-link-preview-thumbnail" hidden><img src="${imageUrl}" alt="${this.escapeHtml(sub.title || 'Project preview')}" loading="lazy" decoding="async"></div>` : ''}
+                    ${isEmbeddable ? `
+                        <div class="preview-actions-row">
+                            <a href="${projectUrl}" target="_blank" rel="noopener noreferrer" class="preview-action-link">Open Project</a>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        if (viewerType === 'video' && videoUrl) {
+            const youtube = this.parseYouTubeUrl(videoUrl);
+            if (youtube?.embedUrl) {
+                return `<iframe class="immersive-viewer-frame" src="${youtube.embedUrl}" loading="lazy" referrerpolicy="no-referrer" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen title="${this.escapeHtml(sub.title || 'Video viewer')}"></iframe>`;
+            }
+            return `<video class="immersive-viewer-frame" src="${videoUrl}" controls preload="metadata"></video>`;
+        }
+
+        if (viewerType === 'audio' && audioUrl) {
+            return `<div class="immersive-viewer-fallback"><audio src="${audioUrl}" controls preload="metadata" style="width:100%"></audio></div>`;
+        }
+
+        if (viewerType === 'image' && imageUrl) {
+            return `<div class="image-presentation-container"><img src="${imageUrl}" class="preview-img" alt="${this.escapeHtml(sub.title || 'Image viewer')}" loading="lazy" decoding="async"></div>`;
+        }
 
         if (htmlPreview.mode === 'srcdoc') {
             return this.renderInlinePreviewIframe({
@@ -3708,15 +5214,42 @@ export const UI = {
             return `<iframe class="immersive-viewer-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads" referrerpolicy="no-referrer" src="${htmlPreview.iframeSrc}" title="${sub.title || 'Immersive viewer'}"></iframe>`;
         }
 
-        if (sub.content_text && String(sub.file_type || '').toLowerCase() !== 'text/html') {
-            return `<article class="immersive-viewer-text">${String(sub.content_text || '')}</article>`;
-        }
-
         if (this.isPdfSubmission(sub)) {
             const fileUrl = this.getSubmissionFileUrl(sub);
             if (fileUrl) {
-                return `<iframe class="immersive-viewer-frame immersive-viewer-pdf-frame" src="${fileUrl}" title="${sub.title || 'Document viewer'}"></iframe>`;
+                return this.renderInlinePdfEmbed(fileUrl, sub.title || 'Document viewer', 'immersive-viewer-frame immersive-viewer-pdf-frame');
             }
+        }
+
+        if (this.isPowerPointSubmission(sub)) {
+            return this.renderPresentationPreview(sub);
+        }
+
+        if (viewerType === 'file') {
+            const fileUrl = this.getSubmissionFileUrl(sub);
+            const projectLabel = this.getProjectFileLabel(sub);
+            const extension = this.getSubmissionFileExtension(sub) || 'file';
+            const downloadName = this.buildDownloadFileName(sub.title || 'download', fileUrl || '', extension);
+            const openAction = fileUrl
+                ? `<a href="${fileUrl}" target="_blank" rel="noopener noreferrer" class="preview-action-link">Open file</a>`
+                : '';
+            const downloadAction = fileUrl
+                ? `<a href="${this.buildDownloadProxyUrl(fileUrl, downloadName)}" target="_self" class="preview-action-link" download="${downloadName}">Download</a>`
+                : '';
+
+            return `
+                <div class="immersive-viewer-fallback">
+                    <div class="file-placeholder">${fileUrl ? `This content is a ${projectLabel}.` : 'Viewer unavailable because this work has no readable file, text, or project link.'}</div>
+                    <div class="immersive-viewer-fallback-actions">
+                        ${openAction}
+                        ${downloadAction}
+                    </div>
+                </div>
+            `;
+        }
+
+        if (readableText && String(sub.file_type || '').toLowerCase() !== 'text/html') {
+            return `<article class="immersive-viewer-text">${readableText}</article>`;
         }
 
         const fileUrl = this.getSubmissionFileUrl(sub);
@@ -3732,7 +5265,7 @@ export const UI = {
 
         const fallbackMessage = htmlPreview.fallbackReason
             ? `This content could not be rendered because ${htmlPreview.fallbackReason.toLowerCase()}`
-            : `This content is a ${projectLabel}.`;
+            : (fileUrl ? `This content is a ${projectLabel}.` : 'Viewer unavailable because this work has no readable file, text, or project link.');
 
         return `
             <div class="immersive-viewer-fallback">
@@ -3782,9 +5315,14 @@ export const UI = {
 
     async openImmersiveExploreViewer(submissionId) {
         let submission = this.getRegisteredSubmissionCardState(submissionId);
-        if (!submission || !this.isExploreImmersiveCard(submission)) {
-            this.showToast('This viewer is not available for the selected content.', 'error');
-            return;
+        if (!submission) {
+            const { data, error } = await API.getSubmissionById(submissionId);
+            if (error || !data) {
+                this.showToast('Could not open this content right now.', 'error');
+                return;
+            }
+            submission = data;
+            this.registerSubmissionCardState(submission);
         }
 
         try {
@@ -3793,6 +5331,32 @@ export const UI = {
             console.warn('[Explore] Could not hydrate submission detail for immersive viewer:', error);
             this.showToast('Could not open this content right now.', 'error');
             return;
+        }
+
+        const selectedViewer = this.getSubmissionViewerType(submission);
+        if (!selectedViewer) {
+            this.showToast('Viewer unavailable because this work has no readable file, text, or project link.', 'error');
+            return;
+        }
+
+        if (selectedViewer === 'project') {
+            const projectUrl = this.getOpenableUrl(submission) || this.getExternalProjectLink(submission);
+            const projectPreview = this.resolveHtmlPreviewEntry(submission);
+            if (projectUrl && !this.isEmbeddableUrl(projectUrl)) {
+                this.openUrlProjectViewer(submission, projectUrl);
+                return;
+            }
+
+            if (projectPreview.mode === 'url' && projectPreview.iframeSrc) {
+                // Continue into the standard immersive iframe viewer used by live project previews.
+            } else if (projectPreview.mode === 'srcdoc') {
+                // Continue into the standard immersive inline preview viewer.
+            } else if (projectUrl) {
+                // Continue into renderImmersiveViewerContent(), which renders the existing in-app source-link frame.
+            } else {
+                this.showToast('Project link is missing or unavailable.', 'error');
+                return;
+            }
         }
 
         if (this._immersiveViewerOverlay) {
@@ -3821,9 +5385,13 @@ export const UI = {
         document.body.appendChild(overlay);
         this.lockBodyScrollForOverlay();
         document.body.classList.add('immersive-viewer-open');
+        document.documentElement.classList.add('immersive-viewer-open');
         this.hydrateInlinePreviewFrames(overlay);
+        this._immersiveRatingActiveSubmissionId = String(submission.id || '');
+        this.hydrateActiveUserRatingForSubmission(submission);
 
         this._immersiveViewerOverlay = overlay;
+        this._immersiveViewerSubmission = submission;
         this._immersiveViewerPreviouslyFocused = document.activeElement;
 
         history.pushState({
@@ -3843,12 +5411,46 @@ export const UI = {
         }).catch(() => {});
     },
 
-    closeImmersiveExploreViewer({ fromPopstate = false, skipHistoryBack = false, preserveFocus = false } = {}) {
+    requestCloseImmersiveExploreViewer(options = {}) {
+        const submission = this._immersiveViewerSubmission;
+        if (!options.skipRatingPrompt && submission?.id && this.shouldUseCompletionRatingPrompt(submission)) {
+            this.hydrateActiveUserRatingForSubmission(submission).then((hasRated) => {
+                if (hasRated || !this.shouldPromptRatingBeforeClose(submission)) {
+                    this.closeImmersiveExploreViewer(options);
+                    return;
+                }
+
+                this.markRatingPrompted(submission?.id);
+                this.showCompletionRatingPrompt(submission, {
+                    onDone: () => this.closeImmersiveExploreViewer({ ...options, skipRatingPrompt: true }),
+                    onSkip: () => this.closeImmersiveExploreViewer({ ...options, skipRatingPrompt: true })
+                });
+            });
+            return;
+        }
+
+        if (!options.skipRatingPrompt && this.shouldPromptRatingBeforeClose(submission)) {
+            this.markRatingPrompted(submission?.id);
+            this.showCompletionRatingPrompt(submission, {
+                onDone: () => this.closeImmersiveExploreViewer({ ...options, skipRatingPrompt: true }),
+                onSkip: () => this.closeImmersiveExploreViewer({ ...options, skipRatingPrompt: true })
+            });
+            return;
+        }
+
+        this.closeImmersiveExploreViewer(options);
+    },
+
+    closeImmersiveExploreViewer({ fromPopstate = false, skipHistoryBack = false, preserveFocus = false, skipRatingPrompt = false } = {}) {
         if (!this._immersiveViewerOverlay) return;
 
+        this._immersiveRatingDetailOpen = false;
+        this.teardownImmersiveCompletionRatingPrompt();
         this._immersiveViewerOverlay.remove();
         this._immersiveViewerOverlay = null;
+        this._immersiveViewerSubmission = null;
         document.body.classList.remove('immersive-viewer-open');
+        document.documentElement.classList.remove('immersive-viewer-open');
         this.unlockBodyScrollForOverlay();
 
         const shouldPopHistory = this._immersiveViewerHistoryOpen && !fromPopstate && !skipHistoryBack;
@@ -3869,6 +5471,183 @@ export const UI = {
         this._immersiveViewerPreviouslyFocused = null;
     },
 
+    shouldUseCompletionRatingPrompt(sub = {}) {
+        return !!sub && !this.isAudioSubmission(sub) && !this.isVideoSubmission(sub);
+    },
+
+    hasKnownUserRating(submission = {}) {
+        return Number(
+            submission._interactiveWebUserRating
+            || submission._feedUserRating
+            || submission._userRating
+            || submission.userRating
+            || 0
+        ) > 0;
+    },
+
+    getRatingSessionSet(name) {
+        if (!this[name]) this[name] = new Set();
+        return this[name];
+    },
+
+    markRatingPrompted(submissionId) {
+        if (!submissionId) return;
+        const id = String(submissionId);
+        this.getRatingSessionSet('_ratingPromptedSubmissionIds').add(id);
+        try {
+            sessionStorage.setItem(`edtechra_rating_prompt_seen_${id}`, 'true');
+        } catch (_) {
+            // Ignore storage failures.
+        }
+    },
+
+    markRatingRated(submissionId) {
+        if (!submissionId) return;
+        const id = String(submissionId);
+        this.getRatingSessionSet('_ratingRatedSubmissionIds').add(id);
+        this.getRatingSessionSet('_ratingPromptedSubmissionIds').add(id);
+        try {
+            sessionStorage.setItem(`edtechra_submission_rated_${id}`, 'true');
+            sessionStorage.setItem(`edtechra_rating_prompt_seen_${id}`, 'true');
+        } catch (_) {
+            // Ignore storage failures.
+        }
+    },
+
+    async hydrateActiveUserRatingForSubmission(submission = {}) {
+        if (!submission?.id) return false;
+        let userId = null;
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            userId = session?.user?.id || null;
+            return this.hydrateUserRatingState(submission, userId);
+        } catch (error) {
+            console.warn('[Rating] Existing user rating check failed', error);
+            return this.hasStoredRating(submission.id, userId);
+        }
+    },
+
+    shouldPromptRatingBeforeClose(submission = {}) {
+        if (!submission?.id) return false;
+        if (!this.shouldUseCompletionRatingPrompt(submission)) return false;
+        const id = String(submission.id);
+        const userId = submission._ratingUserId || null;
+        if (document.querySelector('.detail-rating-prompt-overlay')) return false;
+        if (this.hasKnownUserRating(submission)) return false;
+        if (this.hasStoredRating(id, userId)) return false;
+        if (this.getRatingSessionSet('_ratingRatedSubmissionIds').has(id)) return false;
+        if (this.getRatingSessionSet('_ratingPromptedSubmissionIds').has(id)) return false;
+        try {
+            if (sessionStorage.getItem(`edtechra_submission_rated_${id}`) === 'true') return false;
+            if (sessionStorage.getItem(`edtechra_rating_prompt_seen_${id}`) === 'true') return false;
+        } catch (_) {
+            // Ignore storage failures and rely on in-memory guards.
+        }
+        return true;
+    },
+
+    setupImmersiveCompletionRatingPrompt() {
+        // Rating prompts are intentionally close-triggered, not scroll-triggered.
+    },
+
+    teardownImmersiveCompletionRatingPrompt() {
+        if (typeof this._immersiveRatingPromptCleanup === 'function') {
+            this._immersiveRatingPromptCleanup();
+        }
+    },
+
+    showCompletionRatingPrompt(submission, { onDone = null, onSkip = null } = {}) {
+        document.querySelector('.detail-rating-prompt-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'detail-rating-prompt-overlay rating-modal-overlay';
+        overlay.innerHTML = `
+            <div class="detail-rating-prompt rating-modal-card" role="dialog" aria-modal="true" aria-label="Rate this work">
+                <button type="button" class="detail-rating-prompt-close" aria-label="Close rating prompt">&times;</button>
+                <p class="detail-rating-prompt-kicker">Finished viewing?</p>
+                <h2>Rate this work</h2>
+                <p class="detail-rating-prompt-subtitle">Your feedback helps creators improve.</p>
+                <div class="detail-rating-prompt-stars" aria-label="Choose a rating">
+                    ${[1, 2, 3, 4, 5].map((value) => `
+                        <button type="button" class="detail-rating-prompt-star" data-rating="${value}" aria-label="Rate ${value} star${value === 1 ? '' : 's'}">&#9733;</button>
+                    `).join('')}
+                </div>
+                <button type="button" class="detail-rating-prompt-submit">Submit Rating</button>
+                <button type="button" class="detail-rating-prompt-secondary">Not now</button>
+            </div>
+        `;
+
+        const close = ({ skipped = false } = {}) => {
+            overlay.remove();
+            if (skipped && typeof onSkip === 'function') onSkip();
+        };
+        const showThanks = () => {
+            const card = overlay.querySelector('.detail-rating-prompt');
+            if (!card) return;
+            card.classList.add('is-thank-you');
+            card.innerHTML = `
+                <div class="detail-rating-success-icon" aria-hidden="true">✓</div>
+                <h2>Thank you for rating!</h2>
+                <p class="detail-rating-prompt-subtitle">Your feedback has been saved.</p>
+            `;
+            window.setTimeout(() => {
+                overlay.remove();
+                if (typeof onDone === 'function') onDone();
+            }, 1300);
+        };
+        let selectedRating = 0;
+        const syncStars = () => {
+            overlay.querySelectorAll('.detail-rating-prompt-star').forEach((star) => {
+                const value = Number(star.dataset.rating || 0);
+                star.classList.toggle('is-selected', value <= selectedRating);
+            });
+        };
+
+        overlay.querySelector('.detail-rating-prompt-close')?.addEventListener('click', () => close({ skipped: true }));
+        overlay.querySelector('.detail-rating-prompt-secondary')?.addEventListener('click', () => close({ skipped: true }));
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) close({ skipped: true });
+        });
+        overlay.querySelectorAll('.detail-rating-prompt-star').forEach((button) => {
+            button.addEventListener('click', () => {
+                selectedRating = Number(button.dataset.rating || 0);
+                syncStars();
+            });
+        });
+        overlay.querySelector('.detail-rating-prompt-submit')?.addEventListener('click', async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            const userId = session?.user?.id || null;
+            if (!userId) {
+                this.showToast('Please login to rate', 'error');
+                return;
+            }
+            if (!selectedRating) {
+                this.showToast('Choose a rating first', 'error');
+                return;
+            }
+
+            const { data, error } = await API.rateSubmission(submission.id, userId, selectedRating);
+            if (error || !data) {
+                this.showToast(error?.message || 'Could not save rating.', 'error');
+                return;
+            }
+
+            const stats = this.ensureSubmissionStats(submission);
+            stats.avg_rating = data.avgRating;
+            submission._interactiveWebUserRating = data.userRating;
+            this.storeRatingMarker(submission.id, userId);
+            this.markRatingRated(submission.id);
+            this.updateInteractiveWebCardRatingState(submission.id, data.avgRating, data.userRating);
+            this.showToast('Thank you for rating!', 'success');
+            this.triggerBadgeEvaluation({
+                userId,
+                reason: 'rating-success'
+            });
+            showThanks();
+        });
+
+        document.body.appendChild(overlay);
+    },
     openLivePreview(submissionId) {
         const descriptor = this._livePreviewConfigs.get(String(submissionId || ''));
         if (!descriptor) {
@@ -4135,6 +5914,102 @@ export const UI = {
 
     pages: {
         home: (currentUser) => `
+            <div class="mobile-home-page" aria-label="EdTechra mobile home">
+                <header class="mobile-home-header">
+                    <a href="#home" class="mobile-home-brand" data-link="home" aria-label="EdTechra Home">
+                        <img src="assets/images/logo.webp" alt="EDTECHRA" loading="eager" decoding="async">
+                        <span>EDTECHRA</span>
+                    </a>
+                    <div class="mobile-home-header-actions">
+                        <button type="button" class="mobile-home-icon-btn mobile-home-bell" aria-label="Notifications">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+                                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                            </svg>
+                            <span class="mobile-home-bell-dot" aria-hidden="true"></span>
+                        </button>
+                        <a href="#profile" class="mobile-home-avatar" data-link="profile" aria-label="Profile">
+                            ${currentUser?.avatar_url
+                    ? `<img src="${currentUser.avatar_url}" alt="${UI.escapeHtml(currentUser.display_name || 'Profile')}" loading="lazy" decoding="async">`
+                    : `<span>${(currentUser?.display_name || currentUser?.email || 'S').charAt(0).toUpperCase()}</span>`
+                }
+                        </a>
+                    </div>
+                </header>
+
+                <section class="mobile-home-hero">
+                    <div class="mobile-home-greeting-wrap">
+                        ${(() => {
+                const hour = new Date().getHours();
+                const greeting = hour >= 5 && hour < 12
+                    ? ['Good morning', '☀️']
+                    : hour >= 12 && hour < 17
+                        ? ['Good afternoon', '🌤️']
+                        : hour >= 17 && hour < 21
+                            ? ['Good evening', '👋']
+                            : ['Good night', '🌙'];
+                return `<p class="mobile-home-greeting">${greeting[0]},<br>${UI.escapeHtml(currentUser?.display_name || 'Student')}! <span aria-hidden="true">${greeting[1]}</span></p>`;
+            })()}
+                        <span class="mobile-home-greeting-line" aria-hidden="true"></span>
+                    </div>
+                    <div class="mobile-home-hero-main">
+                        <div class="mobile-home-hero-copy">
+                            <h1>Create.<br>Learn.<br>Inspire.<br><span>Together.</span></h1>
+                            <a href="#explore" class="mobile-home-primary-btn" data-link="explore">Explore Trending <span aria-hidden="true">&rarr;</span></a>
+                        </div>
+                        <div class="mobile-home-hero-art" aria-hidden="true">
+                            <img src="assets/images/mobile-home-hero-books.webp" alt="" loading="eager" decoding="async">
+                        </div>
+                    </div>
+                </section>
+
+                <section class="mobile-home-features" aria-label="EdTechra features">
+                    <div class="mobile-home-feature-card mobile-home-feature-explore">
+                        <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7.5 17.5-7.5-3-7.5 3L12 3z"></path><path d="M12 3v14.5"></path></svg></span>
+                        <strong>Explore</strong>
+                        <small>Discover creative works</small>
+                    </div>
+                    <div class="mobile-home-feature-card mobile-home-feature-create">
+                        <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2.8 2.8 0 0 0-4-4L4 16v4z"></path><path d="M13.5 6.5l4 4"></path></svg></span>
+                        <strong>Create</strong>
+                        <small>Upload and share ideas</small>
+                    </div>
+                    <div class="mobile-home-feature-card mobile-home-feature-learn">
+                        <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H20v17H8a4 4 0 0 0-4 4V5.5z"></path><path d="M4 5.5V23"></path><path d="M8 19h12"></path></svg></span>
+                        <strong>Learn</strong>
+                        <small>Grow with useful content</small>
+                    </div>
+                    <div class="mobile-home-feature-card mobile-home-feature-share">
+                        <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path><circle cx="10" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span>
+                        <strong>Share</strong>
+                        <small>Inspire the community</small>
+                    </div>
+                </section>
+
+                <section class="mobile-home-trending" aria-label="Trending creations">
+                    <div class="mobile-home-section-header">
+                        <h2>Trending Now 🔥</h2>
+                        <a href="#explore" data-link="explore">View All →</a>
+                    </div>
+                    <div class="mobile-home-trending-list" id="mobile-home-trending-list">
+                        <div class="mobile-home-trending-skeleton"></div>
+                        <div class="mobile-home-trending-skeleton"></div>
+                        <div class="mobile-home-trending-skeleton"></div>
+                    </div>
+                </section>
+
+                <section class="mobile-home-showcase">
+                    <img src="assets/images/mobile-showcase-creativity-bg.webp" alt="" loading="lazy" decoding="async" aria-hidden="true">
+                    <div class="mobile-home-showcase-overlay"></div>
+                    <div class="mobile-home-showcase-copy">
+                        <p>Showcase your creativity</p>
+                        <h2>Your creativity deserves the world.</h2>
+                        <span>Share your work, inspire others and build your creative journey.</span>
+                        <a href="#upload" class="mobile-home-upload-btn" data-link="upload">☁ Upload Your Work</a>
+                    </div>
+                </section>
+            </div>
+
             <section class="hero">
                 <div class="hero-bg"></div>
                 <div class="particles"></div>
@@ -4185,7 +6060,7 @@ export const UI = {
                     <div class="profile-header">
                         <div class="profile-avatar-large" id="profile-avatar-display" style="cursor: pointer; position: relative;">
                             ${user.avatar_url
-                ? `<img src="${user.avatar_url}" alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`
+                ? `<img src="${user.avatar_url}" alt="Avatar" loading="lazy" decoding="async" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`
                 : `<span style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 2.5rem; font-weight: 700; color: white;">${(user.display_name || 'U').charAt(0).toUpperCase()}</span>`
             }
                             <div class="avatar-edit-overlay">
@@ -4232,6 +6107,8 @@ export const UI = {
             const avgRating = UI.getAverageRatingValue(stats);
             const isOwner = currentUser?.id === sub.author_id;
             const isAdmin = userRole === 'admin';
+            const projectUrl = UI.getExternalProjectLink(sub) || (UI.isUrlSubmission(sub) ? UI.getUrlSubmissionLink(sub) : '');
+            const shouldUseCompletionRatingPrompt = !UI.isAudioSubmission(sub) && !UI.isVideoSubmission(sub);
 
             return `
                 <div class="detail-container animate-fade-in">
@@ -4269,16 +6146,18 @@ export const UI = {
                                     <span>Save</span>
                                 </button>
 
-                                <div class="rating-group">
+                                ${shouldUseCompletionRatingPrompt ? '' : `<div class="rating-group">
                                     <div class="rating-stars" id="rating-stars">
                                         ${UI.renderStars(avgRating)}
                                     </div>
                                     <span class="text-xs text-muted" id="avg-rating">(${UI.formatAverageRating(avgRating)})</span>
-                                </div>
+                                </div>`}
                             </div>
 
                             <div class="main-actions">
-                                ${sub.file_path ? `<button class="btn btn-outline btn-snake" id="download-btn"><span></span><span></span><span></span><span></span>Download File</button>` : ''}
+                                ${projectUrl
+                                    ? `<a href="${projectUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-snake"><span></span><span></span><span></span><span></span>Open Project</a>`
+                                    : (UI.getSubmissionFileUrl(sub) ? `<button class="btn btn-outline btn-snake" id="download-btn"><span></span><span></span><span></span><span></span>Download File</button>` : '')}
                                 ${isOwner || isAdmin ? `<button class="btn btn-edit btn-snake" id="edit-btn"><span></span><span></span><span></span><span></span>Edit Submission</button>` : ''}
                             </div>
                         </div>
@@ -4287,13 +6166,41 @@ export const UI = {
             `;
         },
 
-        upload: () => `
+        upload: (profile = null) => {
+            const hashQuery = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '';
+            const uploadParams = new URLSearchParams(hashQuery);
+            const isClassroomUpload = uploadParams.get('context') === 'classroom' || uploadParams.get('source') === 'digital_classroom';
+            const isTeacherClassroomUpload = isClassroomUpload && profile?.role === 'teacher';
+            const heading = 'Upload Teaching Resource';
+            const subtitle = 'Upload worksheets, lessons, quizzes, presentations, videos, or interactive materials for your classroom.';
+            const submitLabel = 'Submit';
+            const backHref = isClassroomUpload ? '#classroom' : '#student-dashboard';
+            const backLabel = isClassroomUpload ? 'Back to Classroom' : 'Back to Dashboard';
+            const uploadBackButton = `<div class="teacher-upload-header-actions"><a class="btn btn-outline btn-sm teacher-upload-back-btn" href="${backHref}">&larr; ${backLabel}</a></div>`;
+
+            return `
+            <div class="premium-upload-page">
             <div class="page-header">
-                <h1>Submit Your Work</h1>
-                <p class="text-muted">Share your creativity with the EDTECHRA community.</p>
+                ${uploadBackButton}
+                <div class="premium-upload-heading">
+                    <div>
+                        <h1><span class="upload-title-desktop">${heading}</span><span class="upload-title-mobile">Upload Your Work</span></h1>
+                        <p class="text-muted upload-hero-subtitle">${subtitle}</p>
+                    </div>
+                    <img class="premium-upload-hero-art" src="assets/images/upload-hero-large.webp" alt="" loading="lazy" decoding="async">
+                </div>
             </div>
-            <div class="form-container">
-                <form id="upload-form" class="card glass-card shadow-md p-40">
+            <div class="upload-stepper" aria-label="Upload progress">
+                <div class="upload-step active"><span>1</span><strong>Basic Information</strong><small>Add resource details</small></div>
+                <div class="upload-step"><span>2</span><strong>Visibility &amp; Audience</strong><small>Choose who can access</small></div>
+                <div class="upload-step"><span>3</span><strong>Upload Content</strong><small>Add your file &amp; thumbnail</small></div>
+                <div class="upload-step"><span>4</span><strong>Review &amp; Publish</strong><small>Preview and publish</small></div>
+            </div>
+            <div class="form-container premium-upload-shell">
+                <div class="premium-upload-layout">
+                <form id="upload-form" class="card glass-card shadow-md p-40 premium-upload-form" data-upload-context="${isClassroomUpload ? 'classroom' : 'global'}" data-upload-source="${isClassroomUpload ? 'digital_classroom' : 'dashboard'}" data-classroom-id="${uploadParams.get('classroomId') || ''}" data-teacher-resource-upload="${isTeacherClassroomUpload ? 'true' : 'false'}">
+                    <section class="upload-section-card">
+                    <div class="upload-section-heading"><span>1</span><h2>Basic Information</h2></div>
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Title*</label>
@@ -4312,11 +6219,29 @@ export const UI = {
                     <div class="form-group">
                         <label>Theme* <span class="text-muted text-sm">(select up to 3)</span></label>
                         <div class="theme-selected-tags" id="theme-tags"></div>
-                        <div class="theme-dropdown" id="theme-dropdown">
+                        <div class="theme-dropdown premium-theme-chips" id="theme-dropdown">
                             ${UI.renderThemeOptions()}
                         </div>
                         <p class="theme-validation-msg hidden" id="theme-msg">Maximum 3 themes allowed.</p>
                     </div>
+
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea name="description" class="form-control" rows="3" placeholder="Tell us more about your work..."></textarea>
+                    </div>
+
+                    </section>
+                    <section class="upload-section-card">
+                    <div class="upload-section-heading"><span>2</span><h2>Visibility &amp; Audience</h2></div>
+                    ${isTeacherClassroomUpload ? `
+                    <div class="form-group" id="teacher-visibility-group">
+                        <label>Visibility*</label>
+                        <div class="radio-group mode-tabs teacher-visibility-options premium-visibility-cards">
+                            <label class="mode-tab"><input type="radio" name="visibility" value="private" checked> Private</label>
+                            <label class="mode-tab"><input type="radio" name="visibility" value="public"> Public</label>
+                        </div>
+                    </div>
+                    ` : ''}
 
                     <!-- Audience Level -->
                     <div class="form-group">
@@ -4327,14 +6252,12 @@ export const UI = {
                         </select>
                     </div>
 
-                    <div class="form-group">
-                        <label>Description</label>
-                        <textarea name="description" class="form-control" rows="3" placeholder="Tell us more about your work..."></textarea>
-                    </div>
-
+                    </section>
+                    <section class="upload-section-card">
+                    <div class="upload-section-heading"><span>3</span><h2>Upload Content</h2></div>
                     <div id="non-image-fields">
                         <!-- Thumbnail Upload -->
-                        <div class="form-group">
+                        <div class="form-group" id="thumbnail-input-group">
                             <label>Thumbnail (optional)</label>
                             <div class="thumbnail-upload-area">
                                 <div id="thumbnail-preview" class="thumbnail-preview">
@@ -4347,8 +6270,9 @@ export const UI = {
                         <!-- Content Mode -->
                         <div class="form-group">
                             <label>Content Mode*</label>
-                            <div class="radio-group mode-tabs">
+                            <div class="radio-group mode-tabs premium-content-modes">
                                 <label class="mode-tab"><input type="radio" name="content_mode" value="file" checked> 📁 Upload File</label>
+                                <label class="mode-tab"><input type="radio" name="content_mode" value="url"> 🔗 Live URL</label>
                                 <label class="mode-tab"><input type="radio" name="content_mode" value="text"> ✏️ Text Only</label>
                                 <label class="mode-tab"><input type="radio" name="content_mode" value="code"> 💻 Paste Code</label>
                                 <!-- Image option removed since Image is now the primary Category choice -->
@@ -4357,12 +6281,28 @@ export const UI = {
 
                         <div id="file-input-group" class="form-group">
                             <label>File Upload* (PDF, PPTX, DOC, DOCX, HTML, ZIP, MP3, or WAV - Max 50MB)</label>
+                            <label class="premium-upload-empty-art" for="file-input">
+                                <img src="assets/images/upload-empty.webp" alt="" loading="lazy" decoding="async">
+                                <strong>Drag &amp; drop your file here</strong>
+                                <span>or click to browse</span>
+                            </label>
                             <input type="file" name="file" class="form-control" id="file-input" required>
                         </div>
 
                         <div id="text-input-group" class="form-group hidden">
                             <label>Write your content here*</label>
                             <textarea name="content_text" class="form-control" rows="10" placeholder="Paste or write your story, poem, or article here..."></textarea>
+                        </div>
+
+                        <div id="url-input-group" class="form-group hidden">
+                            <label>Live Project URL*</label>
+                            <input type="url"
+                                   name="project_url"
+                                   id="project-url-input"
+                                   class="form-control"
+                                   placeholder="Paste your live project link (GitHub Pages, Vercel, Netlify, etc.)"
+                                   inputmode="url"
+                                   autocomplete="url">
                         </div>
 
                         <div id="code-input-group" class="form-group hidden">
@@ -4374,6 +6314,23 @@ export const UI = {
                                 <iframe id="code-preview-frame" class="code-preview-frame" sandbox="${UI.getTrustedInlineHtmlSandbox()}"></iframe>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Video URL Input -->
+                    <div id="video-input-group" class="form-group hidden">
+                        <label>YouTube Video URL*</label>
+                        <p class="text-muted text-sm mb-10">Paste a YouTube video link. We'll auto-fetch the title and channel info.</p>
+                        <div class="video-url-input-wrapper">
+                            <span class="video-url-icon">🎬</span>
+                            <input type="url"
+                                   name="video_url"
+                                   id="video-url-input"
+                                   class="form-control video-url-field"
+                                   placeholder="https://youtube.com/watch?v=..."
+                                   inputmode="url"
+                                   autocomplete="url">
+                        </div>
+                        <div id="video-url-status" class="video-url-status hidden"></div>
                     </div>
 
                     <!-- Independent Image Flow Container -->
@@ -4395,23 +6352,127 @@ export const UI = {
                         <div class="image-compression-status" id="image-compression-status" style="display: none;"></div>
                     </div>
 
-                    <div class="form-actions">
+                    </section>
+                    <div class="form-actions premium-upload-actions">
                         <button type="submit" class="btn btn-primary btn-lg btn-snake">
                             <span></span><span></span><span></span><span></span>
-                            Submit for Review
+                            ${submitLabel}
                         </button>
                     </div>
                 </form>
+                <aside class="premium-upload-sidebar" aria-label="Upload guidance">
+                    <section class="upload-impact-card">
+                        <h2>Upload with Impact</h2>
+                        <p>Share high-quality resources that inspire and empower students worldwide.</p>
+                        <img src="assets/images/upload-hero.webp" alt="" loading="lazy" decoding="async">
+                    </section>
+                    <section class="upload-steps-card">
+                        <h2>Upload Steps</h2>
+                        <div class="upload-stepper upload-stepper-sidebar" aria-label="Upload progress">
+                            <div class="upload-step active"><span>1</span><strong>Basic Information</strong><small>Add resource details</small></div>
+                            <div class="upload-step"><span>2</span><strong>Visibility &amp; Audience</strong><small>Choose who can access</small></div>
+                            <div class="upload-step"><span>3</span><strong>Upload Content</strong><small>Add your file &amp; thumbnail</small></div>
+                            <div class="upload-step"><span>4</span><strong>Review &amp; Publish</strong><small>Preview and publish</small></div>
+                        </div>
+                    </section>
+                    <section class="upload-tip-card">
+                        <h2>Upload Tips</h2>
+                        <div class="upload-tip-item"><span>01</span><div><strong>High-quality original content</strong><small>Upload clear, well-prepared resources that students can use with confidence.</small></div></div>
+                        <div class="upload-tip-item"><span>02</span><div><strong>Relevant theme and audience</strong><small>Select the most accurate theme and level so the right learners find it.</small></div></div>
+                        <div class="upload-tip-item"><span>03</span><div><strong>Copyright and privacy</strong><small>Share only content you have permission to publish and avoid private details.</small></div></div>
+                        <div class="upload-tip-item"><span>04</span><div><strong>Student engagement</strong><small>Add useful descriptions and materials that support active learning.</small></div></div>
+                    </section>
+                    <section class="upload-supported-formats-card">
+                        <h2>Supported Formats</h2>
+                        <div class="upload-format-grid" aria-label="Supported file formats">
+                            <span>PDF</span><span>DOCX</span><span>PPTX</span><span>MP4</span><span>MP3</span><span>ZIP</span>
+                        </div>
+                        <p>Max file size: 50MB</p>
+                    </section>
+                    <p class="upload-safety-note">Your content is safe and secure with us.</p>
+                </aside>
+                </div>
             </div>
-        `,
+            </div>
+        `;
+        },
 
         myUploads: () => `
-            <div class="page-header">
-                <h1>My Submissions</h1>
-                <p class="text-muted">Track the status of your uploaded works.</p>
-            </div>
-            <div id="my-uploads-list" class="submissions-list">
-                <div class="loader-inline"><div class="spinner"></div></div>
+            <div class="my-gallery-page animate-fade-in">
+                <section class="my-gallery-hero">
+                    <div class="my-gallery-hero-copy">
+                        <a href="#student-dashboard" class="my-gallery-back-btn" data-link="student-dashboard">
+                            <span aria-hidden="true">←</span>
+                            Back to Dashboard
+                        </a>
+                        <h1>My Gallery</h1>
+                        <p>Manage and track all your submitted creations in one place.</p>
+                        <div class="my-gallery-stats-grid" id="my-gallery-stats">
+                            <div class="my-gallery-stat-card">
+                                <span class="my-gallery-stat-icon" aria-hidden="true">&#128193;</span>
+                                <span class="my-gallery-stat-copy">
+                                    <strong class="my-gallery-stat-number">0</strong>
+                                    <small class="my-gallery-stat-label">Total Submissions</small>
+                                </span>
+                            </div>
+                            <div class="my-gallery-stat-card">
+                                <span class="my-gallery-stat-icon my-gallery-stat-icon-approved" aria-hidden="true">&#10003;</span>
+                                <span class="my-gallery-stat-copy">
+                                    <strong class="my-gallery-stat-number">0</strong>
+                                    <small class="my-gallery-stat-label">Approved</small>
+                                </span>
+                            </div>
+                            <div class="my-gallery-stat-card">
+                                <span class="my-gallery-stat-icon my-gallery-stat-icon-pending" aria-hidden="true">&#9716;</span>
+                                <span class="my-gallery-stat-copy">
+                                    <strong class="my-gallery-stat-number">0</strong>
+                                    <small class="my-gallery-stat-label">Pending</small>
+                                </span>
+                            </div>
+                            <div class="my-gallery-stat-card">
+                                <span class="my-gallery-stat-icon my-gallery-stat-icon-rejected" aria-hidden="true">&times;</span>
+                                <span class="my-gallery-stat-copy">
+                                    <strong class="my-gallery-stat-number">0</strong>
+                                    <small class="my-gallery-stat-label">Rejected</small>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="my-gallery-hero-art" id="my-gallery-hero-art" aria-hidden="true">
+                        <div class="my-gallery-hero-float my-gallery-hero-float-one"></div>
+                        <div class="my-gallery-hero-float my-gallery-hero-float-two"></div>
+                        <div class="my-gallery-folder-visual">
+                            <span></span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="my-gallery-controls-panel" aria-label="Gallery controls">
+                    <div class="my-gallery-chip-row" id="my-gallery-category-filters">
+                        <button class="my-gallery-chip is-active" type="button" data-gallery-filter="all">All</button>
+                        <button class="my-gallery-chip" type="button" data-gallery-filter="short_stories">Short Stories</button>
+                        <button class="my-gallery-chip" type="button" data-gallery-filter="video">Videos</button>
+                        <button class="my-gallery-chip" type="button" data-gallery-filter="pdf">PDFs</button>
+                        <button class="my-gallery-chip" type="button" data-gallery-filter="images">Images</button>
+                    </div>
+                    <div class="my-gallery-control-actions">
+                        <label class="my-gallery-search">
+                            <span class="my-gallery-search-icon" aria-hidden="true"></span>
+                            <input type="search" id="my-gallery-search-input" placeholder="Search submissions..." autocomplete="off">
+                        </label>
+                        <button class="my-gallery-tool-btn" type="button" id="my-gallery-filter-btn">Filter</button>
+                        <button class="my-gallery-tool-btn" type="button" id="my-gallery-sort-btn" data-sort-order="newest">Sort</button>
+                    </div>
+                </section>
+
+                <div id="my-uploads-list" class="my-gallery-grid">
+                    <div class="loader-inline"><div class="spinner"></div></div>
+                </div>
+
+                <a href="#upload" class="my-gallery-floating-upload" data-link="upload">
+                    <span aria-hidden="true">↥</span>
+                    Upload New Work
+                </a>
             </div>
         `,
 
@@ -4527,6 +6588,10 @@ export const UI = {
                             </button>
                         </div>
 
+                        <div id="explore-mobile-feed-trigger" class="explore-mobile-feed-trigger" hidden aria-hidden="true">
+                            <div id="explore-mobile-feed-status" class="explore-mobile-feed-status" hidden></div>
+                        </div>
+
                         <div id="explore-loader" class="loader-inline hidden"><div class="spinner"></div></div>
                     </div>
                 </main>
@@ -4536,6 +6601,9 @@ export const UI = {
 
         login: () => `
             <div class="auth-card animate-fade-in">
+                <div class="auth-brand">
+                    <img class="auth-brand-logo" src="assets/images/logo.webp" alt="EDTECHRA">
+                </div>
                 <h2>Welcome Back</h2>
                 <p class="text-muted">Sign in to continue your creative journey.</p>
                 <form id="login-form">
@@ -4571,6 +6639,9 @@ export const UI = {
 
         signup: () => `
             <div class="auth-card animate-fade-in">
+                <div class="auth-brand">
+                    <img class="auth-brand-logo" src="assets/images/logo.webp" alt="EDTECHRA">
+                </div>
                 <h2>Create Account</h2>
                 <p class="text-muted">Join the EDTECHRA community today.</p>
                 <form id="signup-form">
@@ -4736,7 +6807,7 @@ export const UI = {
                 <div class="sd-welcome glass-card animate-slide-up stagger-1">
                     <div class="sd-welcome-panel">
                         <div class="sd-welcome-avatar">
-                            ${profile?.avatar_url ? `<img src="${profile.avatar_url}" class="profile-avatar-img">` : (profile?.display_name || 'C').charAt(0).toUpperCase()}
+                            ${profile?.avatar_url ? `<img src="${profile.avatar_url}" class="profile-avatar-img" loading="lazy" decoding="async">` : (profile?.display_name || 'C').charAt(0).toUpperCase()}
                         </div>
                         <div class="sd-welcome-info">
                             <h1 class="sd-welcome-title">Welcome back, ${profile?.display_name || 'Creator'} 👋</h1>
@@ -4776,18 +6847,61 @@ export const UI = {
 
                 <!-- Upload Button - Clean White -->
                 <div class="animate-slide-up stagger-3 sd-upload-wrapper">
-                    <a href="#upload" class="sd-upload-btn" data-link="upload">Upload your work</a>
+                    <a href="#upload" class="sd-upload-btn" data-link="upload">
+                        <span class="sd-upload-icon" aria-hidden="true">☁</span>
+                        <span>Upload your work</span>
+                    </a>
                 </div>
 
-                <!-- My Recent Creations -->
-                <div class="sd-section animate-slide-up stagger-4">
-                    <div class="sd-section-header">
-                        <h2 class="sd-section-title">🎨 My Recent Creations</h2>
-                        <a href="#my-uploads" class="sd-view-all" data-link="my-uploads">View All Creations →</a>
-                    </div>
-                    <div class="grid sd-recent-grid" id="sd-recent-grid">
-                        <div class="sd-loading-placeholder glass-card"><div class="spinner"></div></div>
-                    </div>
+                <!-- My Recent Creations + Gallery -->
+                <div class="dashboard-creations-gallery-grid animate-slide-up stagger-4">
+                    <section class="sd-section recent-creations-panel" aria-labelledby="sd-recent-creations-title">
+                        <div class="sd-section-header">
+                            <h2 class="sd-section-title" id="sd-recent-creations-title">🎨 My Recent Creation</h2>
+                            <p class="sd-section-subtitle">Your latest creation at a glance.</p>
+                        </div>
+                        <div class="grid sd-recent-grid" id="sd-recent-grid">
+                            <div class="sd-loading-placeholder glass-card"><div class="spinner"></div></div>
+                        </div>
+                        <a href="#my-uploads" class="sd-recent-view-all" data-link="my-uploads">View All Creations →</a>
+                    </section>
+
+                    <a href="#my-uploads" class="my-gallery-feature-card" data-link="my-uploads" aria-label="Open My Gallery">
+                        <span class="my-gallery-sparkle my-gallery-sparkle-one" aria-hidden="true">✦</span>
+                        <span class="my-gallery-sparkle my-gallery-sparkle-two" aria-hidden="true">✦</span>
+                        <span class="my-gallery-sparkle my-gallery-sparkle-three" aria-hidden="true">✦</span>
+                        <span class="my-gallery-icon-bubble" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" focusable="false">
+                                <path d="M3.75 6.5A2.75 2.75 0 0 1 6.5 3.75h3.18c.73 0 1.42.29 1.94.8l1.08 1.08c.24.24.56.37.9.37h3.9a2.75 2.75 0 0 1 2.75 2.75v8.75a2.75 2.75 0 0 1-2.75 2.75h-11A2.75 2.75 0 0 1 3.75 17.5v-11Z"></path>
+                                <path d="m9 15.2 1.9-2.35 1.55 1.8 1.03-1.15L16.5 17H7.5l1.5-1.8Z"></path>
+                            </svg>
+                        </span>
+                        <span class="my-gallery-copy">
+                            <span class="my-gallery-title">My Gallery</span>
+                            <span class="my-gallery-subtitle">Explore and manage all your creations in one beautiful place.</span>
+                            <span class="my-gallery-feature-list">
+                                <span class="my-gallery-feature-row">
+                                    <span class="my-gallery-feature-icon" aria-hidden="true">▣</span>
+                                    <span><strong>All your submissions</strong><small>Organized and easy to find</small></span>
+                                </span>
+                                <span class="my-gallery-feature-row">
+                                    <span class="my-gallery-feature-icon" aria-hidden="true">▥</span>
+                                    <span><strong>Track your progress</strong><small>Monitor likes, views &amp; status</small></span>
+                                </span>
+                                <span class="my-gallery-feature-row">
+                                    <span class="my-gallery-feature-icon" aria-hidden="true">✓</span>
+                                    <span><strong>Complete control</strong><small>Edit, update or delete anytime</small></span>
+                                </span>
+                            </span>
+                            <span class="my-gallery-open-button">Open My Gallery →</span>
+                        </span>
+                        <span class="my-gallery-preview-stack" id="sd-gallery-preview-stack" aria-hidden="true">
+                            <span class="my-gallery-preview-card my-gallery-preview-card-placeholder">🖼️</span>
+                            <span class="my-gallery-preview-card my-gallery-preview-card-placeholder">▶</span>
+                            <span class="my-gallery-preview-paper"></span>
+                            <span class="my-gallery-preview-folder"><span></span></span>
+                        </span>
+                    </a>
                 </div>
 
                 <!-- Two-column layout: Challenge + Notifications -->
@@ -4855,7 +6969,7 @@ export const UI = {
                 <div class="sd-profile-shortcut glass-card">
                     <div class="sd-ps-header">
                         <div class="sd-ps-avatar">
-                            ${profile?.avatar_url ? `<img src="${profile.avatar_url}" class="sd-ps-avatar-img">` : (profile?.display_name || 'U').charAt(0).toUpperCase()}
+                            ${profile?.avatar_url ? `<img src="${profile.avatar_url}" class="sd-ps-avatar-img" loading="lazy" decoding="async">` : (profile?.display_name || 'U').charAt(0).toUpperCase()}
                         </div>
                         <div class="sd-ps-info">
                             <h3>${profile?.display_name || 'Your Profile'}</h3>
@@ -5037,7 +7151,7 @@ export const UI = {
             if (!cat) return '';
             return cat.avatars.map(url => `
                 <div class="avatar-grid-item" data-url="${url}">
-                    <img src="${url}" loading="lazy" alt="Avatar option">
+                    <img src="${url}" loading="lazy" decoding="async" alt="Avatar option">
                 </div>
             `).join('');
         };
@@ -5057,7 +7171,7 @@ export const UI = {
                     <div class="avatar-preview-section">
                         <div class="preview-circle" id="avatar-live-preview">
                             ${user.avatar_url
-                ? `<img src="${user.avatar_url}" alt="Preview">`
+                ? `<img src="${user.avatar_url}" alt="Preview" loading="lazy" decoding="async">`
                 : `<span>${(user.display_name || 'U').charAt(0).toUpperCase()}</span>`
             }
                         </div>
@@ -5126,7 +7240,7 @@ export const UI = {
                     item.classList.add('selected');
                     selectedAvatarUrl = item.dataset.url;
                     customUploadFile = null; // Clear custom upload if any
-                    livePreview.innerHTML = `<img src="${selectedAvatarUrl}" alt="Preview">`;
+                    livePreview.innerHTML = `<img src="${selectedAvatarUrl}" alt="Preview" loading="lazy" decoding="async">`;
                     // Remove Croppie overrides if they lingered
                     livePreview.classList.remove('croppie-active');
                 };
@@ -5149,6 +7263,14 @@ export const UI = {
             destroyCroppie();
             overlay.querySelector('.avatar-grid-item.selected')?.classList.remove('selected');
 
+            let CroppieConstructor = null;
+            try {
+                CroppieConstructor = await UI.loadCroppie();
+            } catch (error) {
+                UI.showToast(error.message || 'Croppie library not loaded', 'error');
+                return;
+            }
+
             const reader = new FileReader();
             reader.onload = (event) => {
                 // Clear the preview content and setup Croppie container
@@ -5157,12 +7279,12 @@ export const UI = {
                 livePreview.classList.add('croppie-active');
 
                 // Check if Croppie is available
-                if (typeof Croppie === 'undefined') {
+                if (!CroppieConstructor) {
                     UI.showToast('Croppie library not loaded', 'error');
                     return;
                 }
 
-                croppieInstance = new Croppie(livePreview, {
+                croppieInstance = new CroppieConstructor(livePreview, {
                     viewport: { width: 150, height: 150, type: 'circle' },
                     boundary: { width: 220, height: 220 },
                     showZoomer: true,
@@ -5251,7 +7373,7 @@ export const UI = {
                     const mainDisplay = document.getElementById('profile-avatar-display');
                     if (mainDisplay) {
                         mainDisplay.innerHTML = finalUrl
-                            ? `<img src="${finalUrl}" alt="Profile" style="width: 100%; height: 100%; object-fit: cover; object-position: center; border-radius: 50%;">
+                            ? `<img src="${finalUrl}" alt="Profile" loading="lazy" decoding="async" style="width: 100%; height: 100%; object-fit: cover; object-position: center; border-radius: 50%;">
                                <div class="avatar-edit-overlay">
                                   <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                                </div>`
@@ -5321,7 +7443,8 @@ export const UI = {
                     UI.showToast('DEV: Test account authenticated.', 'success');
                     localStorage.removeItem('edtechra_role');
                     localStorage.removeItem('edtechra_display_name');
-                    window.location.hash = 'home';
+                    window.location.hash = localStorage.getItem('edtechra_pending_classroom_route') || 'home';
+                    localStorage.removeItem('edtechra_pending_classroom_route');
                     setTimeout(() => window.location.reload(), 500);
                 }
                 UI.hideLoader();
@@ -5352,6 +7475,12 @@ export const UI = {
                     localStorage.removeItem('edtechra_role');
                     localStorage.removeItem('edtechra_display_name');
                     window.location.hash = 'login';
+                } else {
+                    const pendingClassroomRoute = localStorage.getItem('edtechra_pending_classroom_route');
+                    if (pendingClassroomRoute) {
+                        localStorage.removeItem('edtechra_pending_classroom_route');
+                        window.location.hash = pendingClassroomRoute;
+                    }
                 }
             }
             UI.hideLoader();
@@ -5370,3 +7499,5 @@ export const UI = {
         };
     }
 };
+
+

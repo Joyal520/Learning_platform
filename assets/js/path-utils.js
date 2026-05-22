@@ -32,10 +32,4 @@ export function buildAppUrl(path = '') {
 }
 
 export function logAppRuntime(label = 'runtime') {
-    console.log('[AppPath]', {
-        label,
-        basePath: getAppBasePath(),
-        origin: window.location.origin,
-        pathname: window.location.pathname
-    });
 }

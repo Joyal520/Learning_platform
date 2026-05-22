@@ -1,12 +1,17 @@
 import { Auth } from './auth.js';
-import { UI } from './ui.js';
+import { UI } from './ui.js?v=project-badge-check';
 import { MyUploadsPage } from '../../pages/my-uploads.js';
 import { ExplorePage } from '../../pages/explore.js';
 import { DetailPage } from '../../pages/detail.js';
 import { DashboardPage } from '../../pages/dashboard.js';
 import { StudentDashboardPage } from '../../pages/student-dashboard.js';
 import { PresentationRemotePage } from '../../pages/presentation-remote.js';
+import { DigitalClassroomPage } from '../../pages/digital-classroom.js';
 import { buildAppPath, logAppRuntime } from './path-utils.js';
+import { Notifications } from './notifications.js';
+
+const DEBUG_LOGS = false;
+const debugLog = (...args) => { if (DEBUG_LOGS) console.log(...args); };
 
 const App = {
     user: null,
@@ -17,8 +22,8 @@ const App = {
     _profileUserId: null,
     _bootstrappedUserId: null,
     _lastUserId: null,
-    _lastSuccessfulHash: '#home',
-    _isRecoveringRoute: false,
+    _activeYouTubePlayer: null,
+    CLASSROOM_RETURN_KEY: 'edtechra_pending_classroom_route',
 
     async init() {
         UI.init();
@@ -26,12 +31,18 @@ const App = {
         this.renderNav();
         this.initializePwaEnhancements();
         this.handleAuthErrorsInUrl();
+        this.normalizeInboundJoinPath();
 
         try {
             const session = await Auth.getSession();
             this.user = session?.user || null;
             this._bootstrappedUserId = this.user?.id || null;
             this._lastUserId = this._bootstrappedUserId;
+            if (this.user) {
+                await this.ensureProfileLoaded({ allowBackgroundSync: true });
+                Notifications.maybePromptAndSync(this.user)
+                    .catch((error) => console.warn('[App] Notification token sync skipped:', error));
+            }
             this.renderNav();
             await this.route();
         } catch (error) {
@@ -59,15 +70,15 @@ const App = {
         let deferredPrompt = null;
 
         window.addEventListener('beforeinstallprompt', (e) => {
-            console.log('[PWA] beforeinstallprompt fired');
+            debugLog('[PWA] beforeinstallprompt fired');
             e.preventDefault();
             deferredPrompt = e;
-            console.log('[PWA] deferredPrompt stored');
+            debugLog('[PWA] deferredPrompt stored');
 
             const btn = document.getElementById('installBtn');
             if (btn) {
                 btn.style.display = 'block';
-                console.log('[PWA] install button displayed');
+                debugLog('[PWA] install button displayed');
             }
         });
 
@@ -75,16 +86,59 @@ const App = {
             const btn = e.target.closest('#installBtn');
             if (!btn || !deferredPrompt) return;
 
-            console.log('[PWA] install button clicked');
+            debugLog('[PWA] install button clicked');
             deferredPrompt.prompt();
             const result = await deferredPrompt.userChoice;
-            console.log('[PWA] user choice:', result.outcome);
+            debugLog('[PWA] user choice:', result.outcome);
             deferredPrompt = null;
             btn.style.display = 'none';
         });
 
+        const resetYouTubePlayer = (player) => {
+            if (!player) return;
+            player.querySelector('iframe')?.remove();
+            player.classList.remove('is-playing');
+            const thumbnail = player.querySelector('.video-feed-thumbnail');
+            if (thumbnail) thumbnail.hidden = false;
+        };
+
+        document.addEventListener('click', (e) => {
+            const playBtn = e.target.closest('.video-feed-play-btn');
+            if (!playBtn) return;
+            e.preventDefault();
+
+            const player = playBtn.closest('.video-feed-player');
+            if (!player) return;
+
+            if (this._activeYouTubePlayer && this._activeYouTubePlayer !== player) {
+                resetYouTubePlayer(this._activeYouTubePlayer);
+            }
+            this._activeYouTubePlayer = player;
+
+            const thumbnail = player.querySelector('.video-feed-thumbnail');
+            const existingIframe = player.querySelector('iframe');
+            if (existingIframe) return;
+
+            const embedUrl = player.dataset.youtubeEmbedUrl;
+            const videoTitle = player.dataset.videoTitle || 'YouTube video';
+            if (!embedUrl) return;
+
+            const iframe = document.createElement('iframe');
+            iframe.src = embedUrl;
+            iframe.title = videoTitle;
+            iframe.loading = 'lazy';
+            iframe.frameBorder = '0';
+            iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+            iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+            iframe.allowFullscreen = true;
+
+            if (thumbnail) thumbnail.hidden = true;
+            player.classList.add('is-playing');
+            player.appendChild(iframe);
+        });
+
         window.addEventListener('appinstalled', () => {
-            console.log('[PWA] App installed');
+            debugLog('[PWA] App installed');
             const btn = document.getElementById('installBtn');
             if (btn) btn.style.display = 'none';
         });
@@ -97,19 +151,19 @@ const App = {
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 const serviceWorkerPath = buildAppPath('sw.js?v=9');
-                console.log('[PWA] service worker path resolved:', serviceWorkerPath);
+                debugLog('[PWA] service worker path resolved:', serviceWorkerPath);
                 navigator.serviceWorker.register(serviceWorkerPath)
-                    .then(() => console.log('[PWA] service worker registered'))
+                    .then(() => debugLog('[PWA] service worker registered'))
                     .catch((error) => console.warn('[PWA] service worker registration skipped:', error));
             });
         }
 
         setTimeout(() => {
             const manifestPath = buildAppPath('manifest.json?v=3');
-            console.log('[PWA] manifest path resolved:', manifestPath);
+            debugLog('[PWA] manifest path resolved:', manifestPath);
             fetch(manifestPath)
                 .then((res) => {
-                    if (res.ok) console.log('[PWA] manifest loaded');
+                    if (res.ok) debugLog('[PWA] manifest loaded');
                 })
                 .catch((error) => console.warn('[PWA] manifest preload skipped:', error));
         }, 0);
@@ -126,9 +180,18 @@ const App = {
         window.history.replaceState(null, '', window.location.pathname);
     },
 
+    normalizeInboundJoinPath() {
+        const match = window.location.pathname.match(/\/join\/([^/?#]+)/);
+        if (!match || window.location.hash) return;
+
+        const inviteCode = decodeURIComponent(match[1]);
+        const nextHash = `#classroom/join/${encodeURIComponent(inviteCode)}`;
+        window.history.replaceState(null, '', `${window.location.origin}${window.location.pathname}${nextHash}`);
+    },
+
     bindAuthStateChanges() {
         Auth.onAuthStateChange(async (event, session) => {
-            console.log('Auth event:', event);
+            debugLog('Auth event:', event);
 
             if (event === 'TOKEN_REFRESHED') return;
             if (event === 'INITIAL_SESSION' && (session?.user?.id || null) === this._bootstrappedUserId) {
@@ -154,6 +217,8 @@ const App = {
                         forceRefresh: event === 'USER_UPDATED',
                         allowBackgroundSync: true
                     });
+                    Notifications.maybePromptAndSync(this.user)
+                        .catch((error) => console.warn('[App] Notification token sync skipped:', error));
                 }
 
                 this.renderNav();
@@ -257,9 +322,54 @@ const App = {
         }
     },
 
-    applyRouteBodyState(page = this.currentPage) {
-        document.body.classList.toggle('explore-view', page === 'explore');
-        document.body.classList.toggle('light-dashboard', page === 'student-dashboard' || page === 'admin-dashboard');
+    storeClassroomReturnRoute(route) {
+        if (route) localStorage.setItem(this.CLASSROOM_RETURN_KEY, route);
+    },
+
+    consumeClassroomReturnRoute() {
+        const route = localStorage.getItem(this.CLASSROOM_RETURN_KEY);
+        if (route) localStorage.removeItem(this.CLASSROOM_RETURN_KEY);
+        return route;
+    },
+
+    handleRouteFailure({
+        page,
+        error,
+        main,
+        previousPage,
+        previousMarkup,
+        previousBodyClasses
+    }) {
+        console.error(`[App] Failed to render route "${page}":`, error);
+        const shouldRestorePreviousView = Boolean(previousMarkup);
+        const failedUploadRoute = page === 'upload' || page === 'edit';
+        const friendlyPageName = failedUploadRoute ? 'upload page' : 'requested page';
+
+        document.body.classList.toggle('explore-view', previousBodyClasses.exploreView);
+        document.body.classList.toggle('light-dashboard', previousBodyClasses.lightDashboard);
+        document.body.classList.toggle('upload-view', previousBodyClasses.uploadView);
+        document.documentElement.classList.toggle('upload-view', previousBodyClasses.uploadView);
+
+        if (main) {
+            if (shouldRestorePreviousView) {
+                main.innerHTML = previousMarkup;
+            } else {
+                main.innerHTML = `
+                    <div class="page-header">
+                        <h1>Page Unavailable</h1>
+                        <p class="text-muted">The ${friendlyPageName} could not finish loading. Please try again.</p>
+                    </div>
+                `;
+            }
+        }
+
+        this.currentPage = shouldRestorePreviousView ? previousPage : (page || 'home');
+        if (shouldRestorePreviousView && previousPage && previousPage !== page) {
+            window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${previousPage}`);
+        }
+        this.renderNav();
+        this.updateNavActive();
+        UI.showToast(`The ${friendlyPageName} could not finish loading. Please try again.`, 'error');
     },
 
     async route() {
@@ -271,18 +381,31 @@ const App = {
 
         const cleanHash = rawHash.startsWith('/') ? rawHash.substring(1) : rawHash;
         const hashWithoutQuery = cleanHash.split('?')[0];
-        const [page, id] = hashWithoutQuery.split('/');
-        const previousPage = this.currentPage || 'home';
-        const previousHash = this._lastSuccessfulHash || '#home';
-        const previousBodyState = {
-            exploreView: document.body.classList.contains('explore-view'),
-            lightDashboard: document.body.classList.contains('light-dashboard')
-        };
+        const [page, subpage, id] = hashWithoutQuery.split('/');
+
+        if (this.currentPage === 'explore' && page !== 'explore') {
+            ExplorePage.cleanup?.();
+        }
+
         const main = document.getElementById('main-content');
-        const previousMainMarkup = main?.innerHTML || '';
+        const previousPage = this.currentPage;
+        const previousMarkup = main?.innerHTML || '';
+        const previousBodyClasses = {
+            exploreView: document.body.classList.contains('explore-view'),
+            lightDashboard: document.body.classList.contains('light-dashboard'),
+            uploadView: document.body.classList.contains('upload-view')
+        };
 
         this.currentPage = page || 'home';
-        this.applyRouteBodyState(this.currentPage);
+
+        if (this.currentPage !== 'classroom') {
+            DigitalClassroomPage.cleanup();
+        }
+
+        document.body.classList.toggle('explore-view', this.currentPage === 'explore');
+        document.body.classList.toggle('light-dashboard', this.currentPage === 'student-dashboard' || this.currentPage === 'admin-dashboard');
+        document.body.classList.toggle('upload-view', this.currentPage === 'upload' || this.currentPage === 'edit');
+        document.documentElement.classList.toggle('upload-view', this.currentPage === 'upload' || this.currentPage === 'edit');
 
         const nav = document.querySelector('.main-nav');
         const menuToggle = document.getElementById('menu-toggle');
@@ -292,7 +415,9 @@ const App = {
         }
 
         const hasRole = localStorage.getItem('edtechra_role');
-        if (!this.user && !hasRole && page !== 'login' && page !== 'onboarding' && page !== 'explore' && page !== 'remote') {
+        const isClassroomRoute = page === 'classroom';
+        const isPublicClassroomRoute = isClassroomRoute && subpage === 'student';
+        if (!this.user && !hasRole && page !== 'login' && page !== 'onboarding' && page !== 'explore' && page !== 'remote' && !isClassroomRoute && !isPublicClassroomRoute) {
             return this.navigate('onboarding');
         }
 
@@ -306,6 +431,7 @@ const App = {
                 case 'home':
                     main.innerHTML = UI.pages.home(this.profile);
                     UI.initHeroAnimations();
+                    UI.setupMobileHome(this.profile);
                     break;
                 case 'profile':
                     if (!this.user) return this.navigate('login');
@@ -313,7 +439,14 @@ const App = {
                     UI.setupProfileEdit(this.profile || this.user);
                     break;
                 case 'login':
-                    if (this.user) return this.navigate('home');
+                    if (this.user) {
+                        const pendingRoute = this.consumeClassroomReturnRoute();
+                        if (pendingRoute) {
+                            window.location.hash = pendingRoute;
+                            return;
+                        }
+                        return this.navigate('home');
+                    }
                     main.innerHTML = UI.pages.login();
                     UI.setupAuthForms('login');
                     break;
@@ -328,7 +461,7 @@ const App = {
                     break;
                 case 'upload': {
                     if (!this.user) return this.navigate('login');
-                    main.innerHTML = UI.pages.upload();
+                    main.innerHTML = UI.pages.upload(this.profile);
                     const { UploadPage } = await import('../../pages/upload.js');
                     UploadPage.init();
                     break;
@@ -342,6 +475,16 @@ const App = {
                     if (!this.user) return this.navigate('login');
                     StudentDashboardPage.init();
                     break;
+                case 'my-classes':
+                    if (!this.user) {
+                        this.storeClassroomReturnRoute('my-classes');
+                        return this.navigate('login');
+                    }
+                    await this.ensureProfileLoaded({ allowBackgroundSync: true });
+                    if (this.profile?.role === 'teacher') return this.navigate('classroom');
+                    if (this.profile?.role === 'admin') return this.navigate('admin-dashboard');
+                    await DigitalClassroomPage.init('my-classes');
+                    break;
                 case 'admin-dashboard':
                     if (!this.user) return this.navigate('login');
                     await this.ensureProfileLoaded({ allowBackgroundSync: true });
@@ -354,12 +497,36 @@ const App = {
                 case 'remote':
                     PresentationRemotePage.init();
                     break;
+                case 'classroom': {
+                    const classroomPage = subpage || 'dashboard';
+                    const studentClassroomPage = ['student', 'join', 'my-classes'].includes(classroomPage);
+                    const teacherPage = !studentClassroomPage;
+                    if (studentClassroomPage && !this.user) {
+                        this.storeClassroomReturnRoute(hashWithoutQuery);
+                        return this.navigate('login');
+                    }
+                    if (teacherPage && !this.user) return this.navigate('login');
+                    if (teacherPage) {
+                        await this.ensureProfileLoaded({ allowBackgroundSync: true });
+                        if (this.profile?.role !== 'teacher') return this.navigate('home');
+                    }
+                    if (studentClassroomPage) {
+                        await this.ensureProfileLoaded({ allowBackgroundSync: true });
+                    }
+
+                    await DigitalClassroomPage.init(classroomPage, {
+                        id,
+                        classroomId: id
+                    });
+                    break;
+                }
                 case 'edit': {
                     if (!this.user) return this.navigate('login');
-                    if (id) {
-                        main.innerHTML = UI.pages.upload();
+                    const editId = id || subpage;
+                    if (editId) {
+                        main.innerHTML = UI.pages.upload(this.profile);
                         const { UploadPage } = await import('../../pages/upload.js');
-                        UploadPage.initEdit(id);
+                        UploadPage.initEdit(editId);
                     } else {
                         this.navigate('my-uploads');
                     }
@@ -371,34 +538,15 @@ const App = {
 
             this.renderNav();
             this.updateNavActive();
-            this._lastSuccessfulHash = `#${cleanHash || 'home'}`;
         } catch (error) {
-            console.error(`[App] Route "${page}" failed during render/init:`, error);
-
-            main.innerHTML = previousMainMarkup;
-            document.body.classList.toggle('explore-view', previousBodyState.exploreView);
-            document.body.classList.toggle('light-dashboard', previousBodyState.lightDashboard);
-            this.currentPage = previousPage;
-
-            if (this._isRecoveringRoute) {
-                this.renderNav();
-                this.updateNavActive();
-                UI.showToast('This page could not be opened.', 'error');
-                return;
-            }
-
-            this._isRecoveringRoute = true;
-
-            try {
-                const failedHash = `#${cleanHash || 'home'}`;
-                const fallbackHash = previousHash !== failedHash ? previousHash : '#home';
-
-                UI.showToast('The requested page could not be opened. Restoring the previous page.', 'error');
-                window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${fallbackHash}`);
-                await this.route();
-            } finally {
-                this._isRecoveringRoute = false;
-            }
+            this.handleRouteFailure({
+                page,
+                error,
+                main,
+                previousPage,
+                previousMarkup,
+                previousBodyClasses
+            });
         }
     },
 
@@ -408,6 +556,11 @@ const App = {
         const navLinks = document.getElementById('nav-links');
         const mobileBottomNav = document.getElementById('mobile-bottom-nav');
         if (!nav || !navAuth || !navLinks) return;
+
+        const role = this.profile?.role || null;
+        const isTeacher = role === 'teacher';
+        const isAdmin = role === 'admin';
+        const showStudentClasses = role === 'student';
 
         if (this.user) {
             nav.classList.add('user-logged-in');
@@ -436,9 +589,11 @@ const App = {
                 <a href="#" class="nav-link" data-link="home">Home</a>
                 <a href="#" class="nav-link" data-link="explore">Explore</a>
                 <a href="#" class="nav-link" data-link="student-dashboard">Dashboard</a>
+                ${isTeacher ? '<a href="#classroom" class="nav-link" data-link="classroom">Classes</a>' : ''}
+                ${showStudentClasses ? '<a href="#my-classes" class="nav-link" data-link="my-classes">My Classes</a>' : ''}
             `;
 
-            if (this.profile?.role === 'admin') {
+            if (isAdmin) {
                 navLinks.innerHTML += '<a href="#" class="nav-link" data-link="admin-dashboard">Admin Panel</a>';
             }
         } else {
@@ -467,7 +622,11 @@ const App = {
                 mobileBottomNav.className = 'mobile-bottom-nav';
                 mobileBottomNav.innerHTML = '';
             } else {
-                mobileBottomNav.className = `mobile-bottom-nav ${this.profile?.role === 'admin' ? 'has-admin' : ''}`.trim();
+                const classesLink = isTeacher ? 'classroom' : 'my-classes';
+                const finalMobileLink = isAdmin ? 'admin-dashboard' : classesLink;
+                const finalMobileLabel = isAdmin ? 'Admin' : 'Classes';
+                const finalMobileActivePages = isAdmin ? 'admin-dashboard' : 'classroom,my-classes';
+                mobileBottomNav.className = 'mobile-bottom-nav';
                 mobileBottomNav.innerHTML = `
                     <a href="#home" class="mobile-bottom-nav-item" data-link="home">
                         <span class="mobile-bottom-nav-icon">
@@ -481,26 +640,18 @@ const App = {
                         </span>
                         <span class="mobile-bottom-nav-label">Explore</span>
                     </a>
-                    <a href="#student-dashboard" class="mobile-bottom-nav-item" data-link="student-dashboard">
+                    <a href="#student-dashboard" class="mobile-bottom-nav-item" data-link="student-dashboard" data-active-pages="student-dashboard,dashboard,upload">
                         <span class="mobile-bottom-nav-icon">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="7" rx="2"></rect><rect x="14" y="4" width="7" height="7" rx="2"></rect><rect x="3" y="13" width="7" height="8" rx="2"></rect><rect x="14" y="13" width="7" height="8" rx="2"></rect></svg>
                         </span>
                         <span class="mobile-bottom-nav-label">Dashboard</span>
                     </a>
-                    <a href="#profile" class="mobile-bottom-nav-item" data-link="profile">
+                    <a href="#${finalMobileLink}" class="mobile-bottom-nav-item" data-link="${finalMobileLink}" data-active-pages="${finalMobileActivePages}">
                         <span class="mobile-bottom-nav-icon">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c1.8-3.6 5-5.5 8-5.5s6.2 1.9 8 5.5"></path></svg>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="3"></rect><path d="M8 21h8"></path><path d="M12 17v4"></path></svg>
                         </span>
-                        <span class="mobile-bottom-nav-label">Profile</span>
+                        <span class="mobile-bottom-nav-label">${finalMobileLabel}</span>
                     </a>
-                    ${this.profile?.role === 'admin' ? `
-                    <a href="#admin-dashboard" class="mobile-bottom-nav-item" data-link="admin-dashboard">
-                        <span class="mobile-bottom-nav-icon">
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7v5c0 5 3.4 7.8 8 9 4.6-1.2 8-4 8-9V7l-8-4Z"></path><path d="M9.5 12 11 13.5 14.5 10"></path></svg>
-                        </span>
-                        <span class="mobile-bottom-nav-label">Admin</span>
-                    </a>
-                    ` : ''}
                 `;
             }
         }
@@ -509,12 +660,26 @@ const App = {
     updateNavActive() {
         document.querySelectorAll('.nav-link').forEach(link => {
             const linkPage = link.getAttribute('data-link');
-            link.classList.toggle('active', linkPage === this.currentPage);
+            const activePages = {
+                classroom: ['classroom'],
+                'my-classes': ['my-classes'],
+                'student-dashboard': ['student-dashboard', 'dashboard', 'upload'],
+                'admin-dashboard': ['admin-dashboard']
+            }[linkPage] || [linkPage];
+
+            link.classList.toggle('active', activePages.includes(this.currentPage));
         });
 
         document.querySelectorAll('.mobile-bottom-nav-item').forEach(link => {
             const linkPage = link.getAttribute('data-link');
-            link.classList.toggle('active', linkPage === this.currentPage);
+            const activePages = (link.dataset.activePages || linkPage).split(',');
+            const isActive = activePages.includes(this.currentPage);
+            link.classList.toggle('active', isActive);
+            if (isActive) {
+                link.setAttribute('aria-current', 'page');
+            } else {
+                link.removeAttribute('aria-current');
+            }
         });
     }
 };

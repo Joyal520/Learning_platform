@@ -4,6 +4,9 @@ import { UI } from '../assets/js/ui.js';
 import App from '../assets/js/app.js';
 import { API } from '../assets/js/api.js';
 
+const DEBUG_LOGS = false;
+const debugLog = (...args) => { if (DEBUG_LOGS) console.log(...args); };
+
 export const DashboardPage = {
     currentTab: 'pending',
 
@@ -69,7 +72,7 @@ export const DashboardPage = {
         if (!button || !panel || !status || !output) return;
 
         button.addEventListener('click', async () => {
-            console.log('[Dashboard] Starting authenticated R2 diagnostics request...');
+            debugLog('[Dashboard] Starting authenticated R2 diagnostics request...');
             panel.style.display = 'block';
             status.textContent = 'Running authenticated R2 diagnostics...';
             output.textContent = '';
@@ -78,7 +81,7 @@ export const DashboardPage = {
 
             try {
                 const diagnostics = await API.getR2Diagnostics(true);
-                console.log('[Dashboard] R2 diagnostics request succeeded:', diagnostics);
+                debugLog('[Dashboard] R2 diagnostics request succeeded:', diagnostics);
 
                 status.textContent = 'Authenticated R2 diagnostics completed.';
                 output.textContent = JSON.stringify({
@@ -126,15 +129,25 @@ export const DashboardPage = {
         if (elBucket) elBucket.textContent = 'Bucket: --';
         if (elBreakdown) elBreakdown.textContent = 'Loading Cloudflare metrics...';
 
-        const [
-            { count: users },
-            { count: pending },
-            { count: approved }
-        ] = await Promise.all([
+        const [usersResult, pendingResult, approvedResult] = await Promise.allSettled([
             supabase.from('profiles').select('*', { count: 'exact', head: true }),
             supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
             supabase.from('submissions').select('*', { count: 'exact', head: true }).eq('status', 'approved')
         ]);
+
+        const usersResponse = usersResult.status === 'fulfilled' ? usersResult.value : {};
+        const pendingResponse = pendingResult.status === 'fulfilled' ? pendingResult.value : {};
+        const approvedResponse = approvedResult.status === 'fulfilled' ? approvedResult.value : {};
+
+        if (usersResult.status === 'rejected' || usersResponse.error) {
+            console.error('[Dashboard] Failed to load user count:', usersResponse.error || usersResult.reason);
+        }
+        if (pendingResult.status === 'rejected' || pendingResponse.error) {
+            console.error('[Dashboard] Failed to load pending submission count:', pendingResponse.error || pendingResult.reason);
+        }
+        if (approvedResult.status === 'rejected' || approvedResponse.error) {
+            console.error('[Dashboard] Failed to load approved submission count:', approvedResponse.error || approvedResult.reason);
+        }
 
         let storageUnavailable = false;
         let metrics = null;
@@ -159,9 +172,9 @@ export const DashboardPage = {
         const elP = document.getElementById('stat-pending');
         const elA = document.getElementById('stat-approved');
 
-        if (elU) elU.textContent = users || '0';
-        if (elP) elP.textContent = pending || '0';
-        if (elA) elA.textContent = approved || '0';
+        if (elU) elU.textContent = usersResponse.error || usersResult.status === 'rejected' ? '--' : (usersResponse.count || '0');
+        if (elP) elP.textContent = pendingResponse.error || pendingResult.status === 'rejected' ? '--' : (pendingResponse.count || '0');
+        if (elA) elA.textContent = approvedResponse.error || approvedResult.status === 'rejected' ? '--' : (approvedResponse.count || '0');
         if (elS) {
             elS.textContent = storageUnavailable ? 'Unavailable' : this.formatStorageUsage(metrics.totalBytes || 0);
             elS.title = storageUnavailable
@@ -197,7 +210,7 @@ export const DashboardPage = {
 
         if (this.currentTab === 'users') {
             const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-            if (error) return UI.showToast(error.message, 'error');
+            if (error) return this.showAdminSectionError(content, 'User Management', error);
             content.innerHTML = data.map(u => UI.pages.userRow(u)).join('');
             this.setupUserActions();
         } else {
@@ -210,7 +223,10 @@ export const DashboardPage = {
 
             const { data, error } = await query;
 
-            if (error) return UI.showToast(error.message, 'error');
+            if (error) {
+                const sectionName = this.currentTab === 'approved' ? 'Live Content' : 'Moderation Queue';
+                return this.showAdminSectionError(content, sectionName, error);
+            }
 
             if (data.length === 0) {
                 content.innerHTML = `<p class="text-muted text-center p-40">No submissions found here.</p>`;
@@ -221,20 +237,33 @@ export const DashboardPage = {
         }
     },
 
+    showAdminSectionError(content, sectionName, error) {
+        const message = error?.message || 'Unable to load this admin section.';
+        console.error(`[Dashboard] ${sectionName} failed to load:`, error);
+        content.innerHTML = `
+            <div class="glass-card p-40 text-center">
+                <p class="text-muted">${sectionName} could not load right now.</p>
+                <p class="text-muted text-sm">${message}</p>
+            </div>
+        `;
+    },
+
     setupSubmissionActions() {
         document.querySelectorAll('.action-approve').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
                 let error = null;
+                let wasAlreadyApproved = false;
 
                 try {
                     const { data: sub, error: fetchError } = await supabase
                         .from('submissions')
-                        .select('id, content_type')
+                        .select('id, content_type, status')
                         .eq('id', id)
                         .maybeSingle();
 
                     if (fetchError) throw fetchError;
+                    wasAlreadyApproved = sub?.status === 'approved';
                     if (sub?.content_type === 'image') {
                         await API.promotePendingImageSubmission(id);
                     }
@@ -251,6 +280,13 @@ export const DashboardPage = {
                 if (error) UI.showToast(error.message, 'error');
                 else {
                     UI.showToast('Submission approved!', 'success');
+                    if (!wasAlreadyApproved) {
+                        API.sendWorkApprovedNotifications(id).then((result) => {
+                            if (result?.error) {
+                                console.warn('[Dashboard] Approval notification fallback:', result.error);
+                            }
+                        });
+                    }
                     this.loadTabContent();
                 }
             });
@@ -330,12 +366,12 @@ export const DashboardPage = {
         // Confirm delete
         document.getElementById('delete-confirm').addEventListener('click', async () => {
             const confirmBtn = document.getElementById('delete-confirm');
-            console.log('[Dashboard] Delete confirmed for ID:', submissionId);
+            debugLog('[Dashboard] Delete confirmed for ID:', submissionId);
             confirmBtn.textContent = 'Deleting...';
             confirmBtn.disabled = true;
 
             try {
-                console.log('[Dashboard] Cleaning up dependent records for ID:', submissionId);
+                debugLog('[Dashboard] Cleaning up dependent records for ID:', submissionId);
                 
                 // 0. Fetch submission files before deletion to clear storage
                 const { data: sub, error: subError } = await supabase.from('submissions')
@@ -366,7 +402,7 @@ export const DashboardPage = {
                 if (pErr?.error) console.warn('[Dashboard] Could not clear reports:', pErr.error);
 
                 // 2. Delete the submission itself
-                console.log('[Dashboard] Deleting submission record:', submissionId);
+                debugLog('[Dashboard] Deleting submission record:', submissionId);
                 let removalMode = 'hard-delete';
                 let removalError = null;
                 let removed = false;
@@ -448,7 +484,7 @@ export const DashboardPage = {
                     console.error('[Dashboard] Submission removal failed:', removalError);
                     UI.showToast(`Delete failed: ${removalError?.message || 'Unknown error'}`, 'error');
                 } else {
-                    console.log('[Dashboard] Delete successful via', removalMode);
+                    debugLog('[Dashboard] Delete successful via', removalMode);
                     UI.showToast(removalMode === 'hard-delete' ? 'Submission deleted permanently' : 'Submission removed from public content', 'success');
                     this.loadTabContent();
                     this.loadStats();

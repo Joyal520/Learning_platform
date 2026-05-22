@@ -3,6 +3,9 @@
  * Handles client-side compression, resizing, and WebP conversion.
  */
 
+const DEBUG_LOGS = false;
+const debugLog = (...args) => { if (DEBUG_LOGS) console.log(...args); };
+
 export const ImageUtils = {
     /**
      * Compresses an image file to a target size (KB) and maxWidth.
@@ -13,7 +16,7 @@ export const ImageUtils = {
      */
     async compressToTarget(file, targetKB, maxWidth, label = 'Image', onProgress = null) {
         return new Promise((resolve, reject) => {
-            console.log(`[ImageUtils] Starting compression for ${label}: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
+            debugLog(`[ImageUtils] Starting compression for ${label}: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
             if (onProgress) onProgress(5, `Loading ${label}...`);
 
             const reader = new FileReader();
@@ -57,10 +60,10 @@ export const ImageUtils = {
                                 onProgress(progress, `Optimizing ${label}: ${currentKB.toFixed(0)}KB...`);
                             }
 
-                            console.log(`[ImageUtils] ${label} - Quality: ${quality.toFixed(1)}, Size: ${currentKB.toFixed(1)}KB`);
+                            debugLog(`[ImageUtils] ${label} - Quality: ${quality.toFixed(1)}, Size: ${currentKB.toFixed(1)}KB`);
 
                             if (currentKB <= targetKB || quality <= minQuality) {
-                                console.log(`[ImageUtils] ${label} compressed to ${currentKB.toFixed(1)}KB`);
+                                debugLog(`[ImageUtils] ${label} compressed to ${currentKB.toFixed(1)}KB`);
                                 if (onProgress) onProgress(100, `${label} optimized!`);
                                 resolve(blob);
                             } else {

@@ -1,4 +1,10 @@
-const CACHE_NAME = 'edtechra-v6';
+const CACHE_NAME = 'edtechra-v7';
+try {
+  importScripts('./firebase-messaging-sw.js');
+} catch (error) {
+  console.warn('[ServiceWorker] Firebase messaging worker unavailable:', error);
+}
+
 const APP_BASE_PATH = (() => {
   const pathname = self.location.pathname || '/sw.js';
   const lastSlash = pathname.lastIndexOf('/');
@@ -57,6 +63,14 @@ self.addEventListener('fetch', (event) => {
 
   // Exclude Supabase requests from caching and SPA fallbacks entirely.
   if (url.hostname.includes('supabase.co')) return;
+
+  const isVersionedImageRequest = event.request.destination === 'image'
+    && (url.searchParams.has('v') || url.searchParams.has('cacheBust'));
+
+  if (isVersionedImageRequest) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
 
   event.respondWith(
     // Network-first strategy for dynamic/updatable files

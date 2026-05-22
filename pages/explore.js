@@ -11,54 +11,263 @@ export const ExplorePage = {
     _isLoading: false,
     _allFetchedData: [],  // holds all fetched submissions for local Explore batching
     _feedCacheByCategory: new Map(),
+    _statsCache: new Map(),
+    _interactionCacheByUser: new Map(),
     _loadRequestId: 0,
     _displayCount: 12,    // total cards rendered across sections
     _loadMoreStep: 12,    // cards appended per Load More click
     _batchSectionSize: 4,
-    _fetchPageSize: 100,
+    _fetchPageSize: 36,
     _topCreators: [],
     _isSearchFocused: false,
+    _mobileInfiniteObserver: null,
+    _mobileInfiniteLoadHandler: null,
+    _mobileInfiniteFallback: false,
 
     _getDesktopSectionCount() {
         return window.matchMedia('(min-width: 993px)').matches ? 4 : 3;
+    },
+
+    _isMobileExplorePagination() {
+        return window.matchMedia('(max-width: 768px)').matches;
+    },
+
+    _getFetchPageSize() {
+        return this._isMobileExplorePagination() ? 12 : this._fetchPageSize;
     },
 
     _getBaseDisplayCount() {
         return this._batchSectionSize * 3;
     },
 
-    _getSubmissionId(submission) {
-        return String(submission?.id || '');
+    _isMobileAllWorkFeed() {
+        return window.matchMedia('(max-width: 640px)').matches
+            && this._currentCategory === 'all'
+            && !this._currentGroup
+            && !this._currentTheme;
     },
 
-    _getFeedCacheKey(category) {
-        return String(category || 'all');
+    getWorkId(item = {}) {
+        const directId = item.id
+            || item.submission_id
+            || item.work_id
+            || item.uuid
+            || item.slug;
+        if (directId) return String(directId);
+
+        const projectUrl = item.github_url || item.project_url;
+        if (projectUrl) return String(projectUrl);
+
+        const title = String(item.title || '').trim();
+        const author = String(
+            item.author_id
+            || item.profiles?.id
+            || item.profiles?.display_name
+            || item.author
+            || ''
+        ).trim();
+        const createdDate = String(
+            item.created_at
+            || item.submitted_at
+            || item.uploaded_at
+            || item.updated_at
+            || item.approved_at
+            || item.createdAt
+            || ''
+        ).trim();
+
+        if (title || author || createdDate) {
+            return [title, author, createdDate].join('|');
+        }
+
+        return '';
+    },
+
+    uniqueByWorkId(items = []) {
+        const seen = new Set();
+        return (Array.isArray(items) ? items : []).filter((item) => {
+            const id = this.getWorkId(item);
+            if (!id) return true;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+    },
+
+    _getSubmissionId(submission) {
+        return this.getWorkId(submission);
+    },
+
+    _getNestedStats(submission = {}) {
+        return submission.submission_stats?.[0]
+            || submission.stats
+            || submission.stat
+            || submission.metrics
+            || {};
+    },
+
+    _getFeedCacheKey(category, search = '') {
+        return [
+            String(category || 'all'),
+            String(this._currentGroup || ''),
+            String(this._currentTheme || ''),
+            String(search || '').trim().toLowerCase()
+        ].join('|');
     },
 
     _sortNewCandidates(items) {
         return [...items].sort((a, b) =>
-            new Date(b.created_at || b.updated_at || 0).getTime() - new Date(a.created_at || a.updated_at || 0).getTime()
+            this._getSubmissionTimestamp(b) - this._getSubmissionTimestamp(a)
         );
+    },
+
+    _getSubmissionStats(submission = {}) {
+        return this._getNestedStats(submission);
+    },
+
+    _getSubmissionTimestamp(submission = {}) {
+        const rawDate = submission.created_at
+            || submission.submitted_at
+            || submission.uploaded_at
+            || submission.updated_at
+            || submission.createdAt
+            || submission.timestamp
+            || submission.approved_at
+            || '';
+        const timestamp = rawDate ? new Date(rawDate).getTime() : 0;
+        return Number.isFinite(timestamp) ? timestamp : 0;
+    },
+
+    getItemDate(item = {}) {
+        const rawDate = item.created_at
+            || item.submitted_at
+            || item.uploaded_at
+            || item.updated_at
+            || item.approved_at
+            || item.createdAt
+            || 0;
+        const timestamp = rawDate ? new Date(rawDate).getTime() : 0;
+        return Number.isFinite(timestamp) ? timestamp : 0;
+    },
+
+    _getStatNumber(item = {}, keys = []) {
+        const stats = this._getNestedStats(item);
+        for (const key of keys) {
+            const flatValue = Number(item?.[key]);
+            if (Number.isFinite(flatValue)) return Math.max(0, flatValue);
+
+            const statsValue = Number(stats?.[key]);
+            if (Number.isFinite(statsValue)) return Math.max(0, statsValue);
+        }
+        return 0;
+    },
+
+    getItemViews(item = {}) {
+        return this._getStatNumber(item, [
+            'view_count',
+            'views',
+            'views_count'
+        ]);
+    },
+
+    getItemLikes(item = {}) {
+        return this._getStatNumber(item, [
+            'like_count',
+            'likes',
+            'likes_count'
+        ]);
+    },
+
+    getItemShares(item = {}) {
+        return this._getStatNumber(item, [
+            'share_count',
+            'shares',
+            'shares_count'
+        ]);
+    },
+
+    getItemBookmarks(item = {}) {
+        return this._getStatNumber(item, [
+            'bookmark_count',
+            'save_count',
+            'saves',
+            'saved_count',
+            'bookmarks'
+        ]);
+    },
+
+    getItemRating(item = {}) {
+        return this._getStatNumber(item, [
+            'average_rating',
+            'avg_rating',
+            'rating_average',
+            'rating'
+        ]);
+    },
+
+    _getAverageRating(submission = {}) {
+        return this.getItemRating(submission);
+    },
+
+    _getRatingCount(submission = {}) {
+        return this._getStatNumber(submission, ['rating_count', 'ratings_count', 'review_count']);
+    },
+
+    _getEngagementScore(submission = {}) {
+        const views = this.getItemViews(submission);
+        const likes = this.getItemLikes(submission);
+        const shares = this.getItemShares(submission);
+        const bookmarks = this.getItemBookmarks(submission);
+        const rating = this.getItemRating(submission);
+
+        return views + (likes * 3) + (shares * 4) + (bookmarks * 2) + (rating * 5);
+    },
+
+    _isTrendingEligible(submission = {}) {
+        const rating = this.getItemRating(submission);
+        if (rating <= 3) return false;
+
+        return this.getItemViews(submission) > 0
+            || this.getItemLikes(submission) > 0
+            || this.getItemShares(submission) > 0
+            || this.getItemBookmarks(submission) > 0;
     },
 
     _sortTrendingCandidates(items) {
         return [...items].sort((a, b) => {
-            const statsA = a.submission_stats?.[0] || {};
-            const statsB = b.submission_stats?.[0] || {};
+            const scoreA = this._getEngagementScore(a);
+            const scoreB = this._getEngagementScore(b);
 
-            if ((statsB.like_count || 0) !== (statsA.like_count || 0)) {
-                return (statsB.like_count || 0) - (statsA.like_count || 0);
+            if (scoreB !== scoreA) {
+                return scoreB - scoreA;
             }
 
-            return (statsB.view_count || 0) - (statsA.view_count || 0);
+            return this.getItemDate(b) - this.getItemDate(a);
         });
     },
 
     _sortTopRatedCandidates(items) {
         return [...items].sort((a, b) => {
-            const statsA = a.submission_stats?.[0] || {};
-            const statsB = b.submission_stats?.[0] || {};
-            return (Number(statsB.avg_rating) || 0) - (Number(statsA.avg_rating) || 0);
+            const ratingA = this._getAverageRating(a);
+            const ratingB = this._getAverageRating(b);
+
+            if (ratingB !== ratingA) {
+                return ratingB - ratingA;
+            }
+
+            const ratingCountA = this._getRatingCount(a);
+            const ratingCountB = this._getRatingCount(b);
+            if (ratingCountB !== ratingCountA) {
+                return ratingCountB - ratingCountA;
+            }
+
+            const scoreA = this._getEngagementScore(a);
+            const scoreB = this._getEngagementScore(b);
+            if (scoreB !== scoreA) {
+                return scoreB - scoreA;
+            }
+
+            return this._getSubmissionTimestamp(b) - this._getSubmissionTimestamp(a);
         });
     },
 
@@ -79,76 +288,38 @@ export const ExplorePage = {
     },
 
     _buildFeedState(items, totalCardsToRender) {
-        const newCandidates = this._sortNewCandidates(items);
-        const trendingCandidates = this._sortTrendingCandidates(items);
-        const topRatedCandidates = this._sortTopRatedCandidates(items);
-        const sectionTargets = [
-            { key: 'new', items: newCandidates },
-            { key: 'trending', items: trendingCandidates },
-            { key: 'top', items: topRatedCandidates }
-        ];
-        const sections = { new: [], trending: [], top: [] };
-        const renderedIds = new Set();
-        const batchSize = this._getBaseDisplayCount();
-        const batchesToBuild = Math.max(0, Math.ceil((Number(totalCardsToRender) || 0) / batchSize));
-
-        for (let batchIndex = 0; batchIndex < batchesToBuild; batchIndex += 1) {
-            const batchSections = { new: [], trending: [], top: [] };
-            const batchUsedIds = new Set(renderedIds);
-
-            sectionTargets.forEach(({ key, items: sourceItems }) => {
-                batchSections[key] = this._takeEligibleCandidates(sourceItems, this._batchSectionSize, batchUsedIds);
-            });
-
-            const remainingSlots = sectionTargets
-                .map(({ key }) => ({ key, count: Math.max(0, this._batchSectionSize - batchSections[key].length) }))
-                .filter(({ count }) => count > 0);
-
-            if (remainingSlots.length) {
-                const fallbackPool = [
-                    ...newCandidates,
-                    ...trendingCandidates,
-                    ...topRatedCandidates
-                ];
-
-                remainingSlots.forEach(({ key, count }) => {
-                    if (count <= 0) return;
-                    const overflowItems = this._takeEligibleCandidates(fallbackPool, count, batchUsedIds);
-                    batchSections[key].push(...overflowItems);
-                });
-            }
-
-            const batchIds = [];
-            Object.values(batchSections).forEach((groupItems) => {
-                groupItems.forEach((item) => {
-                    const submissionId = this._getSubmissionId(item);
-                    if (!submissionId || renderedIds.has(submissionId)) return;
-                    renderedIds.add(submissionId);
-                    batchIds.push(submissionId);
-                });
-            });
-
-            if (!batchIds.length) break;
-
-            sections.new.push(...batchSections.new);
-            sections.trending.push(...batchSections.trending);
-            sections.top.push(...batchSections.top);
-        }
+        const baseItems = this.uniqueByWorkId(items);
+        const newCandidates = this._sortNewCandidates(baseItems);
+        const trendingCandidates = this._sortTrendingCandidates(baseItems)
+            .filter((item) => this._isTrendingEligible(item));
+        const topRatedCandidates = this._sortTopRatedCandidates(baseItems)
+            .filter((item) => this._getAverageRating(item) > 0);
+        const perSectionLimit = Math.max(
+            this._batchSectionSize,
+            Math.ceil((Number(totalCardsToRender) || this._getBaseDisplayCount()) / 3)
+        );
+        const usedInPreview = new Set();
+        const takeForSection = (sourceItems) => this._takeEligibleCandidates(sourceItems, perSectionLimit, usedInPreview);
+        const sections = {
+            trending: takeForSection(trendingCandidates),
+            new: takeForSection(newCandidates),
+            top: takeForSection(topRatedCandidates)
+        };
 
         return {
             sections,
-            totalRendered: renderedIds.size,
-            totalAvailableUnique: new Set(items.map((item) => this._getSubmissionId(item)).filter(Boolean)).size
+            totalRendered: Object.values(sections).reduce((total, groupItems) => total + groupItems.length, 0),
+            totalAvailableUnique: new Set(baseItems.map((item) => this.getWorkId(item)).filter(Boolean)).size
         };
     },
 
     _buildImageFeedState(items, totalCardsToRender) {
-        const newestFirst = this._sortNewCandidates(items);
+        const newestFirst = this._sortNewCandidates(this.uniqueByWorkId(items));
         const renderedIds = new Set();
         const orderedItems = [];
 
         for (const item of newestFirst) {
-            const submissionId = this._getSubmissionId(item);
+            const submissionId = this.getWorkId(item);
             if (!submissionId || renderedIds.has(submissionId)) continue;
 
             renderedIds.add(submissionId);
@@ -162,11 +333,37 @@ export const ExplorePage = {
         return {
             items: orderedItems,
             totalRendered: orderedItems.length,
-            totalAvailableUnique: new Set(newestFirst.map((item) => this._getSubmissionId(item)).filter(Boolean)).size
+            totalAvailableUnique: new Set(newestFirst.map((item) => this.getWorkId(item)).filter(Boolean)).size
         };
     },
 
+    _getDefaultExploreBaseItems(filteredItems = [], cacheItems = [], search = '') {
+        const isDefaultAllWorksView = this._currentCategory === 'all'
+            && !this._currentGroup
+            && !this._currentTheme
+            && !String(search || '').trim();
+
+        if (filteredItems.length || !isDefaultAllWorksView) {
+            return filteredItems;
+        }
+
+        return this.uniqueByWorkId(Array.isArray(cacheItems) ? cacheItems.filter(Boolean) : []);
+    },
+
+    _getSingleFeedEmptyMessage(search = '') {
+        const isFilteredFeed = this._currentCategory !== 'all'
+            || !!this._currentGroup
+            || !!this._currentTheme
+            || !!String(search || '').trim();
+
+        return isFilteredFeed
+            ? 'No works found in this category yet.'
+            : 'No matching works found.';
+    },
+
     _configureImageFeedSections(isImageFeed) {
+        const isMobileAllWorkFeed = this._isMobileAllWorkFeed();
+        const useSingleFeed = isImageFeed || isMobileAllWorkFeed;
         const trendingSection = document.querySelector('#trending-creations');
         const topSection = document.querySelector('#grid-top')?.closest('.explore-row-section') || null;
         const feedSection = document.querySelector('#explore-feed-section');
@@ -182,11 +379,11 @@ export const ExplorePage = {
         }
 
         if (trendingSection) {
-            trendingSection.hidden = isImageFeed;
+            trendingSection.hidden = useSingleFeed;
         }
 
         if (topSection) {
-            topSection.hidden = isImageFeed;
+            topSection.hidden = useSingleFeed;
         }
 
         if (feedSection) {
@@ -196,40 +393,225 @@ export const ExplorePage = {
         if (feedTitle) {
             feedTitle.textContent = isImageFeed
                 ? 'Latest Images'
+                : isMobileAllWorkFeed
+                    ? 'All Works'
                 : (feedTitle.dataset.defaultTitle || 'Newly Submitted');
         }
 
         if (feedCopy) {
             feedCopy.textContent = isImageFeed
                 ? 'A single newest-first stream of image submissions from the community.'
+                : isMobileAllWorkFeed
+                    ? 'Newest works from across the learning community in one continuous feed.'
                 : (feedCopy.dataset.defaultCopy || 'Fresh ideas and new uploads from across the learning community.');
         }
     },
 
-    async _fetchAllSubmissionsForExplore(category) {
-        const combined = [];
-        let offset = 0;
+    _createFeedCacheEntry() {
+        return {
+            items: [],
+            nextOffset: 0,
+            hasMore: true,
+            loading: false
+        };
+    },
 
-        while (true) {
-            const { data, error } = await API.getSubmissions(category, 'created_at', this._fetchPageSize, offset);
+    _getFeedCacheEntry(cacheKey) {
+        if (!this._feedCacheByCategory.has(cacheKey)) {
+            this._feedCacheByCategory.set(cacheKey, this._createFeedCacheEntry());
+        }
+        return this._feedCacheByCategory.get(cacheKey);
+    },
+
+    _cleanupMobileInfiniteScroll({ preserveHandler = false } = {}) {
+        if (this._mobileInfiniteObserver) {
+            this._mobileInfiniteObserver.disconnect();
+            this._mobileInfiniteObserver = null;
+        }
+        if (!preserveHandler) {
+            this._mobileInfiniteLoadHandler = null;
+        }
+        const trigger = document.querySelector('#explore-mobile-feed-trigger');
+        const status = document.querySelector('#explore-mobile-feed-status');
+        if (trigger) {
+            trigger.hidden = true;
+            trigger.setAttribute('aria-hidden', 'true');
+        }
+        if (status) {
+            status.hidden = true;
+            status.classList.remove('is-visible');
+            status.innerHTML = '';
+        }
+    },
+
+    _setMobileInfiniteStatus(isVisible) {
+        const status = document.querySelector('#explore-mobile-feed-status');
+        if (!status) return;
+
+        status.hidden = !isVisible;
+        status.classList.toggle('is-visible', !!isVisible);
+        status.innerHTML = isVisible
+            ? `<div class="explore-mobile-feed-status-grid">${this.renderSkeletons(2)}</div>`
+            : '';
+    },
+
+    _setupMobileInfiniteScroll(cacheEntry = null) {
+        const trigger = document.querySelector('#explore-mobile-feed-trigger');
+        if (!trigger) return;
+
+        this._cleanupMobileInfiniteScroll({ preserveHandler: true });
+
+        if (!this._isMobileExplorePagination()) return;
+
+        const hasMore = !!cacheEntry?.hasMore;
+        trigger.hidden = !hasMore;
+        trigger.setAttribute('aria-hidden', hasMore ? 'false' : 'true');
+        if (!hasMore) return;
+
+        if (typeof IntersectionObserver === 'undefined') {
+            this._mobileInfiniteFallback = true;
+            this._updateLoadMoreButton(null, cacheEntry);
+            return;
+        }
+
+        const loadNextPage = async () => {
+            if (!this._mobileInfiniteLoadHandler || this._isLoading || App.currentPage !== 'explore') return;
+            try {
+                this._setMobileInfiniteStatus(true);
+                await this._mobileInfiniteLoadHandler();
+            } catch (error) {
+                console.warn('[Explore] Mobile infinite scroll failed; showing Load More fallback.', error);
+                this._mobileInfiniteFallback = true;
+                this._updateLoadMoreButton(null, cacheEntry);
+            } finally {
+                this._setMobileInfiniteStatus(false);
+            }
+        };
+
+        this._mobileInfiniteObserver = new IntersectionObserver((entries) => {
+            const shouldLoad = entries.some((entry) => entry.isIntersecting);
+            if (shouldLoad) window.setTimeout(loadNextPage, 0);
+        }, {
+            root: null,
+            rootMargin: '600px 0px',
+            threshold: 0.01
+        });
+
+        this._mobileInfiniteObserver.observe(trigger);
+    },
+
+    _filterLoadedSubmissions(items = [], search = '') {
+        let filtered = this.uniqueByWorkId(items);
+        const normalizedSearch = String(search || '').toLowerCase().trim();
+
+        if (this._currentCategory === 'images') {
+            filtered = filtered.filter((submission) => UI.isStrictImageSubmission(submission));
+        } else if (this._currentCategory === 'songs') {
+            filtered = filtered.filter((submission) => UI.isAudioSubmission(submission));
+        } else if (this._currentCategory === 'video') {
+            filtered = filtered.filter((submission) => UI.isVideoSubmission(submission));
+        }
+
+        if (this._currentTheme) {
+            filtered = filtered.filter((submission) =>
+                Array.isArray(submission.themes) && submission.themes.includes(this._currentTheme)
+            );
+        }
+
+        if (this._currentGroup) {
+            filtered = filtered.filter((submission) =>
+                UI.getContentTypeOption(submission.category, submission.content_type)?.group === this._currentGroup
+            );
+        }
+
+        if (normalizedSearch) {
+            filtered = filtered.filter((submission) =>
+                submission.title?.toLowerCase().includes(normalizedSearch) ||
+                submission.profiles?.display_name?.toLowerCase().includes(normalizedSearch)
+            );
+        }
+
+        return filtered;
+    },
+
+    async _enrichLoadedSubmissions(submissions = []) {
+        const list = Array.isArray(submissions) ? submissions.filter(Boolean) : [];
+        const ids = [...new Set(list.map((submission) => submission.id).filter(Boolean))];
+        if (!ids.length) return;
+
+        const missingStatsIds = ids.filter((id) => !this._statsCache.has(id));
+        if (missingStatsIds.length) {
+            const statsMap = await API.getStatsForSubmissions(missingStatsIds);
+            missingStatsIds.forEach((id) => {
+                this._statsCache.set(id, statsMap[id] || { avg_rating: 0, like_count: 0, view_count: 0 });
+            });
+        }
+
+        let interactionMap = {};
+        const userId = App.user?.id || null;
+        if (userId) {
+            if (!this._interactionCacheByUser.has(userId)) {
+                this._interactionCacheByUser.set(userId, new Map());
+            }
+            const userInteractionCache = this._interactionCacheByUser.get(userId);
+            const missingInteractionIds = ids.filter((id) => !userInteractionCache.has(id));
+            if (missingInteractionIds.length) {
+                const fetchedInteractions = await API.getUserSubmissionInteractions(missingInteractionIds, userId);
+                missingInteractionIds.forEach((id) => {
+                    userInteractionCache.set(id, fetchedInteractions[id] || { liked: false, bookmarked: false, userRating: null });
+                });
+            }
+            ids.forEach((id) => {
+                interactionMap[id] = userInteractionCache.get(id) || {};
+            });
+        }
+
+        list.forEach((submission) => {
+            const initStat = this._statsCache.get(submission.id) || { avg_rating: 0, like_count: 0, view_count: 0 };
+            const interaction = interactionMap[submission.id] || {};
+            initStat.user_has_liked = !!interaction.liked;
+            initStat.user_has_bookmarked = !!interaction.bookmarked;
+            submission.submission_stats = [initStat];
+            submission._feedIsLiked = !!interaction.liked;
+            submission._feedIsBookmarked = !!interaction.bookmarked;
+            submission._audioFeedIsLiked = !!interaction.liked;
+            submission._audioFeedIsBookmarked = !!interaction.bookmarked;
+            submission._interactiveWebLiked = !!interaction.liked;
+            submission._interactiveWebBookmarked = !!interaction.bookmarked;
+            submission._interactiveWebUserRating = Number(interaction.userRating) || null;
+        });
+    },
+
+    async _fetchNextSubmissionsPage(cacheEntry, category) {
+        if (!cacheEntry || cacheEntry.loading || !cacheEntry.hasMore) {
+            return [];
+        }
+
+        cacheEntry.loading = true;
+        try {
+            const fetchPageSize = this._getFetchPageSize();
+            const { data, error } = await API.getSubmissions(category, 'created_at', fetchPageSize, cacheEntry.nextOffset);
             if (error) throw error;
 
-            const pageItems = data || [];
-            combined.push(...pageItems);
+            const pageItems = Array.isArray(data) ? data : [];
+            const loadedIds = new Set(this.uniqueByWorkId(cacheEntry.items).map((item) => this.getWorkId(item)).filter(Boolean));
+            const freshItems = pageItems.filter((item) => {
+                const id = this.getWorkId(item);
+                if (!id) return true;
+                if (loadedIds.has(id)) return false;
+                loadedIds.add(id);
+                return true;
+            });
+            cacheEntry.items = this.uniqueByWorkId(cacheEntry.items);
+            cacheEntry.items.push(...freshItems);
+            cacheEntry.nextOffset += pageItems.length;
+            cacheEntry.hasMore = pageItems.length >= fetchPageSize;
 
-            if (pageItems.length < this._fetchPageSize) break;
-            offset += this._fetchPageSize;
+            await this._enrichLoadedSubmissions(freshItems);
+            return freshItems;
+        } finally {
+            cacheEntry.loading = false;
         }
-
-        if (category === 'images') {
-            return combined.filter((submission) => UI.isStrictImageSubmission(submission));
-        }
-
-        if (category === 'songs') {
-            return combined.filter((submission) => UI.isAudioSubmission(submission));
-        }
-
-        return combined;
     },
 
     _readSavedState() {
@@ -332,16 +714,20 @@ export const ExplorePage = {
     },
 
     async init() {
+        this._cleanupMobileInfiniteScroll();
         this._currentCategory = 'all';
         this._currentGroup = null;
         this._currentTheme = null;
         this._isLoading = false;
         this._allFetchedData = [];
-        this._feedCacheByCategory = new Map();
+        if (!(this._feedCacheByCategory instanceof Map)) this._feedCacheByCategory = new Map();
+        if (!(this._statsCache instanceof Map)) this._statsCache = new Map();
+        if (!(this._interactionCacheByUser instanceof Map)) this._interactionCacheByUser = new Map();
         this._loadRequestId = 0;
         this._displayCount = this._getBaseDisplayCount();
         this._topCreators = [];
         this._isSearchFocused = false;
+        this._mobileInfiniteFallback = false;
         const shouldRestoreState = this._consumeRestoreFlag();
         const savedState = shouldRestoreState ? this._readSavedState() : null;
 
@@ -673,15 +1059,31 @@ export const ExplorePage = {
             }
         };
 
+        let loadAllSections = null;
+        let lastMobileAllWorkFeedMode = this._isMobileAllWorkFeed();
+
         syncResponsiveLayout();
 
         if (this._mobileLayoutHandler) {
             window.removeEventListener('resize', this._mobileLayoutHandler);
         }
-        this._mobileLayoutHandler = UI.debounce(syncResponsiveLayout, 80);
+        this._mobileLayoutHandler = UI.debounce(() => {
+            const wasMobileAllWorkFeed = lastMobileAllWorkFeedMode;
+            syncResponsiveLayout();
+            const isMobileAllWorkFeed = this._isMobileAllWorkFeed();
+            lastMobileAllWorkFeedMode = isMobileAllWorkFeed;
+            if (wasMobileAllWorkFeed !== isMobileAllWorkFeed && loadAllSections) {
+                loadAllSections();
+            }
+        }, 80);
         window.addEventListener('resize', this._mobileLayoutHandler);
 
-        const loadAllSections = async (isLoadMore = false) => {
+        loadAllSections = async (isLoadMore = false) => {
+            if (this._isLoading) return;
+            if (!isLoadMore) {
+                this._mobileInfiniteFallback = false;
+                this._cleanupMobileInfiniteScroll({ preserveHandler: true });
+            }
             const requestId = ++this._loadRequestId;
             this._isLoading = true;
 
@@ -692,109 +1094,103 @@ export const ExplorePage = {
             const searchInput = getSearchInput();
 
             const category = this._currentCategory === 'all' ? null : this._currentCategory;
-            const cacheKey = this._getFeedCacheKey(category);
             const isImages = this._currentCategory === 'images';
+            const isMobileAllWorkFeed = this._isMobileAllWorkFeed();
             const search = searchInput?.value?.toLowerCase()?.trim() || '';
+            const cacheKey = this._getFeedCacheKey(category, search);
+            const cacheEntry = this._getFeedCacheEntry(cacheKey);
 
             this._configureImageFeedSections(isImages);
 
             // Show skeletons only on initial load or filter change
             if (!isLoadMore) {
-                [gridTrending, gridNew, gridTop].forEach((gridEl) => {
+                const skeletonGrids = (isImages || isMobileAllWorkFeed)
+                    ? [gridNew]
+                    : [gridTrending, gridNew, gridTop];
+
+                skeletonGrids.forEach((gridEl) => {
                     if (gridEl) gridEl.innerHTML = this.renderSkeletons(this._batchSectionSize);
                 });
+                if (isImages || isMobileAllWorkFeed) {
+                    if (gridTrending) gridTrending.innerHTML = '';
+                    if (gridTop) gridTop.innerHTML = '';
+                }
                 if (creatorsRow) creatorsRow.innerHTML = this.renderCreatorSkeletons(3);
             }
 
             try {
-                let baseData = [];
-                if (!isLoadMore || !this._feedCacheByCategory.has(cacheKey)) {
-                    baseData = await this._fetchAllSubmissionsForExplore(category);
+                if (!cacheEntry.items.length) {
+                    await this._fetchNextSubmissionsPage(cacheEntry, category);
                     if (requestId !== this._loadRequestId) return;
-
-                    baseData = Array.isArray(baseData) ? [...baseData] : [];
-                    if (baseData.length > 0) {
-                        const ids = baseData.map((submission) => submission.id);
-                        const statsMap = await API.getStatsForSubmissions(ids);
-                        const interactionMap = App.user?.id
-                            ? await API.getUserSubmissionInteractions(ids, App.user.id)
-                            : {};
-
-                        if (requestId !== this._loadRequestId) return;
-
-                        baseData.forEach((submission) => {
-                            const initStat = statsMap[submission.id] || { avg_rating: 0, like_count: 0, view_count: 0 };
-                            const interaction = interactionMap[submission.id] || {};
-                            initStat.user_has_liked = !!interaction.liked;
-                            initStat.user_has_bookmarked = !!interaction.bookmarked;
-                            submission.submission_stats = [initStat];
-                            submission._feedIsLiked = !!interaction.liked;
-                            submission._feedIsBookmarked = !!interaction.bookmarked;
-                            submission._audioFeedIsLiked = !!interaction.liked;
-                        });
-
-                        await UI.hydrateInteractiveWebCardState(baseData);
-                        if (requestId !== this._loadRequestId) return;
-                    }
-
-                    this._feedCacheByCategory.set(cacheKey, baseData);
-                } else {
-                    baseData = [...(this._feedCacheByCategory.get(cacheKey) || [])];
-                    if (baseData.length > 0) {
-                        await UI.hydrateInteractiveWebCardState(baseData);
+                } else if (isLoadMore && cacheEntry.hasMore) {
+            const currentlyFilteredItems = this._filterLoadedSubmissions(cacheEntry.items, search);
+            const currentlyMatchedItems = this._getDefaultExploreBaseItems(currentlyFilteredItems, cacheEntry.items, search);
+                    if (currentlyMatchedItems.length < this._displayCount) {
+                        await this._fetchNextSubmissionsPage(cacheEntry, category);
                         if (requestId !== this._loadRequestId) return;
                     }
                 }
 
-                let filteredData = [...baseData];
-
-                if (this._currentTheme) {
-                    filteredData = filteredData.filter((submission) =>
-                        Array.isArray(submission.themes) && submission.themes.includes(this._currentTheme)
-                    );
-                }
-
-                if (this._currentGroup) {
-                    filteredData = filteredData.filter((submission) =>
-                        UI.getContentTypeOption(submission.category, submission.content_type)?.group === this._currentGroup
-                    );
-                }
-
-                // Apply search filter
-                if (search) {
-                    filteredData = filteredData.filter((submission) =>
-                        submission.title?.toLowerCase().includes(search) ||
-                        submission.profiles?.display_name?.toLowerCase().includes(search)
-                    );
-                }
+                const filteredData = this._filterLoadedSubmissions(cacheEntry.items, search);
+                const baseData = this._getDefaultExploreBaseItems(filteredData, cacheEntry.items, search);
                 if (requestId !== this._loadRequestId) return;
-                this._allFetchedData = filteredData;
+                this._allFetchedData = baseData;
 
                 if (!isImages && !this._topCreators.length) {
                     const { data: creators } = await API.getTopCreators(10);
                     this._topCreators = creators || [];
                 }
 
+                const liveGridTrending = document.querySelector('#grid-trending');
+                const liveGridNew = document.querySelector('#grid-new');
+                const liveGridTop = document.querySelector('#grid-top');
+                const liveCreatorsRow = document.querySelector('#trending-creators-row');
+
                 if (isImages) {
-                    const imageFeedState = this._buildImageFeedState(filteredData, this._displayCount);
-                    this._renderGrid(gridNew, imageFeedState.items, null, true);
-                    if (gridTrending) gridTrending.innerHTML = '';
-                    if (gridTop) gridTop.innerHTML = '';
-                    this._updateLoadMoreButton(imageFeedState);
+                    const imageFeedState = this._buildImageFeedState(baseData, this._displayCount);
+                    this._renderGrid(liveGridNew, imageFeedState.items, null, true, this._getSingleFeedEmptyMessage(search));
+                    if (liveGridTrending) liveGridTrending.innerHTML = '';
+                    if (liveGridTop) liveGridTop.innerHTML = '';
+                    this._updateLoadMoreButton(imageFeedState, cacheEntry);
+                } else if (isMobileAllWorkFeed) {
+                    const mobileFeedState = this._buildImageFeedState(baseData, this._displayCount);
+                    this._renderCreators(liveCreatorsRow, this._topCreators);
+                    this._renderGrid(liveGridNew, mobileFeedState.items, null, false, this._getSingleFeedEmptyMessage(search));
+                    if (liveGridTrending) liveGridTrending.innerHTML = '';
+                    if (liveGridTop) liveGridTop.innerHTML = '';
+                    this._updateLoadMoreButton(mobileFeedState, cacheEntry);
                 } else {
-                    const feedState = this._buildFeedState(filteredData, this._displayCount);
-                    this._renderCreators(creatorsRow, this._topCreators);
-                    this._renderGrid(gridTrending, feedState.sections.trending, { text: 'TRENDING', className: 'badge-trending' }, false);
-                    this._renderGrid(gridNew, feedState.sections.new, { text: 'NEW', className: 'badge-new' }, false);
-                    this._renderGrid(gridTop, feedState.sections.top, { text: 'TOP RATED', className: 'badge-top' }, false);
-                    this._updateLoadMoreButton(feedState);
+                    const feedState = this._buildFeedState(baseData, this._displayCount);
+                    this._renderCreators(liveCreatorsRow, this._topCreators);
+                    this._renderGrid(liveGridTrending, feedState.sections.trending, { text: 'TRENDING', className: 'badge-trending' }, false, 'No trending works yet.');
+                    this._renderGrid(liveGridNew, feedState.sections.new, { text: 'NEW', className: 'badge-new' }, false, 'No new works yet.');
+                    this._renderGrid(liveGridTop, feedState.sections.top, { text: 'TOP RATED', className: 'badge-top' }, false, 'No rated works yet.');
+                    this._updateLoadMoreButton(feedState, cacheEntry);
                 }
 
+                this._mobileInfiniteLoadHandler = async () => {
+                    if (this._isLoading) return;
+                    this._displayCount += this._loadMoreStep;
+                    this._persistState(getSearchInput()?.value || '');
+                    await loadAllSections(true);
+                };
+                this._setupMobileInfiniteScroll(cacheEntry);
                 this._persistState(searchInput?.value || '', window.scrollY);
 
             } catch (err) {
                 if (requestId !== this._loadRequestId) return;
-                console.warn('[Explore] Load error:', err);
+                if (this._isMobileExplorePagination() && isLoadMore) {
+                    this._mobileInfiniteFallback = true;
+                    this._updateLoadMoreButton(null, cacheEntry);
+                }
+                const errorMessage = err?.message || String(err);
+                console.error(`[Explore] loadAllSections failed while querying submissions: ${errorMessage}`, {
+                    functionName: 'loadAllSections',
+                    table: 'submissions',
+                    code: err?.code || null,
+                    details: err?.details || null,
+                    hint: err?.hint || null
+                });
                 [gridTrending, gridNew, gridTop].forEach((gridEl) => {
                     if (!gridEl) return;
                     gridEl.innerHTML = `
@@ -1034,11 +1430,15 @@ export const ExplorePage = {
         }
     },
 
-    _renderGrid(gridEl, items, badgeObj, isImages) {
+    cleanup() {
+        this._cleanupMobileInfiniteScroll();
+    },
+
+    _renderGrid(gridEl, items, badgeObj, isImages, emptyMessage = 'No matching works found.') {
         if (!gridEl) return;
 
         if (items.length === 0) {
-            gridEl.innerHTML = `<p class="text-muted text-center" style="grid-column: 1/-1; padding: 40px;">No matching works found.</p>`;
+            gridEl.innerHTML = `<p class="text-muted text-center" style="grid-column: 1/-1; padding: 40px;">${emptyMessage}</p>`;
             return;
         }
 
@@ -1047,7 +1447,7 @@ export const ExplorePage = {
             const imageItems = items.filter((item) => UI.isStrictImageSubmission(item));
             if (imageItems.length === 0) {
                 gridEl.classList.remove('masonry-grid', 'image-feed-grid');
-                gridEl.innerHTML = `<p class="text-muted text-center" style="grid-column: 1/-1; padding: 40px;">No matching works found.</p>`;
+                gridEl.innerHTML = `<p class="text-muted text-center" style="grid-column: 1/-1; padding: 40px;">${emptyMessage}</p>`;
                 return;
             }
             gridEl.innerHTML = imageItems.map((item) => UI.renderMasonryCard(item)).join('');
@@ -1102,6 +1502,14 @@ export const ExplorePage = {
         });
     },
 
+    updateAudioFeedBookmarkState(submissionId, isBookmarked) {
+        document.querySelectorAll(`.audio-feed-card[data-id="${submissionId}"]`).forEach((card) => {
+            const bookmarkButton = card.querySelector('[data-audio-action="bookmark"]');
+            bookmarkButton?.classList.toggle('is-active', !!isBookmarked);
+            bookmarkButton?.setAttribute('aria-pressed', String(!!isBookmarked));
+        });
+    },
+
     updateAudioFeedRatingState(submissionId, avgRating, activeRating = null) {
         const resolvedAverage = UI.getAverageRatingValue(avgRating);
         const roundedAverage = Math.round(resolvedAverage);
@@ -1109,7 +1517,7 @@ export const ExplorePage = {
 
         document.querySelectorAll(`.audio-feed-card[data-id="${submissionId}"]`).forEach((card) => {
             const ratingValue = card.querySelector('.audio-feed-rating-value');
-            const stars = card.querySelectorAll('[data-audio-action="rate"]');
+            const stars = card.querySelectorAll('[data-audio-action="select-rate"]');
 
             if (ratingValue) {
                 ratingValue.textContent = UI.formatAverageRating(resolvedAverage);
@@ -1118,6 +1526,7 @@ export const ExplorePage = {
             stars.forEach((star) => {
                 const value = Number(star.dataset.rating || 0);
                 star.classList.toggle('is-active', value <= selectedRating);
+                star.classList.toggle('is-selected', value <= selectedRating);
             });
         });
     },
@@ -1139,14 +1548,30 @@ export const ExplorePage = {
         const submissionsById = new Map((items || []).map((item) => [String(item.id), item]));
         const audioCards = gridEl.querySelectorAll('.audio-feed-card');
         if (!audioCards.length) return;
+        if (gridEl.dataset.audioMenuDocumentBound !== 'true') {
+            document.addEventListener('click', (event) => {
+                gridEl.querySelectorAll('.audio-feed-card.is-audio-menu-open').forEach((openCard) => {
+                    if (openCard.contains(event.target)) return;
+                    openCard.classList.remove('is-audio-menu-open');
+                    openCard.querySelector('[data-audio-action="menu"]')?.setAttribute('aria-expanded', 'false');
+                });
+            });
+            gridEl.dataset.audioMenuDocumentBound = 'true';
+        }
 
         audioCards.forEach((card) => {
+            if (card.dataset.audioFeedBound === 'true') return;
             const submission = submissionsById.get(String(card.dataset.id || ''));
             const audio = card.querySelector('.audio-feed-native');
             const playButton = card.querySelector('[data-audio-action="toggle"]');
             const loopButton = card.querySelector('[data-audio-action="loop"]');
             const likeButton = card.querySelector('[data-audio-action="like"]');
-            const rateButtons = card.querySelectorAll('[data-audio-action="rate"]');
+            const bookmarkButton = card.querySelector('[data-audio-action="bookmark"]');
+            const menuButton = card.querySelector('[data-audio-action="menu"]');
+            const openRateButton = card.querySelector('[data-audio-action="open-rate"]');
+            const closeRateButton = card.querySelector('[data-audio-action="close-rate"]');
+            const submitRateButton = card.querySelector('[data-audio-action="submit-rate"]');
+            const rateButtons = card.querySelectorAll('[data-audio-action="select-rate"]');
             const progressTrack = card.querySelector('[data-audio-action="seek"]');
             const progressFill = card.querySelector('.audio-feed-progress-fill');
             const shareLink = card.querySelector('.audio-feed-share');
@@ -1346,29 +1771,99 @@ export const ExplorePage = {
                 }
             });
 
+            bookmarkButton?.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const user = App.user;
+                if (!user) return UI.showToast('Please login to save', 'error');
+
+                const { action, error } = await API.toggleBookmark(submission.id, user.id);
+                if (error) {
+                    UI.showToast(error.message || 'Could not update save.', 'error');
+                    return;
+                }
+
+                const isBookmarked = action === 'saved';
+                submission._audioFeedIsBookmarked = isBookmarked;
+                this.updateAudioFeedBookmarkState(submission.id, isBookmarked);
+                UI.showToast(isBookmarked ? 'Saved to collection!' : 'Removed from collection');
+            });
+
+            menuButton?.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const isOpen = card.classList.toggle('is-audio-menu-open');
+                menuButton.setAttribute('aria-expanded', String(isOpen));
+            });
+
+            let selectedAudioRating = Number(submission._audioFeedUserRating || Math.round(stats.avg_rating) || 0);
+
+            const syncSelectedAudioRating = () => {
+                rateButtons.forEach((star) => {
+                    const value = Number(star.dataset.rating || 0);
+                    star.classList.toggle('is-selected', value <= selectedAudioRating);
+                });
+            };
+
+            openRateButton?.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                card.classList.remove('is-audio-menu-open');
+                menuButton?.setAttribute('aria-expanded', 'false');
+                card.classList.add('is-audio-rating-open');
+                syncSelectedAudioRating();
+            });
+
+            closeRateButton?.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                card.classList.remove('is-audio-rating-open');
+            });
+
             rateButtons.forEach((button) => {
-                button.addEventListener('click', async (event) => {
+                button.addEventListener('click', (event) => {
                     event.preventDefault();
                     event.stopPropagation();
+                    selectedAudioRating = Number(button.dataset.rating || 0);
+                    syncSelectedAudioRating();
+                });
+            });
 
-                    const user = App.user;
-                    if (!user) return UI.showToast('Please login to rate', 'error');
+            submitRateButton?.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
 
-                    const rating = Number(button.dataset.rating || 0);
-                    const { data, error } = await API.rateSubmission(submission.id, user.id, rating);
-                    if (error || !data) {
-                        UI.showToast(error?.message || 'Could not save rating.', 'error');
-                        return;
-                    }
+                const user = App.user;
+                if (!user) return UI.showToast('Please login to rate', 'error');
+                if (!selectedAudioRating) return UI.showToast('Choose a rating first', 'error');
 
-                    stats.avg_rating = data.avgRating;
-                    submission._audioFeedUserRating = data.userRating;
-                    this.updateAudioFeedRatingState(submission.id, data.avgRating, data.userRating);
-                    UI.showToast('Rated!', 'success');
-                    UI.triggerBadgeEvaluation({
-                        userId: user.id,
-                        reason: 'rating-success'
-                    });
+                const { data, error } = await API.rateSubmission(submission.id, user.id, selectedAudioRating);
+                if (error || !data) {
+                    UI.showToast(error?.message || 'Could not save rating.', 'error');
+                    return;
+                }
+
+                stats.avg_rating = data.avgRating;
+                submission._audioFeedUserRating = data.userRating;
+                selectedAudioRating = Number(data.userRating || selectedAudioRating);
+                this.updateAudioFeedRatingState(submission.id, data.avgRating, data.userRating);
+                UI.showToast('Thank you for rating!', 'success');
+                const dialog = card.querySelector('.audio-feed-rating-dialog');
+                if (dialog) {
+                    dialog.classList.add('is-thank-you');
+                    dialog.innerHTML = `
+                        <div class="detail-rating-success-icon" aria-hidden="true">✓</div>
+                        <h4>Thank you for rating!</h4>
+                        <p class="detail-rating-prompt-subtitle">Your feedback has been saved.</p>
+                    `;
+                }
+                window.setTimeout(() => {
+                    card.classList.remove('is-audio-rating-open');
+                }, 1300);
+                UI.triggerBadgeEvaluation({
+                    userId: user.id,
+                    reason: 'rating-success'
                 });
             });
 
@@ -1402,28 +1897,45 @@ export const ExplorePage = {
             });
 
             this.updateAudioFeedLikeState(submission.id, !!submission._audioFeedIsLiked, stats.like_count || 0);
+            this.updateAudioFeedBookmarkState(submission.id, !!submission._audioFeedIsBookmarked);
             this.updateAudioFeedRatingState(submission.id, stats.avg_rating || 0, submission._audioFeedUserRating);
             syncState();
+            card.dataset.audioFeedBound = 'true';
         });
     },
 
-    _updateLoadMoreButton(feedState = null) {
+    _updateLoadMoreButton(feedState = null, cacheEntry = null) {
         const btn = document.querySelector('#explore-load-more');
         if (!btn) return;
+        const container = btn.closest('.explore-load-more-container');
 
+        const useMobileInfiniteScroll = this._isMobileExplorePagination() && !this._mobileInfiniteFallback;
+        if (useMobileInfiniteScroll) {
+            if (container) container.style.display = 'none';
+            btn.style.display = 'none';
+            btn.disabled = true;
+            return;
+        }
+
+        if (container) container.style.display = '';
+
+        const useSingleNewestFeed = this._currentCategory === 'images' || this._isMobileAllWorkFeed();
         const resolvedFeedState = feedState || (
-            this._currentCategory === 'images'
+            useSingleNewestFeed
                 ? this._buildImageFeedState(this._allFetchedData, this._displayCount)
                 : this._buildFeedState(this._allFetchedData, this._displayCount)
         );
         const totalAvailable = Number(resolvedFeedState.totalAvailableUnique) || 0;
         const totalRendered = Number(resolvedFeedState.totalRendered) || 0;
+        const hasMoreRemote = !!cacheEntry?.hasMore;
 
-        if (totalAvailable > totalRendered) {
+        if (hasMoreRemote || totalAvailable > totalRendered) {
             btn.style.display = 'inline-flex';
             btn.disabled = false;
-            const remaining = totalAvailable - totalRendered;
-            btn.querySelector('.load-more-text').textContent = `Load More (${remaining} more)`;
+            const remaining = Math.max(0, totalAvailable - totalRendered);
+            btn.querySelector('.load-more-text').textContent = remaining > 0
+                ? `Load More (${remaining} more)`
+                : 'Load More';
         } else {
             btn.style.display = 'none';
             btn.disabled = true;
@@ -1454,7 +1966,7 @@ export const ExplorePage = {
                     <div class="creator-rank-badge">${index === 0 ? 'Trending' : 'Creator'}</div>
                     <div class="creator-avatar-shell">
                         ${creator.avatar
-                            ? `<img src="${creator.avatar}" alt="${creator.name}" class="creator-avatar-img">`
+                            ? `<img src="${creator.avatar}" alt="${creator.name}" class="creator-avatar-img" loading="lazy" decoding="async">`
                             : `<span class="creator-avatar-fallback">${creator.name.charAt(0).toUpperCase()}</span>`}
                     </div>
                 </div>

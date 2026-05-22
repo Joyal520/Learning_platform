@@ -2,6 +2,16 @@
 import { supabase } from './supabase.js';
 import { buildAppUrl } from './path-utils.js';
 import { ProjectUpload } from './project-upload.js';
+import {
+    sanitizeProjectDescription,
+    sanitizeProjectMetadata,
+    sanitizeProjectPreviewImage,
+    sanitizeProjectTitle,
+    validateProjectUrl
+} from './url-submission.js';
+
+const DEBUG_LOGS = false;
+const debugLog = (...args) => { if (DEBUG_LOGS) console.log(...args); };
 
 function withTimeout(promise, ms, label) {
     return Promise.race([
@@ -35,7 +45,7 @@ function resolveApiUrl(path) {
     }
 
     const resolvedApiUrl = buildAppUrl(path);
-    console.log('[API] Resolved API URL:', { path, resolvedApiUrl });
+    debugLog('[API] Resolved API URL:', { path, resolvedApiUrl });
     return resolvedApiUrl;
 }
 
@@ -94,7 +104,7 @@ function shouldLogSubmissionPayloadDebug() {
 
 function logSubmissionPayloadKeys(label, payload, context = {}) {
     if (!shouldLogSubmissionPayloadDebug()) return;
-    console.log(`[API][DEV] ${label} payload keys:`, {
+    debugLog(`[API][DEV] ${label} payload keys:`, {
         keys: Object.keys(payload || {}).sort(),
         context
     });
@@ -116,9 +126,84 @@ function isPresentationLikeSubmission(payload = {}, existingSubmission = null) {
     });
 }
 
-function sanitizeSubmissionPayload(payload = {}, options = {}) {
-    const sanitized = { ...payload };
+function isUrlLikeSubmission(payload = {}, existingSubmission = null) {
+    const sources = [payload, existingSubmission].filter(Boolean);
+    return sources.some((source) => {
+        const submissionType = String(source.type || source.submission_type || '').trim().toLowerCase();
+        const contentType = String(source.content_type || '').trim().toLowerCase();
+        const contentMode = String(source.content_mode || '').trim().toLowerCase();
+        const fileType = String(source.file_type || source.mime_type || '').trim().toLowerCase();
+
+        return submissionType === 'url'
+            || contentType === 'url'
+            || contentMode === 'url'
+            || fileType === 'text/uri-list';
+    });
+}
+
+function normalizeUrlSubmissionPayload(payload = {}, options = {}) {
     const { existingSubmission = null } = options;
+    if (!isUrlLikeSubmission(payload, existingSubmission)) {
+        return { ...payload };
+    }
+
+    const nextPayload = { ...payload };
+    const existingPreviewImage = sanitizeProjectPreviewImage(
+        existingSubmission?.image_url || existingSubmission?.thumbnail_url || ''
+    );
+    const urlValidation = validateProjectUrl(
+        nextPayload.url || nextPayload.external_url || nextPayload.file_url || existingSubmission?.file_url || ''
+    );
+
+    if (!urlValidation.valid) {
+        throw new Error(urlValidation.error || 'Invalid URL');
+    }
+
+    const metadata = sanitizeProjectMetadata({
+        title: nextPayload.title || existingSubmission?.title || '',
+        description: nextPayload.description || existingSubmission?.description || '',
+        previewImage: nextPayload.previewImage
+            || nextPayload.preview_image
+            || nextPayload.image_url
+            || nextPayload.thumbnail_url
+            || existingPreviewImage
+    });
+
+    nextPayload.content_type = 'url';
+    nextPayload.file_type = 'text/uri-list';
+    nextPayload.mime_type = 'text/uri-list';
+    nextPayload.file_url = urlValidation.normalizedUrl;
+    nextPayload.file_path = null;
+    nextPayload.file_size = 0;
+    nextPayload.storage_provider = null;
+    nextPayload.content_text = null;
+
+    if (metadata.title) {
+        nextPayload.title = sanitizeProjectTitle(metadata.title);
+    }
+
+    nextPayload.description = sanitizeProjectDescription(metadata.description);
+
+    if (metadata.previewImage) {
+        nextPayload.image_url = metadata.previewImage;
+        nextPayload.thumbnail_url = metadata.previewImage;
+        nextPayload.thumbnail_path = null;
+    }
+
+    delete nextPayload.type;
+    delete nextPayload.url;
+    delete nextPayload.external_url;
+    delete nextPayload.previewImage;
+    delete nextPayload.preview_image;
+    delete nextPayload.submission_type;
+    delete nextPayload.content_mode;
+
+    return nextPayload;
+}
+
+function sanitizeSubmissionPayload(payload = {}, options = {}) {
+    const { existingSubmission = null } = options;
+    const sanitized = normalizeUrlSubmissionPayload(payload, { existingSubmission });
     const isPresentation = isPresentationLikeSubmission(sanitized, existingSubmission);
 
     if (!isPresentation) {
@@ -126,6 +211,68 @@ function sanitizeSubmissionPayload(payload = {}, options = {}) {
     }
 
     return sanitized;
+}
+
+const OPTIONAL_SUBMISSION_METADATA_COLUMNS = new Set([
+    'owner_id',
+    'owner_role',
+    'resource_purpose',
+    'resource_type',
+    'visibility',
+    'upload_context',
+    'source',
+    'classroom_id',
+    'teacher_id',
+    'updated_at'
+]);
+
+function getMissingSubmissionColumn(error) {
+    const message = String(error?.message || error?.details || '').trim();
+    const patterns = [
+        /Could not find the '([^']+)' column/i,
+        /column submissions\.([a-zA-Z0-9_]+) does not exist/i,
+        /column "([^"]+)" of relation "submissions" does not exist/i
+    ];
+
+    for (const pattern of patterns) {
+        const match = message.match(pattern);
+        if (match?.[1]) return match[1];
+    }
+
+    return null;
+}
+
+async function insertSubmissionWithMetadataRetry(payload, selectColumns = 'id') {
+    const nextPayload = { ...payload };
+    const removedColumns = [];
+
+    for (let attempt = 0; attempt < OPTIONAL_SUBMISSION_METADATA_COLUMNS.size + 1; attempt += 1) {
+        const result = await withTimeout(
+            supabase.from('submissions').insert([nextPayload]).select(selectColumns).single(),
+            120000,
+            'Database INSERT'
+        );
+
+        if (!result.error) {
+            if (removedColumns.length) {
+                console.warn('[API] Uploaded without unsupported optional submission metadata columns:', removedColumns);
+            }
+            return result;
+        }
+
+        const missingColumn = getMissingSubmissionColumn(result.error);
+        if (!missingColumn || !OPTIONAL_SUBMISSION_METADATA_COLUMNS.has(missingColumn) || !(missingColumn in nextPayload)) {
+            return result;
+        }
+
+        removedColumns.push(missingColumn);
+        delete nextPayload[missingColumn];
+    }
+
+    return {
+        data: null,
+        error: new Error('Could not insert submission after checking optional metadata columns.')
+    };
 }
 
 async function validateUploadedProject({ objectKey, filename, contentType }) {
@@ -155,11 +302,21 @@ async function processWebsiteProject({ submissionId, objectKey }) {
     });
 }
 
+async function fetchProjectUrlMetadata(url) {
+    return callServerApi('/api/fetch-url-metadata', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ url })
+    });
+}
+
 async function uploadAssetToR2({ submissionId, assetType, file, filename = file?.name, contentType = file?.type }) {
     if (!file) return null;
     const resolvedContentType = resolveUploadContentType(filename, contentType);
 
-    console.log('[API] R2 upload requested:', {
+    debugLog('[API] R2 upload requested:', {
         submissionId,
         assetType,
         originalFilename: filename,
@@ -182,7 +339,7 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
     });
 
     if (assetType === 'project') {
-        console.log('[API] Project signed upload ready:', {
+        debugLog('[API] Project signed upload ready:', {
             originalFilename: filename,
             objectKey: signedUpload.objectKey,
             publicUrl: signedUpload.publicUrl
@@ -196,7 +353,7 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
     });
 
     if (assetType === 'project') {
-        console.log('[API] Project PUT completed:', {
+        debugLog('[API] Project PUT completed:', {
             objectKey: signedUpload.objectKey,
             status: uploadResponse.status,
             ok: uploadResponse.ok
@@ -217,7 +374,7 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
         })
     });
 
-    console.log('[API] R2 upload result:', {
+    debugLog('[API] R2 upload result:', {
         assetType,
         destinationStorageProvider: signedUpload.storageProvider,
         destinationObjectKey: signedUpload.objectKey,
@@ -232,7 +389,7 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
     }
 
     if (assetType === 'project') {
-        console.log('[API] Project upload verified in R2:', {
+        debugLog('[API] Project upload verified in R2:', {
             objectKey: signedUpload.objectKey,
             exists: verification.exists,
             listed: verification.listed
@@ -248,6 +405,39 @@ function createUploadPreflightId() {
     }
 
     return `preflight-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createAssetVersionToken() {
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(16).slice(2, 10);
+    return `${timestamp}-${randomSuffix}`;
+}
+
+function buildVersionedUploadSubmissionId(submissionId, versionToken) {
+    return `${submissionId}-${versionToken}`;
+}
+
+function appendVersionQuery(url, versionToken) {
+    if (!url || !versionToken) return url || null;
+
+    try {
+        const parsedUrl = new URL(url, globalThis.location?.origin || 'http://localhost');
+        parsedUrl.searchParams.set('v', versionToken);
+        return parsedUrl.toString();
+    } catch (_) {
+        return `${url}${String(url).includes('?') ? '&' : '?'}v=${encodeURIComponent(versionToken)}`;
+    }
+}
+
+function extractObjectKeyFromPublicUrl(url) {
+    if (!url) return null;
+
+    try {
+        const parsedUrl = new URL(url, globalThis.location?.origin || 'http://localhost');
+        return decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, '')) || null;
+    } catch (_) {
+        return null;
+    }
 }
 
 async function preflightR2Upload({ assetType, file, filename = file?.name, contentType = file?.type }) {
@@ -292,6 +482,10 @@ async function deleteR2Assets(keysOrUrls, submissionId) {
 }
 
 export const API = {
+    async fetchProjectUrlMetadata(url) {
+        return fetchProjectUrlMetadata(url);
+    },
+
     async promotePendingImageSubmission(submissionId) {
         const { data: sub, error: fetchError } = await supabase
             .from('submissions')
@@ -551,7 +745,7 @@ export const API = {
     },
 
     async uploadSubmission(submissionData, file = null, thumbnailBlob = null, displayBlob = null) {
-        console.log('[API] === UPLOAD START ===');
+        debugLog('[API] === UPLOAD START ===');
         let createdSubmissionId = null;
         const uploadedKeys = [];
         try {
@@ -559,7 +753,7 @@ export const API = {
             if (!session) {
                 console.warn('[API] No active session found. Attempting anyway...');
             } else {
-                console.log('[API] Session verified for:', session.user.email);
+                debugLog('[API] Session verified for:', session.user.email);
             }
 
             const sanitizedSubmissionData = sanitizeSubmissionPayload(submissionData);
@@ -569,7 +763,7 @@ export const API = {
             });
 
             const payloadStr = JSON.stringify(sanitizedSubmissionData);
-            console.log(`[API] Payload size: ${(payloadStr.length / 1024).toFixed(2)} KB`);
+            debugLog(`[API] Payload size: ${(payloadStr.length / 1024).toFixed(2)} KB`);
 
             if (thumbnailBlob) {
                 await preflightR2Upload({
@@ -596,22 +790,18 @@ export const API = {
                 });
             }
 
-            console.log('[API] Sending insert request...');
-            const { data: sub, error: insertError } = await withTimeout(
-                supabase.from('submissions').insert([sanitizedSubmissionData]).select('id').single(),
-                120000,
-                'Database INSERT'
-            );
+            debugLog('[API] Sending insert request...');
+            const { data: sub, error: insertError } = await insertSubmissionWithMetadataRetry(sanitizedSubmissionData, 'id');
 
             if (insertError) throw insertError;
-            console.log('[API] Insert successful, ID:', sub.id);
+            debugLog('[API] Insert successful, ID:', sub.id);
             const subId = sub.id;
             createdSubmissionId = subId;
             const updateObject = {};
 
             if (thumbnailBlob) {
-                console.log('[API] Uploading thumbnail to R2...');
-                console.log('[API] Generated thumbnail asset:', {
+                debugLog('[API] Uploading thumbnail to R2...');
+                debugLog('[API] Generated thumbnail asset:', {
                     filename: `thumbnail-${subId}.webp`,
                     size: thumbnailBlob.size
                 });
@@ -629,8 +819,8 @@ export const API = {
             }
 
             if (displayBlob) {
-                console.log('[API] Uploading display image to R2...');
-                console.log('[API] Generated display asset:', {
+                debugLog('[API] Uploading display image to R2...');
+                debugLog('[API] Generated display asset:', {
                     filename: `display-${subId}.webp`,
                     size: displayBlob.size
                 });
@@ -690,7 +880,7 @@ export const API = {
                 });
             }
 
-            console.log('[API] === UPLOAD COMPLETE ===');
+            debugLog('[API] === UPLOAD COMPLETE ===');
             return { data: sub, error: null };
         } catch (err) {
             console.error('[API] Upload failed:', err);
@@ -713,7 +903,8 @@ export const API = {
     },
 
     async updateSubmission(id, updateData, thumbnailBlob = null, displayBlob = null) {
-        console.log('[API] === UPDATE START ===', id);
+        debugLog('[API] === UPDATE START ===', id);
+        let uploadedThumbnailKey = null;
         try {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) console.warn('[API] No session found.');
@@ -723,7 +914,7 @@ export const API = {
 
             const { data: existingSubmission, error: existingSubmissionError } = await supabase
                 .from('submissions')
-                .select('id, category, content_type, file_type, mime_type')
+                .select('id, category, content_type, file_type, mime_type, file_url, image_url, thumbnail_path, thumbnail_url')
                 .eq('id', id)
                 .maybeSingle();
 
@@ -732,27 +923,30 @@ export const API = {
             }
 
             if (thumbnailBlob) {
-                console.log('[API] Uploading thumbnail to R2...');
-                console.log('[API] Generated thumbnail asset:', {
-                    filename: `thumbnail-${id}.webp`,
+                const thumbnailVersion = createAssetVersionToken();
+                const versionedUploadId = buildVersionedUploadSubmissionId(id, thumbnailVersion);
+                debugLog('[API] Uploading thumbnail to R2...');
+                debugLog('[API] Generated thumbnail asset:', {
+                    filename: `thumbnail-${id}-${thumbnailVersion}.webp`,
                     size: thumbnailBlob.size
                 });
                 const thumbUpload = await uploadAssetToR2({
-                    submissionId: id,
+                    submissionId: versionedUploadId,
                     assetType: 'thumbnail',
                     file: thumbnailBlob,
-                    filename: `thumbnail-${id}.webp`,
+                    filename: `thumbnail-${id}-${thumbnailVersion}.webp`,
                     contentType: thumbnailBlob.type || 'image/webp'
                 });
+                uploadedThumbnailKey = thumbUpload.objectKey;
                 nextUpdateData.thumbnail_path = thumbUpload.objectKey;
-                nextUpdateData.thumbnail_url = thumbUpload.publicUrl;
+                nextUpdateData.thumbnail_url = appendVersionQuery(thumbUpload.publicUrl, thumbnailVersion);
                 nextUpdateData.storage_provider = 'r2';
-                console.log('[API] Thumbnail stored:', thumbUpload.publicUrl);
+                debugLog('[API] Thumbnail stored:', nextUpdateData.thumbnail_url);
             }
 
             if (displayBlob) {
-                console.log('[API] Uploading display image to R2...');
-                console.log('[API] Generated display asset:', {
+                debugLog('[API] Uploading display image to R2...');
+                debugLog('[API] Generated display asset:', {
                     filename: `display-${id}.webp`,
                     size: displayBlob.size
                 });
@@ -765,7 +959,7 @@ export const API = {
                 });
                 nextUpdateData.image_url = displayUpload.publicUrl;
                 nextUpdateData.storage_provider = 'r2';
-                console.log('[API] Display image stored:', displayUpload.publicUrl);
+                debugLog('[API] Display image stored:', displayUpload.publicUrl);
             }
 
             const sanitizedUpdateData = sanitizeSubmissionPayload(nextUpdateData, {
@@ -778,28 +972,49 @@ export const API = {
                 existingFileType: existingSubmission?.file_type || null
             });
 
-            console.log('[API] Updating database record...');
+            debugLog('[API] Updating database record...');
             const { data, error } = await supabase
                 .from('submissions')
                 .update(sanitizedUpdateData)
                 .eq('id', id)
-                .select('id');
+                .select('id, thumbnail_path, thumbnail_url');
 
             if (error) {
                 console.error('[API] DB Update Error:', error);
                 throw error;
             }
 
-            console.log('[API] Update succeeded!');
+            if (uploadedThumbnailKey) {
+                const previousThumbnailPath = existingSubmission?.thumbnail_path || extractObjectKeyFromPublicUrl(existingSubmission?.thumbnail_url);
+                const nextThumbnailPath = sanitizedUpdateData.thumbnail_path || data?.[0]?.thumbnail_path || null;
+
+                if (previousThumbnailPath && nextThumbnailPath && previousThumbnailPath !== nextThumbnailPath) {
+                    try {
+                        await deleteR2Assets([previousThumbnailPath], id);
+                        debugLog('[API] Deleted replaced thumbnail asset:', previousThumbnailPath);
+                    } catch (cleanupError) {
+                        console.warn('[API] Failed to delete previous thumbnail asset:', cleanupError);
+                    }
+                }
+            }
+
+            debugLog('[API] Update succeeded!');
             return { data, error: null };
         } catch (err) {
             console.error('[API] Error in updateSubmission:', err);
+            if (uploadedThumbnailKey) {
+                try {
+                    await deleteR2Assets([uploadedThumbnailKey], id);
+                } catch (cleanupErr) {
+                    console.warn('[API] Failed to clean uploaded replacement thumbnail:', cleanupErr);
+                }
+            }
             return { error: err };
         }
     },
 
     async uploadImagePost(submissionData, imageBlob, thumbnailBlob = null) {
-        console.log('[API] === IMAGE POST UPLOAD START ===');
+        debugLog('[API] === IMAGE POST UPLOAD START ===');
         let createdSubmissionId = null;
         const uploadedKeys = [];
         try {
@@ -828,15 +1043,11 @@ export const API = {
                 imageType: imageBlob?.type || null
             });
 
-            console.log('[API] Inserting image post record...');
-            const { data: sub, error: insertError } = await withTimeout(
-                supabase.from('submissions').insert([sanitizedSubmissionData]).select('id').single(),
-                60000,
-                'Image Post INSERT'
-            );
+            debugLog('[API] Inserting image post record...');
+            const { data: sub, error: insertError } = await insertSubmissionWithMetadataRetry(sanitizedSubmissionData, 'id');
 
             if (insertError) throw insertError;
-            console.log('[API] Image post created, ID:', sub.id);
+            debugLog('[API] Image post created, ID:', sub.id);
 
             const subId = sub.id;
             createdSubmissionId = subId;
@@ -847,8 +1058,8 @@ export const API = {
             }
 
             const imageType = imageBlob.type || submissionData.mime_type || 'image/webp';
-            console.log('[API] Uploading full-size image to R2...');
-            console.log('[API] Full-size image asset:', {
+            debugLog('[API] Uploading full-size image to R2...');
+            debugLog('[API] Full-size image asset:', {
                 filename: imageBlob.name || `image-${subId}`,
                 size: imageBlob.size
             });
@@ -868,8 +1079,8 @@ export const API = {
             updateObject.storage_provider = 'r2';
 
             if (thumbnailBlob) {
-                console.log('[API] Uploading thumbnail to R2...');
-                console.log('[API] Generated thumbnail asset:', {
+                debugLog('[API] Uploading thumbnail to R2...');
+                debugLog('[API] Generated thumbnail asset:', {
                     filename: `thumbnail-${subId}.webp`,
                     size: thumbnailBlob.size
                 });
@@ -908,7 +1119,7 @@ export const API = {
                 }
             }
 
-            console.log('[API] === IMAGE POST UPLOAD COMPLETE ===');
+            debugLog('[API] === IMAGE POST UPLOAD COMPLETE ===');
             return { data: sub, error: null };
         } catch (err) {
             console.error('[API] Image post upload failed:', err);
@@ -947,7 +1158,7 @@ export const API = {
 
     async recordSubmissionView(submissionId, viewerId = null) {
         try {
-            console.log('[API] recordSubmissionView start:', {
+            debugLog('[API] recordSubmissionView start:', {
                 submissionId,
                 viewerId,
                 backendProjectUrl: supabase?.supabaseUrl || 'unknown'
@@ -962,7 +1173,7 @@ export const API = {
             if (error) {
                 console.warn('[API] recordSubmissionView failed:', error);
             } else {
-                console.log('[API] recordSubmissionView success:', { submissionId, viewerId });
+                debugLog('[API] recordSubmissionView success:', { submissionId, viewerId });
             }
             return { error };
         } catch (err) {
@@ -974,7 +1185,7 @@ export const API = {
     async rateSubmission(submissionId, userId, rating) {
         try {
             const parsedRating = Math.max(1, Math.min(5, Number(rating) || 0));
-            console.log('[API] rateSubmission start:', {
+            debugLog('[API] rateSubmission start:', {
                 submissionId,
                 userId,
                 rating: parsedRating,
@@ -1001,7 +1212,7 @@ export const API = {
             const ratingSum = (ratings || []).reduce((sum, item) => sum + Number(item.rating || 0), 0);
             const avgRating = ratingCount > 0 ? ratingSum / ratingCount : 0;
 
-            console.log('[API] rateSubmission refresh result:', {
+            debugLog('[API] rateSubmission refresh result:', {
                 submissionId,
                 avgRating,
                 ratingCount,
@@ -1024,12 +1235,31 @@ export const API = {
 
     async toggleLike(submissionId, userId) {
         try {
+            const { data } = await supabase
+                .from('likes')
+                .select('id')
+                .match({ submission_id: submissionId, user_id: userId })
+                .maybeSingle();
+
+            if (data) {
+                const { error: deleteError } = await supabase
+                    .from('likes')
+                    .delete()
+                    .match({ submission_id: submissionId, user_id: userId });
+                if (deleteError) throw deleteError;
+                return { action: 'unliked', error: null };
+            }
+
             const { error } = await supabase
                 .from('likes')
                 .insert({ submission_id: submissionId, user_id: userId });
 
             if (error && error.code === '23505') {
-                await supabase.from('likes').delete().match({ submission_id: submissionId, user_id: userId });
+                const { error: deleteError } = await supabase
+                    .from('likes')
+                    .delete()
+                    .match({ submission_id: submissionId, user_id: userId });
+                if (deleteError) throw deleteError;
                 return { action: 'unliked', error: null };
             }
 
@@ -1076,5 +1306,27 @@ export const API = {
     async getR2Diagnostics(refresh = true) {
         const query = refresh ? '?refresh=true' : '';
         return callServerApi(`/api/r2-diagnostics${query}`, { method: 'GET' });
+    },
+
+    async sendWorkApprovedNotifications(submissionId) {
+        if (!submissionId) {
+            return { sent: 0, failed: 0, skipped: true, error: 'Missing submission id.' };
+        }
+
+        try {
+            return await callServerApi('/api/fcm-send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    event: 'work-approved',
+                    submissionId
+                })
+            });
+        } catch (error) {
+            console.warn('[API] Notification send failed:', error);
+            return { sent: 0, failed: 0, skipped: true, error: error.message || 'Notification send failed.' };
+        }
     }
 };
