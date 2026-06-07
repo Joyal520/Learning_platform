@@ -17,7 +17,7 @@ export const ExplorePage = {
     _displayCount: 12,    // total cards rendered across sections
     _loadMoreStep: 12,    // cards appended per Load More click
     _batchSectionSize: 4,
-    _fetchPageSize: 36,
+    _fetchPageSize: 12,
     _topCreators: [],
     _isSearchFocused: false,
     _mobileInfiniteObserver: null,
@@ -33,7 +33,7 @@ export const ExplorePage = {
     },
 
     _getFetchPageSize() {
-        return this._isMobileExplorePagination() ? 12 : this._fetchPageSize;
+        return this._fetchPageSize;
     },
 
     _getBaseDisplayCount() {
@@ -290,10 +290,15 @@ export const ExplorePage = {
     _buildFeedState(items, totalCardsToRender) {
         const baseItems = this.uniqueByWorkId(items);
         const newCandidates = this._sortNewCandidates(baseItems);
-        const trendingCandidates = this._sortTrendingCandidates(baseItems)
-            .filter((item) => this._isTrendingEligible(item));
-        const topRatedCandidates = this._sortTopRatedCandidates(baseItems)
-            .filter((item) => this._getAverageRating(item) > 0);
+        const useNewestOrderedAllWorks = this._currentCategory === 'all'
+            && !this._currentGroup
+            && !this._currentTheme;
+        const trendingCandidates = useNewestOrderedAllWorks
+            ? newCandidates
+            : this._sortTrendingCandidates(baseItems).filter((item) => this._isTrendingEligible(item));
+        const topRatedCandidates = useNewestOrderedAllWorks
+            ? newCandidates
+            : this._sortTopRatedCandidates(baseItems).filter((item) => this._getAverageRating(item) > 0);
         const perSectionLimit = Math.max(
             this._batchSectionSize,
             Math.ceil((Number(totalCardsToRender) || this._getBaseDisplayCount()) / 3)
@@ -305,6 +310,23 @@ export const ExplorePage = {
             new: takeForSection(newCandidates),
             top: takeForSection(topRatedCandidates)
         };
+        const targetTotal = Math.max(0, Number(totalCardsToRender) || this._getBaseDisplayCount());
+        const fillNewestSection = () => {
+            let totalRendered = Object.values(sections).reduce((total, groupItems) => total + groupItems.length, 0);
+            if (totalRendered >= targetTotal) return;
+
+            for (const item of newCandidates) {
+                const submissionId = this._getSubmissionId(item);
+                if (!submissionId || usedInPreview.has(submissionId)) continue;
+
+                sections.new.push(item);
+                usedInPreview.add(submissionId);
+                totalRendered += 1;
+
+                if (totalRendered >= targetTotal) break;
+            }
+        };
+        fillNewestSection();
 
         return {
             sections,
@@ -611,6 +633,30 @@ export const ExplorePage = {
             return freshItems;
         } finally {
             cacheEntry.loading = false;
+        }
+    },
+
+    async _ensureLoadedForDisplayTarget(cacheEntry, category, search, { isImages = false, isMobileAllWorkFeed = false } = {}) {
+        if (!cacheEntry) return;
+
+        const needsMoreLoadedItems = () => {
+            const filteredItems = this._filterLoadedSubmissions(cacheEntry.items, search);
+            const matchedItems = this._getDefaultExploreBaseItems(filteredItems, cacheEntry.items, search);
+
+            if (isImages || isMobileAllWorkFeed) {
+                return this._buildImageFeedState(matchedItems, this._displayCount).totalRendered < this._displayCount;
+            }
+
+            return this._buildFeedState(matchedItems, this._displayCount).totalRendered < this._displayCount;
+        };
+
+        while (cacheEntry.hasMore && needsMoreLoadedItems()) {
+            const offsetBeforeFetch = cacheEntry.nextOffset;
+            await this._fetchNextSubmissionsPage(cacheEntry, category);
+
+            if (cacheEntry.nextOffset === offsetBeforeFetch) {
+                break;
+            }
         }
     },
 
@@ -1119,17 +1165,11 @@ export const ExplorePage = {
             }
 
             try {
-                if (!cacheEntry.items.length) {
-                    await this._fetchNextSubmissionsPage(cacheEntry, category);
-                    if (requestId !== this._loadRequestId) return;
-                } else if (isLoadMore && cacheEntry.hasMore) {
-            const currentlyFilteredItems = this._filterLoadedSubmissions(cacheEntry.items, search);
-            const currentlyMatchedItems = this._getDefaultExploreBaseItems(currentlyFilteredItems, cacheEntry.items, search);
-                    if (currentlyMatchedItems.length < this._displayCount) {
-                        await this._fetchNextSubmissionsPage(cacheEntry, category);
-                        if (requestId !== this._loadRequestId) return;
-                    }
-                }
+                await this._ensureLoadedForDisplayTarget(cacheEntry, category, search, {
+                    isImages,
+                    isMobileAllWorkFeed
+                });
+                if (requestId !== this._loadRequestId) return;
 
                 const filteredData = this._filterLoadedSubmissions(cacheEntry.items, search);
                 const baseData = this._getDefaultExploreBaseItems(filteredData, cacheEntry.items, search);

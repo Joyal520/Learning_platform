@@ -6,6 +6,7 @@ const ROOT_DIR = __dirname;
 const API_DIR = path.join(ROOT_DIR, 'api');
 const DEFAULT_PORT = Number(process.env.PORT || 3000);
 const LOCAL_ORIGIN_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+const R2_PUBLIC_PREVIEW_PATTERN = /^https:\/\/pub-[a-z0-9-]+\.r2\.dev$/i;
 const REQUIRED_R2_ENV_NAMES = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_URL'];
 
 const MIME_TYPES = {
@@ -108,16 +109,33 @@ function sendJson(res, statusCode, body) {
     res.end(JSON.stringify(body));
 }
 
-function applyCors(req, res) {
+function isAllowedCorsOrigin(requestOrigin, pathname) {
+    if (!requestOrigin) return false;
+    if (LOCAL_ORIGIN_PATTERN.test(requestOrigin)) return true;
+    if (pathname === '/api/classroom-activity-score') {
+        return R2_PUBLIC_PREVIEW_PATTERN.test(requestOrigin);
+    }
+    if (pathname === '/api/live-quiz-score-sync') {
+        return requestOrigin === 'https://joyal520.github.io' || R2_PUBLIC_PREVIEW_PATTERN.test(requestOrigin);
+    }
+    return false;
+}
+
+function applyCors(req, res, pathname) {
     const requestOrigin = req.headers.origin;
-    if (!requestOrigin || !LOCAL_ORIGIN_PATTERN.test(requestOrigin)) {
+    if (!isAllowedCorsOrigin(requestOrigin, pathname)) {
         return;
     }
 
     res.setHeader('Access-Control-Allow-Origin', requestOrigin);
     res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader(
+        'Access-Control-Allow-Methods',
+        pathname === '/api/classroom-activity-score' || pathname === '/api/live-quiz-score-sync'
+            ? 'POST, OPTIONS'
+            : 'GET, POST, DELETE, OPTIONS'
+    );
 }
 
 function resolveSafePath(urlPathname) {
@@ -153,7 +171,7 @@ function serveStatic(req, res, pathname) {
 }
 
 async function serveApi(req, res, pathname) {
-    applyCors(req, res);
+    applyCors(req, res, pathname);
 
     if (req.method === 'OPTIONS') {
         res.statusCode = 204;

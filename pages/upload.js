@@ -60,12 +60,14 @@ export const UploadPage = {
         const isTeacherResource = this.isTeacherResourceUpload();
         const role = this.getActiveRole() || 'student';
         const context = this.getUploadContext();
+        const teacherVisibility = isTeacherResource ? this.getTeacherVisibility(formData) : 'public';
         return {
             owner_id: user.id,
             owner_role: isTeacherResource ? 'teacher' : role,
             resource_purpose: isTeacherResource ? 'teaching_resource' : 'creative_work',
             resource_type: UI.normalizeCategoryValue(category),
-            visibility: isTeacherResource ? this.getTeacherVisibility(formData) : 'public',
+            visibility: teacherVisibility,
+            ...(isTeacherResource ? { explore_visible: teacherVisibility === 'public' } : {}),
             upload_context: context.uploadContext,
             source: context.source,
             classroom_id: isTeacherResource && context.classroomId ? context.classroomId : null,

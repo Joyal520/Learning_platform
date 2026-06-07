@@ -182,11 +182,12 @@ const App = {
 
     normalizeInboundJoinPath() {
         const match = window.location.pathname.match(/\/join\/([^/?#]+)/);
-        if (!match || window.location.hash) return;
+        const hasMeaningfulHash = window.location.hash && window.location.hash !== '#';
+        if (!match || hasMeaningfulHash) return;
 
         const inviteCode = decodeURIComponent(match[1]);
         const nextHash = `#classroom/join/${encodeURIComponent(inviteCode)}`;
-        window.history.replaceState(null, '', `${window.location.origin}${window.location.pathname}${nextHash}`);
+        window.history.replaceState(null, '', `${window.location.origin}/${nextHash}`);
     },
 
     bindAuthStateChanges() {

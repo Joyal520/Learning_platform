@@ -96,7 +96,13 @@ class ClassroomUI {
   }
 
   static getBrandLogoSrc() {
-    return window.App ? "assets/images/logo.webp" : "../../assets/images/logo.webp";
+    return this.getBrandLogoAsset("horizontalLight");
+  }
+
+  static getBrandLogoAsset(kind = "horizontalLight") {
+    const assets = window.EdTechraBrandAssets?.logos || {};
+    const asset = assets[kind] || assets.horizontalLight || "/assets/logos/edtechra-logo-light.png";
+    return window.App ? asset : `../../${asset}`;
   }
 
   static setText(id, value) {
@@ -136,10 +142,10 @@ class ClassroomUI {
       <aside class="sidebar" id="sidebar">
         <a class="brand" href="teacher-dashboard.html" aria-label="Edtechra Digital Classroom">
           <span class="brand-mark">
-            <img class="classroom-brand-logo-mark" src="${this.getBrandLogoSrc()}" alt="" aria-hidden="true">
+            <img class="classroom-brand-logo-mark" src="${this.getBrandLogoAsset("icon")}" alt="Edtechra">
           </span>
           <span class="brand-copy">
-            <img class="classroom-brand-logo" src="${this.getBrandLogoSrc()}" alt="EdTechra">
+            <img class="classroom-brand-logo" src="${this.getBrandLogoSrc()}" alt="Edtechra">
             <small>Classroom</small>
           </span>
         </a>
@@ -199,6 +205,10 @@ class ClassroomUI {
       trophy: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v3a4 4 0 0 1-8 0Z"/><path d="M6 7H4a3 3 0 0 0 3 3"/><path d="M18 7h2a3 3 0 0 1-3 3"/><path d="M12 11v4"/><path d="M9 20h6"/><path d="M10 15h4"/></svg>`,
       bars: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/></svg>`,
       play: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg>`,
+      broadcast: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12h.01"/><path d="M8.5 8.5a5 5 0 0 0 0 7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M5.5 5.5a9 9 0 0 0 0 13"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>`,
+      book: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5Z"/><path d="M4 5.5v16"/><path d="M8 7h8"/></svg>`,
+      calendar: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M4 10h16"/><path d="m9 15 2 2 4-5"/></svg>`,
+      check: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4 10-10"/></svg>`,
       sparkles: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 3v4"/><path d="M21 5h-4"/><path d="M4 17v4"/><path d="M6 19H2"/></svg>`,
       settings: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5A3.5 3.5 0 1 0 12 15.5A3.5 3.5 0 1 0 12 8.5Z"/><path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6H20a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.6Z"/></svg>`,
       classroom: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="3"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>`,
@@ -206,6 +216,11 @@ class ClassroomUI {
       assignment: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="3"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>`,
       clipboard: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="3"/><path d="M9 4.5h6v3H9z"/><path d="M9 12h6"/><path d="M9 16h4"/></svg>`,
       attendance: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M4 10h16"/><path d="m8 15 2 2 5-5"/></svg>`,
+      award: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="m8.5 12.5-1.5 8 5-3 5 3-1.5-8"/></svg>`,
+      bell: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>`,
+      folder: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5Z"/></svg>`,
+      headphones: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13a8 8 0 0 1 16 0"/><path d="M4 13v4a2 2 0 0 0 2 2h2v-7H6a2 2 0 0 0-2 2"/><path d="M20 13v4a2 2 0 0 1-2 2h-2v-7h2a2 2 0 0 1 2 2"/></svg>`,
+      trendingUp: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 6-6 4 4 7-8"/><path d="M14 7h6v6"/></svg>`,
       message: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A3.5 3.5 0 0 1 7.5 3h9A3.5 3.5 0 0 1 20 6.5v5A3.5 3.5 0 0 1 16.5 15H12l-5 4v-4A3 3 0 0 1 4 12Z"/></svg>`,
       send: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-9 9"/><path d="m21 3-6 18-3-9-9-3Z"/></svg>`,
       arrow: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>`,
@@ -325,7 +340,7 @@ class ClassroomUI {
       if (topbar.querySelector(".mobile-topbar-logo")) return;
       topbar.insertAdjacentHTML(
         "afterbegin",
-        `<img class="mobile-topbar-logo" src="${this.getBrandLogoSrc()}" alt="EdTechra">`
+        `<img class="mobile-topbar-logo" src="${this.getBrandLogoSrc()}" alt="Edtechra">`
       );
     });
 
@@ -597,7 +612,6 @@ class ClassroomUI {
   static async renderClassroomDetail(classroomId) {
     const detectedClassroomId = this.getCurrentClassroomId(classroomId);
     console.log("[Digital Classroom] detected classId", detectedClassroomId);
-    this.bindLiveQuizLaunch(detectedClassroomId);
 
     const classroom = await ClassroomAPI.getClassroomById(detectedClassroomId);
     if (!classroom) {
@@ -605,6 +619,10 @@ class ClassroomUI {
       if (main) main.innerHTML = this.emptyState("Classroom not found", "Return to the dashboard and choose an existing classroom.");
       return;
     }
+    this.bindLiveQuizLaunch({
+      classroomId: detectedClassroomId,
+      teacherId: classroom.teacherId || classroom.teacher_id || ""
+    });
 
     const assets = this.getTeacherAssets();
     const teacherName = classroom.teacherName || classroom.teacher?.display_name || "Class Teacher";
@@ -655,6 +673,7 @@ class ClassroomUI {
     this.bindMessagePanel(detectedClassroomId);
     this.bindDangerZone(detectedClassroomId, classroom.name);
     await this.refreshClassroomSections(detectedClassroomId);
+    this.startClassroomDetailRefresh(detectedClassroomId);
   }
 
   static async renderActivityHub(classroomId) {
@@ -671,12 +690,21 @@ class ClassroomUI {
     document.querySelector('[data-hub-action="collections"]')?.setAttribute("href", this.getRootRouteHref("savedCollections", { classroomId: detectedClassroomId }));
     document.querySelector('[data-hub-action="upload"]')?.setAttribute("href", this.getRootRouteHref("upload", { classroomId: detectedClassroomId }));
 
-    const placeholder = document.getElementById("premium-library-placeholder");
+    const premiumLibrary = document.getElementById("premium-library-placeholder");
+    const [premiumResources, dashboardData] = await Promise.all([
+      ClassroomAPI.getPremiumLibraryResources(),
+      ClassroomAPI.getTeacherDashboardData()
+    ]);
+    const classrooms = dashboardData.classrooms || [];
+    if (premiumLibrary) {
+      premiumLibrary.innerHTML = this.renderPremiumLibrary(premiumResources);
+    }
     document.querySelector('[data-hub-action="premium"]')?.addEventListener("click", () => {
-      if (!placeholder) return;
-      placeholder.hidden = false;
-      placeholder.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (!premiumLibrary) return;
+      premiumLibrary.hidden = false;
+      premiumLibrary.scrollIntoView({ behavior: "smooth", block: "center" });
     });
+    this.bindPremiumLibraryActions(premiumResources, classrooms);
 
     const modal = document.getElementById("activity-guide-modal");
     const guideSeenKey = "edtechra_activity_hub_guide_seen";
@@ -747,9 +775,10 @@ class ClassroomUI {
 
   static renderTeachingResourceCard(resource) {
     const visibilityText = resource.visibility === "public" ? "Public" : "Private";
-    const previewUrl = resource.fileUrl || `#detail/${encodeURIComponent(resource.id)}`;
-    const previewTarget = resource.fileUrl ? "_blank" : "_self";
-    const previewRel = resource.fileUrl ? "noopener noreferrer" : "";
+    const previewUrl = resource.previewUrl || (!resource.isWebProject ? resource.fileUrl : "") || `#detail/${encodeURIComponent(resource.id)}`;
+    const previewTarget = /^https?:\/\//i.test(previewUrl) ? "_blank" : "_self";
+    const previewRel = /^https?:\/\//i.test(previewUrl) ? "noopener noreferrer" : "";
+    const previewMissing = resource.isWebProject && !resource.previewUrl;
 
     return `
       <article class="teaching-resource-card" data-resource-id="${this.escape(resource.id)}">
@@ -757,6 +786,7 @@ class ClassroomUI {
           <div class="teaching-resource-title-row">
             <h3>${this.escape(resource.title)}</h3>
             <span class="resource-visibility-badge ${resource.visibility === "public" ? "is-public" : "is-private"}">${visibilityText}</span>
+            ${resource.sharedToPremium ? `<span class="resource-visibility-badge is-premium">Premium</span>` : ""}
           </div>
           <div class="teaching-resource-meta">
             <span>${this.escape(resource.resourceType)}</span>
@@ -765,12 +795,78 @@ class ClassroomUI {
           ${resource.description ? `<p>${this.escape(resource.description)}</p>` : ""}
         </div>
         <div class="teaching-resource-actions">
-          <a class="btn btn-secondary btn-small" href="${this.escape(previewUrl)}" target="${previewTarget}" rel="${previewRel}">Preview</a>
-          <button class="btn btn-primary btn-small" type="button" data-assign-resource="${this.escape(resource.id)}">Assign</button>
+          <a class="btn btn-secondary btn-small" href="${this.escape(previewMissing ? "#" : previewUrl)}" target="${previewTarget}" rel="${previewRel}" ${previewMissing ? `data-preview-missing="${this.escape(resource.id)}"` : ""}>Preview</a>
           <a class="btn btn-secondary btn-small" href="#edit/${this.escape(resource.id)}">Edit</a>
+          <button class="btn btn-primary btn-small" type="button" data-assign-resource="${this.escape(resource.id)}">Assign</button>
+          <div class="teaching-resource-menu">
+            <button class="btn btn-secondary btn-small teaching-resource-menu-toggle" type="button" data-resource-menu="${this.escape(resource.id)}" aria-haspopup="menu" aria-expanded="false" aria-label="Resource actions">&#8943;</button>
+            <div class="teaching-resource-menu-dropdown" role="menu" hidden>
+              <button type="button" role="menuitem" data-share-resource-premium="${this.escape(resource.id)}">Share to Premium Library</button>
+              <button type="button" role="menuitem" class="is-danger" data-delete-teacher-resource="${this.escape(resource.id)}">Delete Resource</button>
+            </div>
+          </div>
         </div>
       </article>
     `;
+  }
+
+  static renderPremiumLibrary(resources = []) {
+    return `
+      <div class="premium-library-panel">
+        <div class="premium-library-heading">
+          <h2>Premium Learning Library</h2>
+        </div>
+        <div class="premium-library-list" id="premium-library-list">
+          ${resources.length
+            ? resources.map((resource) => this.renderPremiumLibraryCard(resource)).join("")
+            : this.emptyState("No premium materials yet.", "Share a resource from My Teaching Resources to publish it here.")}
+        </div>
+      </div>
+    `;
+  }
+
+  static renderPremiumLibraryCard(resource) {
+    const previewUrl = resource.previewUrl || (!resource.isWebProject ? resource.fileUrl : "") || `#detail/${encodeURIComponent(resource.id)}`;
+    const previewTarget = /^https?:\/\//i.test(previewUrl) ? "_blank" : "_self";
+    const previewRel = /^https?:\/\//i.test(previewUrl) ? "noopener noreferrer" : "";
+    const previewMissing = resource.isWebProject && !resource.previewUrl;
+    const sharedDate = resource.premiumSharedAt || resource.updatedAt || resource.createdAt;
+
+    return `
+      <article class="teaching-resource-card premium-library-card" data-premium-resource-id="${this.escape(resource.id)}">
+        <div class="teaching-resource-copy">
+          <div class="teaching-resource-title-row">
+            <h3>${this.escape(resource.title)}</h3>
+            <span class="resource-visibility-badge is-premium">Premium</span>
+          </div>
+          <div class="teaching-resource-meta">
+            <span>${this.escape(resource.resourceType)}</span>
+            <span>Shared ${this.formatDate(sharedDate)}</span>
+          </div>
+          ${resource.description ? `<p>${this.escape(resource.description)}</p>` : ""}
+        </div>
+        <div class="teaching-resource-actions">
+          <a class="btn btn-secondary btn-small" href="${this.escape(previewMissing ? "#" : previewUrl)}" target="${previewTarget}" rel="${previewRel}" ${previewMissing ? `data-preview-missing="${this.escape(resource.id)}"` : ""}>Preview</a>
+          <button class="btn btn-primary btn-small" type="button" data-assign-resource="${this.escape(resource.id)}">Assign</button>
+        </div>
+      </article>
+    `;
+  }
+
+  static bindPremiumLibraryActions(resources, classrooms) {
+    document.querySelectorAll("#premium-library-placeholder [data-preview-missing]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.showToast("This ZIP has been uploaded but has not been processed into a preview yet.", "error");
+      });
+    });
+
+    document.querySelectorAll("#premium-library-placeholder [data-assign-resource]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const resource = resources.find((item) => String(item.id) === String(button.dataset.assignResource));
+        if (resource) this.openResourceAssignment(resource, classrooms);
+      });
+    });
   }
 
   static async renderSavedCollections() {
@@ -1164,10 +1260,101 @@ class ClassroomUI {
   }
 
   static bindTeachingResourceActions(resources, classrooms) {
+    const refreshEmptyState = () => {
+      const list = document.getElementById("teaching-resources-list");
+      if (list && !list.querySelector(".teaching-resource-card")) {
+        list.innerHTML = this.emptyState("No teaching resources yet", "Upload a resource from your teacher account and it will appear here.");
+      }
+    };
+
+    const closeResourceMenus = (exceptMenu = null) => {
+      document.querySelectorAll(".teaching-resource-menu").forEach((menu) => {
+        if (exceptMenu && menu === exceptMenu) return;
+        menu.querySelector(".teaching-resource-menu-dropdown")?.setAttribute("hidden", "");
+        const toggle = menu.querySelector("[data-resource-menu]");
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+      });
+    };
+
+    document.querySelectorAll("[data-preview-missing]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.showToast("This ZIP has been uploaded but has not been processed into a preview yet.", "error");
+      });
+    });
+
+    document.querySelectorAll("[data-resource-menu]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const menu = button.closest(".teaching-resource-menu");
+        const dropdown = menu?.querySelector(".teaching-resource-menu-dropdown");
+        if (!menu || !dropdown) return;
+        const willOpen = dropdown.hasAttribute("hidden");
+        closeResourceMenus(menu);
+        dropdown.toggleAttribute("hidden", !willOpen);
+        button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      });
+    });
+
+    if (document.body && document.body.dataset.resourceMenuCloseBound !== "true") {
+      document.body.dataset.resourceMenuCloseBound = "true";
+      document.addEventListener("click", () => {
+        document.querySelectorAll(".teaching-resource-menu").forEach((menu) => {
+          menu.querySelector(".teaching-resource-menu-dropdown")?.setAttribute("hidden", "");
+          menu.querySelector("[data-resource-menu]")?.setAttribute("aria-expanded", "false");
+        });
+      });
+    }
+
     document.querySelectorAll("[data-assign-resource]").forEach((button) => {
       button.addEventListener("click", () => {
         const resource = resources.find((item) => String(item.id) === String(button.dataset.assignResource));
         if (resource) this.openResourceAssignment(resource, classrooms);
+      });
+    });
+
+    document.querySelectorAll("[data-share-resource-premium]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const resourceId = button.dataset.shareResourcePremium;
+        const resource = resources.find((item) => String(item.id) === String(resourceId));
+        if (!resource) return;
+        closeResourceMenus();
+        button.disabled = true;
+        try {
+          await ClassroomAPI.shareResourceToPremiumLibrary(resourceId);
+          resource.sharedToPremium = true;
+          const titleRow = button.closest(".teaching-resource-card")?.querySelector(".teaching-resource-title-row");
+          if (titleRow && !titleRow.querySelector(".resource-visibility-badge.is-premium")) {
+            titleRow.insertAdjacentHTML("beforeend", `<span class="resource-visibility-badge is-premium">Premium</span>`);
+          }
+          this.showToast("Resource shared to Premium Library.", "success");
+        } catch (error) {
+          console.error("[Digital Classroom] Resource premium share failed", error);
+          this.showToast(error?.message || "Could not share this resource. Please try again.", "error");
+          button.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-delete-teacher-resource]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const resourceId = button.dataset.deleteTeacherResource;
+        const resource = resources.find((item) => String(item.id) === String(resourceId));
+        if (!resource) return;
+        closeResourceMenus();
+        const confirmed = window.confirm("Are you sure you want to delete this resource? This action will remove it from your teaching resources.");
+        if (!confirmed) return;
+        button.disabled = true;
+        try {
+          await ClassroomAPI.deleteTeacherResource(resourceId);
+          button.closest(".teaching-resource-card")?.remove();
+          refreshEmptyState();
+          this.showToast("Resource removed from your teaching resources.", "success");
+        } catch (error) {
+          console.error("[Digital Classroom] Resource delete failed", error);
+          this.showToast(error?.message || "Could not delete this resource. Please try again.", "error");
+          button.disabled = false;
+        }
       });
     });
 
@@ -1197,9 +1384,22 @@ class ClassroomUI {
 
       const baseInstructions = String(formData.get("instructions") || "").trim();
       await Promise.all(selectedResources.map((selectedResource, index) => {
-        const resourceLine = selectedResource.fileUrl
-          ? `\n\nResource: ${selectedResource.title}\n${selectedResource.fileUrl}`
-          : `\n\nResource: ${selectedResource.title}`;
+        const selectedResourceUrl = selectedResource.previewUrl || selectedResource.fileUrl || "";
+        const resourceItems = [{
+          id: `${selectedResource.id}:${index + 1}`,
+          resourceId: selectedResource.id,
+          title: selectedResource.title,
+          resourceType: selectedResource.resourceType || "resource",
+          fileUrl: selectedResource.fileUrl || "",
+          resourceUrl: selectedResourceUrl,
+          projectUrl: selectedResource.projectUrl || selectedResource.previewUrl || "",
+          previewUrl: selectedResource.previewUrl || "",
+          metadata: {
+            indexUrl: selectedResource.previewUrl || selectedResourceUrl,
+            previewUrl: selectedResource.previewUrl || selectedResourceUrl
+          },
+          position: 1
+        }];
         const assignmentTitle = selectedResources.length === 1
           ? title
           : `${title}: ${selectedResource.title}`;
@@ -1207,9 +1407,18 @@ class ClassroomUI {
         return ClassroomAPI.createAssignment({
           classroomId,
           title: assignmentTitle,
-          instructions: `${baseInstructions}${resourceLine}`.trim(),
+          instructions: baseInstructions,
           dueDate,
-          points
+          points,
+          assignmentType: "assignment",
+          resourceItems,
+          resourceId: selectedResource.id,
+          resourceTitle: selectedResource.title,
+          resourceUrl: selectedResourceUrl,
+          projectUrl: selectedResource.projectUrl || selectedResource.previewUrl || "",
+          previewUrl: selectedResource.previewUrl || "",
+          fileUrl: selectedResource.fileUrl || "",
+          status: "published"
         });
       }));
 
@@ -1303,38 +1512,193 @@ class ClassroomUI {
     return hashMatch ? decodeURIComponent(hashMatch[1]) : "";
   }
 
-  static getLiveQuizUrl(classId) {
-    return `https://joyal520.github.io/live_quiz/?classId=${encodeURIComponent(classId || "")}&source=edectra`;
+  static getLiveQuizBaseUrl() {
+    return String(
+      window.EDTECHRA_LIVE_QUIZ_URL ||
+      window.__DIGITAL_CLASSROOM_ENV__?.LIVE_QUIZ_URL ||
+      window.EDTECHRA_DC_ENV?.LIVE_QUIZ_URL ||
+      "https://joyal520.github.io/live_quiz/"
+    ).trim();
   }
 
-  static bindLiveQuizLaunch(classroomId) {
-    const liveQuizCard = document.querySelector('[data-future-route="live-quiz"]');
-    if (!liveQuizCard) return;
+  static getLiveQuizSyncEndpoint() {
+    const configured = String(
+      window.EDTECHRA_SCORE_SYNC_ENDPOINT ||
+      window.__DIGITAL_CLASSROOM_ENV__?.LIVE_QUIZ_SCORE_SYNC_ENDPOINT ||
+      window.EDTECHRA_DC_ENV?.LIVE_QUIZ_SCORE_SYNC_ENDPOINT ||
+      ""
+    ).trim();
+    if (configured) return configured;
+    if (/^https?:\/\//i.test(window.location.origin || "")) {
+      return `${window.location.origin}/api/live-quiz-score-sync`;
+    }
+    return "";
+  }
 
-    const classId = this.getCurrentClassroomId(classroomId);
-    const initialExternalUrl = this.getLiveQuizUrl(classId);
+  static normalizeLiveQuizLaunchContext(classOrContext = {}) {
+    if (typeof classOrContext === "string") {
+      return { classroomId: this.getCurrentClassroomId(classOrContext) };
+    }
+    const classroomId = classOrContext.classroomId || classOrContext.classId || classOrContext.id || "";
+    const profileId = classOrContext.profileId || classOrContext.profile_id || "";
+    const studentId = classOrContext.studentId || classOrContext.student_id || profileId || "";
+    return {
+      classroomId: this.getCurrentClassroomId(classroomId),
+      teacherId: classOrContext.teacherId || classOrContext.teacher_id || "",
+      studentId,
+      profileId,
+      quizId: classOrContext.quizId || classOrContext.quiz_id || "",
+      returnUrl: classOrContext.returnUrl || window.location.href,
+      syncEndpoint: classOrContext.syncEndpoint || this.getLiveQuizSyncEndpoint()
+    };
+  }
+
+  static getLiveQuizUrl(classOrContext) {
+    const context = this.normalizeLiveQuizLaunchContext(classOrContext);
+    const url = new URL(this.getLiveQuizBaseUrl(), window.location.href);
+    url.searchParams.set("source", "edtechra");
+    url.searchParams.set("legacySource", "edectra");
+    url.searchParams.set("classId", context.classroomId || "");
+    url.searchParams.set("classroom_id", context.classroomId || "");
+    if (context.teacherId) url.searchParams.set("teacher_id", context.teacherId);
+    if (context.studentId) url.searchParams.set("student_id", context.studentId);
+    if (context.profileId) url.searchParams.set("profile_id", context.profileId);
+    if (context.quizId) url.searchParams.set("quiz_id", context.quizId);
+    if (context.returnUrl) url.searchParams.set("return_url", context.returnUrl);
+    if (context.syncEndpoint) url.searchParams.set("syncEndpoint", context.syncEndpoint);
+    return url.href;
+  }
+
+  static renderLiveQuizLauncherModal(externalUrl) {
+    const safeUrl = this.escape(externalUrl);
+    return `
+      <div class="live-quiz-modal-backdrop" data-live-quiz-modal>
+        <section class="live-quiz-modal" role="dialog" aria-modal="true" aria-labelledby="live-quiz-modal-title">
+          <header class="live-quiz-modal-header">
+            <div>
+              <p>Edtechra Classroom</p>
+              <h2 id="live-quiz-modal-title">Live Quiz</h2>
+            </div>
+            <button class="live-quiz-modal-close" type="button" aria-label="Close Live Quiz" data-live-quiz-close>&times;</button>
+          </header>
+          <div class="live-quiz-launcher" data-live-quiz-launcher>
+            <button class="live-quiz-option live-quiz-option-primary" type="button" data-live-quiz-instant>
+              <span class="live-quiz-option-icon">${this.getIcon("play")}</span>
+              <span>
+                <strong>Instant Quiz</strong>
+                <small>Start the current live quiz flow inside Edtechra.</small>
+              </span>
+            </button>
+            <button class="live-quiz-option live-quiz-option-disabled" type="button" disabled aria-disabled="true">
+              <span class="live-quiz-option-icon">${this.getIcon("calendar")}</span>
+              <span>
+                <strong>Scheduled Quiz</strong>
+                <small>Schedule quizzes with student countdown will be added soon.</small>
+              </span>
+              <em>Coming Soon</em>
+            </button>
+          </div>
+          <div class="live-quiz-frame-shell" data-live-quiz-frame-shell hidden>
+            <div class="live-quiz-frame-toolbar">
+              <div>
+                <span class="live-quiz-frame-eyebrow">Edtechra Classroom</span>
+                <strong>Instant Live Quiz</strong>
+              </div>
+              <div class="live-quiz-frame-actions">
+                <a class="live-quiz-fallback-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">Open in new tab</a>
+                <button class="live-quiz-frame-close" type="button" data-live-quiz-close>Close</button>
+              </div>
+            </div>
+            <iframe
+              class="live-quiz-frame"
+              title="Live Quiz"
+              data-live-quiz-frame
+              referrerpolicy="no-referrer"
+              allow="fullscreen; clipboard-read; clipboard-write"
+              sandbox="allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
+            ></iframe>
+          </div>
+          <footer class="live-quiz-modal-footer">
+            <a class="live-quiz-fallback-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">Open in new tab</a>
+          </footer>
+        </section>
+      </div>
+    `;
+  }
+
+  static openLiveQuizLauncherModal(externalUrl) {
+    document.querySelector("[data-live-quiz-modal]")?.remove();
+    document.body.insertAdjacentHTML("beforeend", this.renderLiveQuizLauncherModal(externalUrl));
+
+    const modal = document.querySelector("[data-live-quiz-modal]");
+    const launcher = modal?.querySelector("[data-live-quiz-launcher]");
+    const frameShell = modal?.querySelector("[data-live-quiz-frame-shell]");
+    const frame = modal?.querySelector("[data-live-quiz-frame]");
+    const closeModal = () => {
+      document.removeEventListener("keydown", onKeydown);
+      modal?.remove();
+    };
+    const onKeydown = (event) => {
+      if (event.key === "Escape") closeModal();
+    };
+
+    modal?.querySelectorAll("[data-live-quiz-close]").forEach((closeButton) => {
+      closeButton.addEventListener("click", closeModal);
+    });
+    modal?.addEventListener("click", (event) => {
+      if (event.target === modal) closeModal();
+    });
+    modal?.querySelector("[data-live-quiz-instant]")?.addEventListener("click", () => {
+      if (!frame || !frameShell || !launcher) return;
+      frame.src = externalUrl;
+      launcher.hidden = true;
+      frameShell.hidden = false;
+      modal.querySelector(".live-quiz-modal")?.classList.add("is-frame-open");
+    });
+    document.addEventListener("keydown", onKeydown);
+    modal?.querySelector("[data-live-quiz-instant]")?.focus({ preventScroll: true });
+  }
+
+  static bindLiveQuizLaunch(classOrContext) {
+    const liveQuizCards = document.querySelectorAll('[data-future-route="live-quiz"]');
+    if (!liveQuizCards.length) return;
+
+    const launchContext = this.normalizeLiveQuizLaunchContext(classOrContext);
+    const classId = launchContext.classroomId;
+    const initialExternalUrl = this.getLiveQuizUrl(launchContext);
     console.log("final externalUrl", initialExternalUrl);
 
-    liveQuizCard.href = initialExternalUrl;
-    liveQuizCard.target = "_blank";
-    liveQuizCard.rel = "noopener noreferrer";
-    liveQuizCard.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const externalUrl = `https://joyal520.github.io/live_quiz/?classId=${encodeURIComponent(classId)}&source=edectra`;
-
-      console.log("Live Quiz card clicked");
-      console.log("detected classId", classId);
-      console.log("final externalUrl", externalUrl);
-      console.log("Opening external LiveQuiz");
-
-      if (!externalUrl.startsWith("https://") || externalUrl.startsWith("#/")) {
-        console.error("[Digital Classroom] blocked invalid LiveQuiz URL", externalUrl);
+    liveQuizCards.forEach((liveQuizCard) => {
+      liveQuizCard.href = initialExternalUrl;
+      liveQuizCard.dataset.liveQuizUrl = initialExternalUrl;
+      const isTeacherLaunchCard = liveQuizCard.matches(".teacher-action-card");
+      if (!isTeacherLaunchCard) {
+        liveQuizCard.target = "_blank";
+        liveQuizCard.rel = "noopener noreferrer";
         return;
       }
 
-      window.open(externalUrl, "_blank", "noopener,noreferrer");
+      if (liveQuizCard.dataset.liveQuizBound === "true") return;
+      liveQuizCard.dataset.liveQuizBound = "true";
+      liveQuizCard.removeAttribute("target");
+      liveQuizCard.removeAttribute("rel");
+      liveQuizCard.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const externalUrl = liveQuizCard.dataset.liveQuizUrl || this.getLiveQuizUrl(launchContext);
+
+        console.log("Live Quiz card clicked");
+        console.log("detected classId", classId);
+        console.log("final externalUrl", externalUrl);
+
+        if (!externalUrl.startsWith("https://") || externalUrl.startsWith("#/")) {
+          console.error("[Digital Classroom] blocked invalid LiveQuiz URL", externalUrl);
+          return;
+        }
+
+        this.openLiveQuizLauncherModal(externalUrl);
+      });
     });
   }
 
@@ -1354,7 +1718,7 @@ class ClassroomUI {
     this.setText("detail-completion", `${metrics.completionRate}%`);
     this.setText("detail-pending", Math.max((metrics.studentCount * metrics.assignmentCount) - metrics.submissionCount, 0));
     this.renderStudents("students-container", students);
-    this.renderMessages(classroomId);
+    await this.renderMessages(classroomId);
     this.renderAssignments("assignments-container", assignments, metrics.studentCount);
     this.renderAssignmentStatus(assignments, metrics);
     this.renderAttendance(students);
@@ -1363,6 +1727,33 @@ class ClassroomUI {
     this.renderAnalytics(metrics);
     this.renderAiFeedback(feedback);
 
+  }
+
+  static startClassroomDetailRefresh(classroomId) {
+    this.stopClassroomDetailRefresh();
+
+    if (document.body?.dataset?.page !== "detail" || !classroomId) return;
+
+    this.classroomDetailRefreshBusy = false;
+    this.classroomDetailRefreshTimer = window.setInterval(async () => {
+      if (document.hidden || this.classroomDetailRefreshBusy) return;
+
+      this.classroomDetailRefreshBusy = true;
+      try {
+        await this.refreshClassroomSections(classroomId);
+      } catch (error) {
+        console.warn("[Digital Classroom] Classroom detail refresh failed.", error);
+      } finally {
+        this.classroomDetailRefreshBusy = false;
+      }
+    }, 30000);
+  }
+
+  static stopClassroomDetailRefresh() {
+    if (this.classroomDetailRefreshTimer) {
+      window.clearInterval(this.classroomDetailRefreshTimer);
+      this.classroomDetailRefreshTimer = null;
+    }
   }
 
   static bindAssignmentForm(classroomId) {
@@ -1406,7 +1797,7 @@ class ClassroomUI {
     if (!form || form.dataset.bound === "true") return;
 
     form.dataset.bound = "true";
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const formData = new FormData(form);
       const message = String(formData.get("message") || "").trim();
@@ -1415,17 +1806,20 @@ class ClassroomUI {
         return;
       }
 
-      const key = `edtechra_class_messages_${classroomId}`;
-      const messages = JSON.parse(sessionStorage.getItem(key) || "[]");
-      messages.unshift({
-        id: `msg_${Date.now()}`,
-        text: message,
-        createdAt: new Date().toISOString()
-      });
-      sessionStorage.setItem(key, JSON.stringify(messages.slice(0, 12)));
-      form.reset();
-      this.showNotice("message-notice", "Message saved locally for this session. Connect a backend message table to broadcast it.", "success");
-      this.renderMessages(classroomId);
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      this.showNotice("message-notice", "Sending message...", "success");
+      try {
+        await ClassroomAPI.createClassroomMessage(classroomId, message);
+        form.reset();
+        this.showNotice("message-notice", "Message sent to this classroom.", "success");
+        await this.renderMessages(classroomId);
+      } catch (error) {
+        console.error("[Digital Classroom] Could not send classroom message", error);
+        this.showNotice("message-notice", error?.message || "Could not send this message.", "error");
+      } finally {
+        if (submitButton) submitButton.disabled = false;
+      }
     });
   }
 
@@ -1467,32 +1861,96 @@ class ClassroomUI {
     });
   }
 
-  static renderMessages(classroomId) {
+  static async renderMessages(classroomId) {
     const container = document.getElementById("messages-container");
     if (!container) return;
 
-    const key = `edtechra_class_messages_${classroomId}`;
-    const messages = JSON.parse(sessionStorage.getItem(key) || "[]");
     const assets = this.getTeacherAssets();
+    let messages = [];
+    try {
+      messages = await ClassroomAPI.getClassroomMessages(classroomId);
+    } catch (error) {
+      console.error("[Digital Classroom] Could not load classroom messages", error);
+      container.innerHTML = `
+        <div class="illustrated-empty">
+          ${this.renderTeacherAssetImage(assets.messagesEmpty, "No classroom messages", "empty-asset-image")}
+          <strong>Messages unavailable</strong>
+          <span>${this.escape(error?.message || "Check the classroom_messages table and RLS policies.")}</span>
+        </div>
+      `;
+      return;
+    }
 
     container.innerHTML = messages.length
       ? messages.map((message) => `
-        <div class="teacher-message-item">
+        <div class="teacher-message-item" data-message-id="${this.escape(message.id)}">
           <span class="message-icon">${this.getIcon("message")}</span>
           <div>
-            <strong>${this.escape(message.text)}</strong>
-            <small>${this.formatDate(message.createdAt)} / session draft</small>
+            <strong>${this.escape(message.message)}</strong>
+            <small>
+              ${this.formatDate(message.createdAt)}
+              ${message.editedAt ? " / edited" : ""}
+              ${message.isPinned ? " / pinned" : ""}
+            </small>
           </div>
-          <span class="message-menu">${this.getIcon("dots")}</span>
+          <div class="teacher-message-actions">
+            <button class="table-icon-btn" type="button" title="Edit message" aria-label="Edit message" data-edit-message="${this.escape(message.id)}">${this.getIcon("clipboard")}</button>
+            <button class="table-icon-btn danger" type="button" title="Delete message" aria-label="Delete message" data-delete-message="${this.escape(message.id)}">${this.getIcon("trash")}</button>
+          </div>
         </div>
       `).join("")
       : `
         <div class="illustrated-empty">
           ${this.renderTeacherAssetImage(assets.messagesEmpty, "No classroom messages", "empty-asset-image")}
           <strong>No messages yet</strong>
-          <span>Class announcements will appear here when a backend message channel is connected.</span>
+          <span>Class announcements will appear here after you send a message.</span>
         </div>
       `;
+
+    container.querySelectorAll("[data-edit-message]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const message = messages.find((item) => String(item.id) === String(button.dataset.editMessage));
+        if (!message) return;
+        const updatedText = window.prompt("Edit classroom message", message.message);
+        if (updatedText === null) return;
+        const trimmed = updatedText.trim();
+        if (!trimmed) {
+          this.showToast("Message cannot be empty.", "error");
+          return;
+        }
+
+        button.disabled = true;
+        try {
+          await ClassroomAPI.updateClassroomMessage(message.id, trimmed);
+          this.showToast("Message updated.", "success");
+          await this.renderMessages(classroomId);
+        } catch (error) {
+          console.error("[Digital Classroom] Could not update classroom message", error);
+          this.showToast(error?.message || "Could not update this message.", "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    container.querySelectorAll("[data-delete-message]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const confirmed = window.confirm("Are you sure you want to delete this message?");
+        if (!confirmed) return;
+        button.disabled = true;
+        try {
+          await ClassroomAPI.deleteClassroomMessage(button.dataset.deleteMessage);
+          button.closest(".teacher-message-item")?.remove();
+          this.showToast("Message deleted.", "success");
+          await this.renderMessages(classroomId);
+        } catch (error) {
+          console.error("[Digital Classroom] Could not delete classroom message", error);
+          this.showToast(error?.message || "Could not delete this message.", "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
   }
 
   static renderStudents(containerId, students) {
@@ -1500,24 +1958,64 @@ class ClassroomUI {
     if (!container) return;
 
     const assignmentsCount = Number(document.getElementById("detail-assignments")?.textContent || 0);
+    const formatSkillScore = (value, max) => {
+      const score = Math.min(100, Math.max(0, Number(value || 0)));
+      const scorePercent = max ? Math.min(100, Math.max(0, (score / max) * 100)) : score;
+      if (!Number.isFinite(scorePercent)) return "0";
+      return Number.isInteger(scorePercent) ? String(scorePercent) : scorePercent.toFixed(1);
+    };
+    const formatClassSkillScore = (value, max) => {
+      // Deep Ocean class skill display uses fixed activity totals:
+      // Reading max = 50 from Days 1-5, Listening max = 30 from Day 6,
+      // Vocabulary max = 20 from Day 7. Clamp display percentages to 0-100.
+      const score = Number(value || 0);
+      if (!Number.isFinite(score)) return "0";
+      return formatSkillScore(score, max);
+    };
+    const renderSkillBreakdown = (student) => {
+      const breakdown = student.classroomSkillBreakdown;
+      if (!breakdown) {
+        return `<div class="student-skill-breakdown" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:.72rem;color:var(--text-muted);">No skill data yet</div>`;
+      }
+
+      const chips = [
+        ["Reading", breakdown.reading_score, 50],
+        ["Listening", breakdown.listening_score, 30],
+        ["Vocabulary", breakdown.vocabulary_score, 20]
+      ];
+
+      return `
+        <div class="student-skill-breakdown" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+          <span style="display:inline-flex;align-items:center;color:var(--text-muted);font-size:.72rem;font-weight:800;white-space:nowrap;">Class skills</span>
+          ${chips.map(([label, value, max]) => `
+            <span style="display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;background:rgba(226,232,244,.78);color:var(--text-muted);font-size:.72rem;font-weight:700;white-space:nowrap;">
+              ${this.escape(label)}: ${this.escape(formatClassSkillScore(value, max))}%
+            </span>
+          `).join("")}
+        </div>
+      `;
+    };
     const renderRows = (rows) => {
       container.innerHTML = rows.length
         ? rows.map((student) => {
+          const displayName = this.getStudentDisplayName(student);
           const progress = assignmentsCount ? Math.min(100, Math.round(((student.completedAssignments || 0) / assignmentsCount) * 100)) : 0;
           const status = progress > 0 ? "Online" : "Not marked";
           return `
-            <tr>
+            <tr data-student-id="${this.escape(student.profileId || student.memberId || student.id || "")}">
               <td>
                 <div class="student-info">
-                  <div class="avatar">${this.escape(student.avatar)}</div>
+                  ${this.renderStudentAvatar(student)}
                   <div>
-                    <h4>${this.escape(student.name)}</h4>
-                    <span>${this.escape(student.profileId || student.memberId || "Class member")}</span>
+                    <h4>${this.escape(displayName)}</h4>
                   </div>
                 </div>
               </td>
               <td><span class="student-status ${progress > 0 ? "online" : "idle"}">${status}</span></td>
-              <td><div class="table-progress"><span style="width: ${progress}%"></span><strong>${progress}%</strong></div></td>
+              <td>
+                <div class="table-progress" aria-label="${progress}% complete"><span><i style="width: ${progress}%"></i></span><strong>${progress}%</strong></div>
+                ${renderSkillBreakdown(student)}
+              </td>
               <td>${Number(student.points || 0)}</td>
               <td>
                 <div class="student-actions">
@@ -1531,13 +2029,16 @@ class ClassroomUI {
         : `<tr><td colspan="5">${this.emptyState("No students yet", "Share the invite link to let students join this classroom.")}</td></tr>`;
     };
 
-    renderRows(students);
     const search = document.getElementById("student-search-input");
+    const initialQuery = search?.value?.trim().toLowerCase() || "";
+    renderRows(initialQuery
+      ? students.filter((student) => this.getStudentDisplayName(student).toLowerCase().includes(initialQuery))
+      : students);
     if (search && search.dataset.bound !== "true") {
       search.dataset.bound = "true";
       search.addEventListener("input", () => {
         const query = search.value.trim().toLowerCase();
-        renderRows(students.filter((student) => student.name.toLowerCase().includes(query)));
+        renderRows(students.filter((student) => this.getStudentDisplayName(student).toLowerCase().includes(query)));
       });
     }
 
@@ -1553,21 +2054,6 @@ class ClassroomUI {
         await this.refreshClassroomSections(this.getCurrentClassroomId());
       });
     });
-    return;
-
-    container.innerHTML = students.length
-      ? students.map((student) => `
-        <div class="list-item">
-          <div class="student-info">
-            <div class="avatar">${this.escape(student.avatar)}</div>
-            <div>
-              <h4>${this.escape(student.name)}</h4>
-              <span>${student.completedAssignments} completed / ${student.points} pts</span>
-            </div>
-          </div>
-        </div>
-      `).join("")
-      : this.emptyState("No students yet", "Share the invite link to let students join this classroom.");
   }
 
   static renderAssignments(containerId, assignments, studentCount = 0) {
@@ -1576,7 +2062,12 @@ class ClassroomUI {
 
     const data = ClassroomState.getData();
     const assets = this.getTeacherAssets();
-    const recentAssignments = [...assignments]
+    const visibleAssignments = [...assignments].filter((assignment) => (
+      assignment?.isDeleted !== true &&
+      !assignment?.deletedAt &&
+      !["deleted", "archived"].includes(String(assignment?.status || "").toLowerCase())
+    ));
+    const recentAssignments = visibleAssignments
       .sort((a, b) => new Date(b.createdAt || b.assignedAt || b.dueDate || 0) - new Date(a.createdAt || a.assignedAt || a.dueDate || 0))
       .slice(0, 3);
     container.innerHTML = recentAssignments.length
@@ -1586,18 +2077,35 @@ class ClassroomUI {
         const isSpree = assignment.assignmentType === "learning_spree";
         const itemCount = assignment.resourceItems?.length || 0;
         const unlockLabel = assignment.unlockMode === "one_lesson_per_day" ? "One Lesson Per Day" : "Open Access";
+        const assignedDate = assignment.assignedAt || assignment.createdAt || "";
+        const statusLabel = assignment.status || "published";
         return `
-          <div class="assignment-row list-item ${isSpree ? "learning-spree-row" : ""}">
+          <div class="assignment-row list-item assignment-detail-row ${isSpree ? "learning-spree-row" : ""}"
+            data-assignment-id="${this.escape(assignment.id)}"
+            data-source-type="${this.escape(assignment.sourceType || "assignment")}"
+            data-source-table="${this.escape(assignment.sourceTable || "assignments")}"
+            data-classroom-id="${this.escape(assignment.classroomId || "")}">
             <div class="list-item-content">
-              <h4>${this.escape(assignment.title)}${isSpree ? ' <span class="resource-visibility-badge is-public">Learning Spree</span>' : ""}</h4>
-              <span>Due ${this.formatDate(assignment.dueDate)} / ${isSpree ? `${itemCount} materials` : `${assignment.points} pts`}</span>
+              <div class="assignment-row-title">
+                <h4>${this.escape(assignment.title)}${isSpree ? ' <span class="resource-visibility-badge is-public">Learning Spree</span>' : ""}</h4>
+                <span class="assignment-status-pill">${this.escape(statusLabel)}</span>
+              </div>
+              <div class="assignment-meta-grid">
+                <span>Assigned ${this.formatDate(assignedDate)}</span>
+                <span>Due ${this.formatDate(assignment.dueDate)}</span>
+                <span>${studentCount || 0} assigned student${Number(studentCount) === 1 ? "" : "s"}</span>
+                <span>${isSpree ? `${itemCount} materials` : `${assignment.points} pts`}</span>
+              </div>
               ${isSpree ? `<p class="spree-row-summary">${this.escape(assignment.instructions || "Structured learning path")} / Unlock Mode: ${unlockLabel}</p>` : ""}
-              <div class="mini-progress" aria-hidden="true"><span style="width: ${completionPercent}%"></span></div>
+              <div class="mini-progress" aria-label="${completionPercent}% submitted"><span style="width: ${completionPercent}%"></span></div>
             </div>
             <div class="right-stat">
               <strong>${completionCount}/${studentCount || 0}</strong>
               <span>Submitted</span>
             </div>
+            <button class="table-icon-btn assignment-delete-btn" type="button" title="Delete assignment" aria-label="Delete ${this.escape(assignment.title)}" data-delete-assignment="${this.escape(assignment.id)}">
+              ${this.getIcon("trash")}
+            </button>
           </div>
         `;
       }).join("")
@@ -1608,6 +2116,41 @@ class ClassroomUI {
           <span>Create a task, exam, or competition activity to send work to joined students.</span>
         </div>
       `;
+
+    container.querySelectorAll("[data-delete-assignment]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const assignmentId = button.dataset.deleteAssignment;
+        if (!assignmentId) {
+          this.showToast("Invalid assignment. Please refresh and try again.", "error");
+          return;
+        }
+
+        const confirmed = window.confirm("Are you sure you want to delete this assignment? Student submissions will be kept safely, but the assignment will be hidden from active classroom views.");
+        if (!confirmed) return;
+
+        button.disabled = true;
+        button.classList.add("is-loading");
+        try {
+          const classroomId = button.closest("main")?.dataset.classroomId || this.getCurrentClassroomId();
+          const result = await ClassroomAPI.deleteAssignment(classroomId, assignmentId);
+          if (!result?.success) {
+            throw new Error("Assignment delete was not confirmed.");
+          }
+          button.closest(".assignment-row")?.remove();
+          this.showToast("Assignment deleted successfully.", "success");
+          await this.refreshClassroomSections(classroomId);
+        } catch (error) {
+          console.error("[Digital Classroom] Assignment delete failed", error);
+          const message = /permission|RLS|row-level security/i.test(error?.message || "")
+            ? "You do not have permission to delete this assignment."
+            : error?.message || "Could not delete assignment. Please try again.";
+          this.showToast(message, "error");
+        } finally {
+          button.disabled = false;
+          button.classList.remove("is-loading");
+        }
+      });
+    });
   }
 
   static renderLeaderboard(containerId, students) {
@@ -1616,14 +2159,17 @@ class ClassroomUI {
 
     container.innerHTML = students.length
       ? `
-        <div class="leaderboard-head"><span>Rank</span><span>Student Name</span><span>Points</span></div>
-        ${students.map((student, index) => `
+        <div class="leaderboard-head"><span>Rank</span><span>Student</span><span>Points</span></div>
+        ${students.map((student, index) => {
+          const displayName = this.getStudentDisplayName(student);
+          return `
           <div class="leaderboard-entry">
             <span class="rank rank-${index + 1}">${index + 1}</span>
-            <strong>${this.escape(student.name)}</strong>
+            <strong>${this.escape(displayName)}</strong>
             <span>${Number(student.points || 0)} ${this.getIcon("star")}</span>
           </div>
-        `).join("")}
+        `;
+        }).join("")}
       `
       : this.emptyState("No leaderboard yet", "Student points will appear after submissions.");
   }
@@ -1752,12 +2298,12 @@ class ClassroomUI {
       ? `
         <div class="attendance-table">
           <div class="attendance-row attendance-head">
-            <span>Student Name</span>
+            <span>Student</span>
             ${days.map((day) => `<span>${day}</span>`).join("")}
           </div>
           ${visibleStudents.map((student, studentIndex) => `
             <div class="attendance-row">
-              <strong>${this.escape(student.name)}</strong>
+              <strong>${this.escape(this.getStudentDisplayName(student))}</strong>
               ${days.map((day, dayIndex) => {
                 const status = statusCycle[(studentIndex + dayIndex) % statusCycle.length];
                 return `<span class="attendance-mark ${status}" title="${day} ${statusLabel[status]}">${statusLabel[status].split(" ")[0]}</span>`;
@@ -1787,7 +2333,7 @@ class ClassroomUI {
         const assignment = assignments.find((item) => item.id === submission.assignmentId);
         return {
           type: "submission",
-          title: `${student?.name || "A student"} submitted ${assignment?.title || "an assignment"}.`,
+          title: `${student ? this.getStudentDisplayName(student) : "A student"} submitted ${assignment?.title || "an assignment"}.`,
           meta: this.formatDate(submission.submittedAt)
         };
       });
@@ -2005,21 +2551,64 @@ class ClassroomUI {
 
     const classrooms = await ClassroomAPI.getJoinedClassrooms().catch(() => []);
     container.innerHTML = classrooms.length
-      ? classrooms.map((classroom) => `
-        <article class="student-class-card glass-card">
-          <div class="student-class-card-top">
-            <span class="classroom-banner-badge">${this.escape(this.getClassroomLabel(classroom))}</span>
-            <span class="soft-pill">${classroom.unreadCount || 0} unread</span>
+      ? `
+        <div class="student-class-list">
+          ${classrooms.map((classroom) => {
+            const taskCount = Number(classroom.taskCount || 0);
+            const progress = Math.max(0, Math.min(100, Number(
+              classroom.progressPercentage ?? classroom.progress ?? classroom.completionPercentage ?? classroom.overallCompletion ?? 0
+            ) || 0));
+            const route = this.getRouteHref("student", { classroomId: classroom.id });
+            return `
+              <article class="student-class-card premium-student-class-card">
+                <div class="student-class-thumb">
+                  <img src="assets/images/student-classroom-card.webp" alt="" loading="lazy" decoding="async" onerror="this.src='../../assets/images/student-classroom-card.webp'; this.onerror=null;">
+                </div>
+                <div class="student-class-details">
+                  <span class="classroom-banner-badge">${this.escape(this.getClassroomLabel(classroom))}</span>
+                  <h3>${this.escape(classroom.name || "Untitled classroom")}</h3>
+                  <p class="student-class-teacher">Teacher: <strong>${this.escape(classroom.teacherName || "Teacher")}</strong></p>
+                  <div class="student-class-divider" aria-hidden="true"></div>
+                  <div class="student-class-meta-row">
+                    <span>
+                      <span class="meta-icon">${this.getIcon("assignment")}</span>
+                      <strong>${taskCount}</strong>
+                      <small>${taskCount === 1 ? "Task" : "Tasks"}</small>
+                    </span>
+                    <span>
+                      <span class="meta-icon">${this.getIcon("calendar")}</span>
+                      <strong>${this.formatDate(classroom.joinedAt)}</strong>
+                      <small>Joined</small>
+                    </span>
+                    <span class="student-class-progress">
+                      <span class="student-progress-ring" style="--progress: ${progress}%"><strong>${progress}%</strong></span>
+                      <span>
+                        <strong>Progress</strong>
+                        <small>Overall completion</small>
+                      </span>
+                    </span>
+                  </div>
+                </div>
+                <div class="student-class-actions">
+                  <span class="soft-pill unread-pill"><i aria-hidden="true"></i>${Number(classroom.unreadCount || 0)} Unread</span>
+                  <button class="student-class-menu" type="button" aria-label="Classroom options">${this.getIcon("dots")}</button>
+                  <a class="btn btn-primary btn-small student-open-class-btn" href="${route}" data-open-student-class="${this.escape(classroom.id)}">
+                    Open Classroom ${this.getIcon("arrow")}
+                  </a>
+                </div>
+              </article>
+            `;
+          }).join("")}
+        </div>
+        <div class="student-motivation-strip">
+          <span class="student-motivation-icon">${this.getIcon("trophy")}</span>
+          <div>
+            <strong>Keep going! Every lesson brings you one step closer to your goals.</strong>
+            <span>Stay consistent, stay curious, and enjoy the learning journey.</span>
           </div>
-          <h3>${this.escape(classroom.name)}</h3>
-          <p class="muted">Teacher: ${this.escape(classroom.teacherName || "Teacher")}</p>
-          <div class="classroom-meta">
-            <span><span class="meta-icon">${this.getIcon("assignment")}</span>${classroom.taskCount || 0} tasks</span>
-            <span>Joined ${this.formatDate(classroom.joinedAt)}</span>
-          </div>
-          <a class="btn btn-primary btn-small" href="${this.getRouteHref("student", { classroomId: classroom.id })}" data-open-student-class="${this.escape(classroom.id)}">Open Classroom</a>
-        </article>
-      `).join("")
+          <a class="btn btn-secondary btn-small" href="#dashboard">View Dashboard ${this.getIcon("arrow")}</a>
+        </div>
+      `
       : `
         <div class="empty-state classroom-empty-state">
           <span class="empty-state-visual" data-dashboard-icon="classroomDefault" aria-hidden="true"></span>
@@ -2027,7 +2616,7 @@ class ClassroomUI {
           <span>Open an invitation link from your teacher to join a classroom.</span>
         </div>
       `;
-    this.hydrateDashboardIcons(container);
+    this.hydrateDashboardIcons(document.querySelector("main") || container);
     container.querySelectorAll("[data-open-student-class]").forEach((link) => {
       link.addEventListener("click", () => {
         ClassroomAPI.touchStudentClassroomAccess(link.dataset.openStudentClass).catch(() => null);
@@ -2058,7 +2647,7 @@ class ClassroomUI {
     const { classroom, membership } = joinedClassroom;
     await ClassroomAPI.touchStudentClassroomAccess(classroom.id).catch(() => null);
     main.innerHTML = this.renderStudentClassroomShell(classroom, membership);
-    await this.renderStudentWorkspace(classroomId, membership);
+    await this.renderStudentWorkspace(classroomId, membership, classroom);
   }
 
   static renderStudentAssetImage(src, alt, className = "") {
@@ -2072,247 +2661,701 @@ class ClassroomUI {
     `;
   }
 
+  static getAssignmentDisplayMeta(assignment) {
+    const type = assignment.assignmentType || "standard";
+    let typeLabel = "Assignment";
+    let summary = this.cleanAssignmentInstructions(assignment.instructions || "");
+    let resourceUrl = this.getAssignmentRawLaunchUrl(assignment) || "";
+    if (type === "learning_spree") {
+      typeLabel = "Learning Spree";
+      summary = summary || "Open the lessons below in order.";
+    } else if (type === "quiz") {
+      typeLabel = "Quiz";
+    } else if (type === "discussion") {
+      typeLabel = "Discussion";
+    }
+    if (assignment.resourceItems && assignment.resourceItems.length) {
+      const first = assignment.resourceItems[0];
+      resourceUrl = this.getAssignmentResourceItemUrl(first) || resourceUrl || first.resourceId || "";
+    }
+    return { typeLabel, summary, resourceUrl };
+  }
+
+  static cleanAssignmentInstructions(text = "") {
+    let cleaned = String(text || "");
+    cleaned = cleaned.replace(/\s*Resource:\s*[^.!?\n]*?https?:\/\/[^\s<>"']+/gi, " ");
+    cleaned = cleaned.replace(/\s*Resource:\s*[^.!?\n]*(?=$|[.!?\n])/gi, " ");
+    cleaned = cleaned.replace(/https?:\/\/[^\s<>"']+/gi, " ");
+    cleaned = cleaned.replace(/\s+([.,!?;:])/g, "$1");
+    cleaned = cleaned.replace(/(?:\s*[.]){2,}/g, ".");
+    cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
+    cleaned = cleaned.replace(/\s+[.,;:]$/g, "").trim();
+    return cleaned;
+  }
+
+  static extractFirstUrl(text = "") {
+    const match = String(text || "").match(/https?:\/\/[^\s<>"']+/i);
+    return match ? match[0].replace(/[),.;\]]+$/, "") : "";
+  }
+
+  static parseMetadataObject(value) {
+    if (!value) return {};
+    if (typeof value === "object" && !Array.isArray(value)) return value;
+    if (typeof value !== "string") return {};
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static isZipLaunchUrl(value = "") {
+    try {
+      const parsed = new URL(String(value || ""), window.location.href);
+      return parsed.pathname.toLowerCase().endsWith(".zip");
+    } catch (_) {
+      return String(value || "").trim().toLowerCase().replace(/[?#].*$/, "").endsWith(".zip");
+    }
+  }
+
+  static getAssignmentResourceItemUrl(item = {}) {
+    const metadata = this.parseMetadataObject(item.metadata);
+    return [
+      item.projectUrl,
+      item.project_url,
+      item.previewUrl,
+      item.preview_url,
+      item.resourceUrl,
+      item.resource_url,
+      metadata.indexUrl,
+      metadata.previewUrl,
+      metadata.index_url,
+      metadata.preview_url,
+      item.fileUrl,
+      item.file_url
+    ].map((value) => String(value || "").trim()).find(Boolean) || "";
+  }
+
+  static getAssignmentLaunchCandidates(assignment = {}) {
+    const metadata = this.parseMetadataObject(assignment.metadata);
+    const firstResource = Array.isArray(assignment.resourceItems) ? assignment.resourceItems[0] : null;
+    return [
+      assignment.projectUrl,
+      assignment.project_url,
+      assignment.previewUrl,
+      assignment.preview_url,
+      assignment.resourceUrl,
+      assignment.resource_url,
+      metadata.indexUrl,
+      metadata.previewUrl,
+      metadata.index_url,
+      metadata.preview_url,
+      firstResource ? this.getAssignmentResourceItemUrl(firstResource) : "",
+      this.extractFirstUrl(`${assignment.instructions || ""} ${assignment.description || ""}`)
+    ].map((value) => String(value || "").trim()).filter(Boolean);
+  }
+
+  static getAssignmentRawLaunchUrl(assignment = {}) {
+    return this.getAssignmentLaunchCandidates(assignment).find((value) => !this.isZipLaunchUrl(value))
+      || this.getAssignmentLaunchCandidates(assignment)[0]
+      || "";
+  }
+
+  static getAssignmentLaunchUrl(assignment = {}, context = {}) {
+    const rawUrl = this.getAssignmentLaunchCandidates(assignment).find((value) => !this.isZipLaunchUrl(value)) || "";
+    if (!rawUrl) return null;
+
+    try {
+      const url = new URL(rawUrl, window.location.href);
+      if (!/^https?:$/.test(url.protocol)) return null;
+      url.searchParams.set("course_id", context.courseId || "english-a1");
+      url.searchParams.set("classroom_id", context.classroomId || assignment.classroomId || "");
+      url.searchParams.set("assignment_id", context.assignmentId || assignment.id || "");
+      url.searchParams.set("student_id", context.studentId || "");
+      url.searchParams.set("score_sync_url", new URL("/api/classroom-activity-score", window.location.origin).toString());
+      url.searchParams.set("parent_origin", window.location.origin);
+      if (context.launchToken) {
+        url.searchParams.set("launch_token", context.launchToken);
+      }
+      console.log("[Edtechra Assignment Launch]", {
+        launchUrl: url.toString(),
+        classroomId: context.classroomId || assignment.classroomId || "",
+        assignmentId: context.assignmentId || assignment.id || "",
+        studentId: context.studentId || "",
+        courseId: context.courseId || "english-a1",
+        hasLaunchToken: Boolean(context.launchToken)
+      });
+      return url.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static getAssignmentProgressKey(assignmentId = "", studentId = "") {
+    return `edtechra_assignment_progress:${studentId || "student"}:${assignmentId || "assignment"}`;
+  }
+
+  static getActivityProgressKey(assignmentId = "", studentId = "") {
+    return `edtechra_activity_days:${studentId || "student"}:${assignmentId || "assignment"}`;
+  }
+
+  static markAssignmentInProgress(assignmentId = "", studentId = "") {
+    if (!assignmentId) return;
+    try {
+      localStorage.setItem(this.getAssignmentProgressKey(assignmentId, studentId), "in_progress");
+    } catch (_) {
+      // Ignore storage failures; the viewer still opens.
+    }
+  }
+
+  static isAssignmentInProgress(assignmentId = "", studentId = "") {
+    try {
+      return localStorage.getItem(this.getAssignmentProgressKey(assignmentId, studentId)) === "in_progress";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static getActivityCompletedDays(assignmentId = "", studentId = "") {
+    try {
+      const raw = localStorage.getItem(this.getActivityProgressKey(assignmentId, studentId));
+      const parsed = JSON.parse(raw || "[]");
+      return Array.isArray(parsed) ? parsed.map(Number).filter((day) => Number.isFinite(day) && day > 0) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static markActivityDayComplete(assignmentId = "", studentId = "", dayNumber = 0) {
+    const day = Number(dayNumber);
+    if (!assignmentId || !Number.isFinite(day) || day <= 0) return [];
+    const days = new Set(this.getActivityCompletedDays(assignmentId, studentId));
+    days.add(day);
+    const next = [...days].sort((a, b) => a - b);
+    try {
+      localStorage.setItem(this.getActivityProgressKey(assignmentId, studentId), JSON.stringify(next));
+    } catch (_) {
+      // Ignore storage failures; Supabase sync still carries the score.
+    }
+    return next;
+  }
+
+  static getAssignmentTotalDays(assignment = {}) {
+    const metadata = this.parseMetadataObject(assignment.metadata);
+    const fromMetadata = Number(metadata.totalDays || metadata.total_days || assignment.totalDays || assignment.total_days);
+    if (Number.isFinite(fromMetadata) && fromMetadata > 0) return fromMetadata;
+    const slug = String(metadata.activitySlug || metadata.activity_slug || assignment.activitySlug || assignment.activity_slug || assignment.title || "").toLowerCase();
+    if (slug.includes("deep-ocean") || slug.includes("deep ocean") || slug.includes("nightmare")) return 7;
+    return 0;
+  }
+
+  static calculateAssignmentProgress(assignment = {}, submission = null, studentId = "") {
+    if (submission) {
+      const status = String(submission.status || "").toLowerCase();
+      const progressPercent = Number(submission.progressPercent || 0);
+      if (status === "completed") return 100;
+      if (progressPercent > 0) return Math.min(99, Math.round(progressPercent));
+      if (Array.isArray(submission.completedDays) && submission.completedDays.length) {
+        const totalDays = this.getAssignmentTotalDays(assignment);
+        return totalDays ? Math.min(99, Math.round((submission.completedDays.length / totalDays) * 100)) : 1;
+      }
+      return status === "in_progress" ? 1 : 100;
+    }
+    const totalDays = this.getAssignmentTotalDays(assignment);
+    if (totalDays > 0) {
+      const completedDays = this.getActivityCompletedDays(assignment.id, studentId);
+      return Math.min(100, Math.round((completedDays.length / totalDays) * 100));
+    }
+    return this.isAssignmentInProgress(assignment.id, studentId) ? 1 : 0;
+  }
+
+  static isAssignmentSubmissionComplete(assignment = {}, submission = null) {
+    if (!submission) return false;
+    const status = String(submission.status || "").toLowerCase();
+    if (status === "completed") return true;
+
+    const progressPercent = Number(submission.progressPercent || 0);
+    const completedDays = Array.isArray(submission.completedDays) ? submission.completedDays : [];
+    const hasActivityProgress = progressPercent > 0 || completedDays.length > 0 || this.getAssignmentTotalDays(assignment) > 0;
+    if (hasActivityProgress) return progressPercent >= 100;
+
+    return true;
+  }
+
+  static openActivityInsideApp(assignment = {}, launchUrl = "", context = {}) {
+    if (!launchUrl) {
+      const rawUrl = this.getAssignmentRawLaunchUrl(assignment);
+      const message = rawUrl && this.isZipLaunchUrl(rawUrl)
+        ? "This activity was uploaded but has not been processed into a playable preview yet."
+        : "No lesson is available right now.";
+      this.showToast(message, "error");
+      return false;
+    }
+
+    this.markAssignmentInProgress(assignment.id, context.studentId);
+    console.info("[Digital Classroom] Opening assignment activity iframe", {
+      assignmentId: assignment.id || "",
+      classroomId: context.classroomId || assignment.classroomId || "",
+      studentId: context.studentId || "",
+      activitySlug: this.getAssignmentActivitySlug(assignment),
+      launchUrl
+    });
+    document.getElementById("assignment-activity-viewer")?.remove();
+
+    const viewer = document.createElement("section");
+    viewer.id = "assignment-activity-viewer";
+    viewer.className = "assignment-activity-viewer assignment-activity-shell";
+    viewer.innerHTML = `
+      <div class="assignment-activity-header">
+        <button class="assignment-activity-back-btn" type="button" data-close-activity-viewer>&larr; Back</button>
+        <a class="assignment-activity-fallback assignment-activity-open-new-tab" href="${this.escape(launchUrl)}" target="_blank" rel="noopener noreferrer" hidden>Open in New Tab</a>
+      </div>
+      <main class="assignment-activity-body">
+        <iframe
+          src="${this.escape(launchUrl)}"
+          title="Assignment Activity"
+          class="assignment-activity-frame"
+          scrolling="yes"
+          allow="fullscreen; autoplay; clipboard-read; clipboard-write"
+        ></iframe>
+      </main>
+    `;
+    document.body.appendChild(viewer);
+    document.body.classList.add("assignment-activity-open");
+    document.body.classList.add("assignment-viewer-open");
+
+    const closeViewer = () => {
+      viewer.remove();
+      document.body.classList.remove("assignment-activity-open");
+      document.body.classList.remove("assignment-viewer-open");
+    };
+    viewer.querySelector("[data-close-activity-viewer]")?.addEventListener("click", closeViewer);
+
+    const fallback = viewer.querySelector(".assignment-activity-fallback");
+    const frame = viewer.querySelector("iframe");
+    const fallbackTimer = window.setTimeout(() => {
+      if (fallback) fallback.hidden = false;
+    }, 6000);
+    frame?.addEventListener("load", () => {
+      window.clearTimeout(fallbackTimer);
+    }, { once: true });
+    frame?.addEventListener("error", () => {
+      if (fallback) fallback.hidden = false;
+      this.showToast("This activity could not be loaded inside Edtechra. Use Open in New Tab to continue.", "error");
+    }, { once: true });
+
+    return true;
+  }
+
+  static getAssignmentActivitySlug(assignment = {}) {
+    const metadata = this.parseMetadataObject(assignment.metadata);
+    const explicit = metadata.activitySlug || metadata.activity_slug || assignment.activitySlug || assignment.activity_slug;
+    if (explicit) return String(explicit).trim();
+    const title = String(assignment.title || "activity").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (title.includes("nightmare") || title.includes("deep-ocean")) return "deep-ocean-7-day";
+    return title || "activity";
+  }
+
+  static getStudentIdentityValues(student = {}) {
+    return [student.id, student.profileId, student.memberId]
+      .filter(Boolean)
+      .map((value) => String(value));
+  }
+
+  static findStudentByIdentity(students = [], student = {}) {
+    const identityValues = new Set(this.getStudentIdentityValues(student));
+    if (!identityValues.size) return null;
+    return students.find((item) => (
+      this.getStudentIdentityValues(item).some((value) => identityValues.has(value))
+    )) || null;
+  }
+
+  static bindActivityScoreListener(classroomId = "", studentId = "", assignmentRecords = [], students = []) {
+    if (this._activityScoreListener) {
+      window.removeEventListener("message", this._activityScoreListener);
+    }
+
+    this._activityScoreListener = async (event) => {
+      const message = event.data || {};
+      if (message?.type === "EDTECHRA_ACTIVITY_SCORE_SYNCED") {
+        console.log("[Edtechra Activity Message]", message);
+        const assignmentId = String(message.assignmentId || "").trim();
+        const record = assignmentRecords.find((item) => String(item.assignment.id) === assignmentId);
+        const completedDays = Array.isArray(message.completedDays)
+          ? message.completedDays.map(Number).filter((day) => Number.isFinite(day) && day > 0)
+          : this.markActivityDayComplete(assignmentId, studentId, message.dayNumber);
+        if (assignmentId && message.dayNumber) {
+          this.markActivityDayComplete(assignmentId, studentId, message.dayNumber);
+        }
+        if (record) {
+          const totalDays = this.getAssignmentTotalDays(record.assignment) || completedDays.length || 1;
+          const progress = Math.min(100, Math.round((completedDays.length / totalDays) * 100));
+          record.progressPercent = progress;
+          console.log("[Edtechra Assignment Progress Refresh]", assignmentId);
+          this.updateVisibleAssignmentProgress(assignmentId, progress, progress >= 100 ? "Completed" : "In Progress");
+          const averageProgress = assignmentRecords.length
+            ? Math.round(assignmentRecords.reduce((sum, item) => sum + Number(item.progressPercent || 0), 0) / assignmentRecords.length)
+            : progress;
+          this.setText("student-progress-rate", `${averageProgress}%`);
+        }
+        console.log("[Edtechra Leaderboard Refresh]", classroomId);
+        let refreshedStudents = null;
+        try {
+          refreshedStudents = await ClassroomAPI.getStudentsByClassroom(classroomId);
+        } catch (error) {
+          console.warn("[Digital Classroom] Leaderboard refresh failed after score sync.", error);
+        }
+        const leaderboardContainer = document.getElementById("student-leaderboard");
+        if (leaderboardContainer && Array.isArray(refreshedStudents)) {
+          leaderboardContainer.innerHTML = this.renderStudentLeaderboard(refreshedStudents, studentId);
+        }
+        const refreshedStudent = Array.isArray(refreshedStudents)
+          ? this.findStudentByIdentity(refreshedStudents, { id: studentId })
+          : null;
+        if (refreshedStudent) {
+          this.setText("student-points", `${Number(refreshedStudent.points || 0)} pts`);
+        }
+        return;
+      }
+      if (!message || message.type !== "edtechra:activity-score") return;
+      console.warn("[Digital Classroom] Ignored legacy activity score postMessage. Activities must POST scores to /api/classroom-activity-score before sending EDTECHRA_ACTIVITY_SCORE_SYNCED.");
+    };
+
+    window.addEventListener("message", this._activityScoreListener);
+  }
+
+  static updateVisibleAssignmentProgress(assignmentId = "", progress = 0, statusLabel = "In Progress") {
+    const safeAssignmentId = window.CSS?.escape ? CSS.escape(String(assignmentId || "")) : String(assignmentId || "").replace(/"/g, '\\"');
+    document.querySelectorAll(`[data-assignment-status="${safeAssignmentId}"]`).forEach((status) => {
+      status.textContent = statusLabel;
+      status.classList.remove("pending");
+      status.classList.add(progress >= 100 ? "completed" : "active");
+    });
+    document.querySelectorAll(`[data-assignment-action="${safeAssignmentId}"]`).forEach((button) => {
+      button.textContent = progress >= 100 ? "Review" : "Go to Lesson";
+    });
+    document.querySelectorAll(`[data-assignment-progress="${safeAssignmentId}"]`).forEach((label) => {
+      label.textContent = `${progress}%`;
+    });
+    document.querySelectorAll(`[data-assignment-progress-bar="${safeAssignmentId}"]`).forEach((bar) => {
+      bar.style.width = `${progress}%`;
+    });
+  }
+
+  static formatDateShort(value) {
+    if (!value) return "No date";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return this.escape(String(value).slice(0, 10));
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  static getTodayInTimezone() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
   static renderStudentClassroomShell(classroom, student) {
+    const studentName = this.getStudentDisplayName(student);
     return `
-      <header class="dashboard-hero glass-panel page-hero page-hero-slim student-classes-hero">
-        <div class="dashboard-hero-copy">
-          <p class="eyebrow">Student Classroom</p>
-          <h1>${this.escape(classroom.name)}</h1>
-          <p class="subtitle">${this.escape(this.getClassroomLabel(classroom))} with ${this.escape(classroom.teacherName || "your teacher")}</p>
-          <div class="hero-meta-row">
-            <span class="soft-pill">Class code: ${this.escape(classroom.inviteCode || classroom.id)}</span>
-            <span class="soft-pill">Progress starts here</span>
-          </div>
+      <div class="student-learning-shell">
+        <div class="student-learning-main">
+          <header class="student-learning-topbar">
+            <label class="student-search-box">
+              <span>${this.getIcon("search")}</span>
+              <input type="search" placeholder="Search lessons, assignments, notes..." aria-label="Search lessons, assignments, notes">
+            </label>
+            <div class="student-topbar-actions">
+              <button class="student-icon-button" type="button" aria-label="Notifications">
+                ${this.getIcon("bell")}
+                <span class="notification-badge">3</span>
+              </button>
+              <div class="student-profile-chip">
+                <span class="student-avatar">${this.escape(studentName.charAt(0).toUpperCase())}</span>
+                <div>
+                  <strong id="student-name">${this.escape(studentName)}</strong>
+                  <small>Student</small>
+                </div>
+                <span class="student-profile-chevron">${this.getDashboardIcon("chevron")}</span>
+              </div>
+            </div>
+          </header>
+
+          <section class="student-class-hero">
+            <div class="student-class-hero-copy">
+              <p>Welcome back, ${this.escape(studentName)}!</p>
+              <h1>${this.escape(classroom.name)}</h1>
+              <span>Keep up the great work! You're on track to achieve your learning goals.</span>
+              <div class="student-hero-actions">
+                <button class="btn btn-primary" type="button" data-go-current-lesson>${this.getIcon("book")} Go to Lesson</button>
+                <button class="btn btn-secondary" type="button" data-view-class-resources>${this.getIcon("folder")} View Class Resources</button>
+              </div>
+            </div>
+            <div class="student-class-hero-visual">
+              <img class="student-hero-image" src="../../assets/images/classroom.webp" alt="" loading="eager" decoding="async">
+            </div>
+          </section>
+
+          <section class="student-quick-actions" aria-label="Student quick actions">
+            <article class="student-quick-action-card student-quick-action-card--quiz">
+              <div class="student-quick-action-content">
+                <h2 class="student-quick-action-title">Live Quiz</h2>
+                <p class="student-quick-action-text">Join live quizzes created by your teachers.</p>
+                <a class="student-quick-action-btn" href="${this.getLiveQuizUrl({
+                  classroomId: classroom.id,
+                  teacherId: classroom.teacherId || classroom.teacher_id || "",
+                  studentId: student.id || student.profileId || student.profile_id || "",
+                  profileId: student.profileId || student.profile_id || student.id || ""
+                })}" data-future-route="live-quiz">Join Now ${this.getIcon("arrow")}</a>
+              </div>
+              <span class="student-quick-action-icon">${this.getIcon("broadcast")}</span>
+            </article>
+            <article class="student-quick-action-card student-quick-action-card--exams">
+              <div class="student-quick-action-content">
+                <h2 class="student-quick-action-title">Exams</h2>
+                <p class="student-quick-action-text">Take exams and track your performance.</p>
+                <button class="student-quick-action-btn" type="button" data-student-quick-action="exams">View Exams ${this.getIcon("arrow")}</button>
+              </div>
+              <span class="student-quick-action-icon">${this.getIcon("clipboard")}</span>
+            </article>
+            <article class="student-quick-action-card student-quick-action-card--competitions">
+              <div class="student-quick-action-content">
+                <h2 class="student-quick-action-title">Competitions</h2>
+                <p class="student-quick-action-text">Participate and challenge yourself.</p>
+                <button class="student-quick-action-btn" type="button" data-student-quick-action="competitions">Explore ${this.getIcon("arrow")}</button>
+              </div>
+              <span class="student-quick-action-icon">${this.getIcon("trophy")}</span>
+            </article>
+            <article class="student-quick-action-card student-quick-action-card--calendar">
+              <div class="student-quick-action-content">
+                <h2 class="student-quick-action-title">Calendar</h2>
+                <p class="student-quick-action-text">Check important dates and events.</p>
+                <button class="student-quick-action-btn" type="button" data-student-quick-action="calendar">Open Calendar ${this.getIcon("arrow")}</button>
+              </div>
+              <span class="student-quick-action-icon">${this.getIcon("calendar")}</span>
+            </article>
+          </section>
+
+          <section class="student-dashboard-stats" aria-label="Classroom summary">
+            <article class="student-stat-card">
+              <div class="student-stat-card-left">
+                <span class="student-stat-icon progress">${this.getIcon("trendingUp")}</span>
+                <div>
+                  <small>Progress</small>
+                  <strong id="student-progress-rate">0%</strong>
+                  <span>Overall Completion</span>
+                </div>
+              </div>
+              <div class="student-stat-card-right trend-up">
+                <span id="student-progress-context">0/0</span>
+                <small>tasks complete</small>
+              </div>
+            </article>
+            <article class="student-stat-card">
+              <div class="student-stat-card-left">
+                <span class="student-stat-icon active">${this.getIcon("check")}</span>
+                <div>
+                  <small>Active</small>
+                  <strong id="student-active-task-count">0</strong>
+                  <span>Tasks in Progress</span>
+                </div>
+              </div>
+              <div class="student-stat-card-right count-badge">
+                <strong id="student-resource-count">0</strong>
+                <small>Lessons</small>
+              </div>
+            </article>
+            <article class="student-stat-card">
+              <div class="student-stat-card-left">
+                <span class="student-stat-icon deadline">${this.getIcon("calendar")}</span>
+                <div>
+                  <small>Upcoming Deadline</small>
+                  <strong id="student-next-deadline">No deadline</strong>
+                  <span id="student-deadline-count">No deadline</span>
+                </div>
+              </div>
+              <div class="student-stat-card-right deadline-badge" id="student-deadline-badge">
+                <strong>-</strong>
+                <small>remaining</small>
+              </div>
+            </article>
+          </section>
+
+          <section class="student-dashboard-grid student-classroom-main-grid" id="student-workspace">
+            <div class="student-dashboard-left student-classroom-left-column">
+              <section class="student-dashboard-panel student-panel-messages" id="student-messages-panel">
+                <div class="student-panel-header">
+                  <div>
+                    <h2>Messages</h2>
+                    <p>Latest updates from your teacher.</p>
+                  </div>
+                </div>
+                <div class="student-message-list" id="student-teacher-messages"></div>
+              </section>
+
+              <section class="student-dashboard-panel student-panel-tasks" id="student-tasks-panel">
+                <div class="student-panel-header">
+                  <h2>Tasks</h2>
+                  <a href="#student-content">View all</a>
+                </div>
+                <div class="student-task-list" id="student-assignments"></div>
+              </section>
+
+              <section class="student-dashboard-panel student-panel-assignment" id="student-assignment-detail"></section>
+
+              <section class="student-dashboard-panel student-panel-events" id="student-events-panel">
+                <div class="student-panel-header">
+                  <h2>Upcoming Events</h2>
+                  <a href="#student-workspace">View calendar</a>
+                </div>
+                <div class="student-event-list" id="student-upcoming-events"></div>
+              </section>
+
+              <section class="student-dashboard-panel student-panel-activity">
+                <div class="student-panel-header">
+                  <h2>Recent Activity</h2>
+                  <a href="#student-workspace">View all activity</a>
+                </div>
+                <div class="student-activity-list" id="student-recent-activity"></div>
+              </section>
+            </div>
+
+            <div class="student-dashboard-right student-classroom-right-column">
+              <section class="student-dashboard-panel student-panel-leaderboard">
+                <div class="student-panel-header">
+                  <h2>Leaderboard</h2>
+                  <span>This Week</span>
+                </div>
+                <div class="student-leaderboard" id="student-leaderboard"></div>
+              </section>
+
+              <section class="student-dashboard-panel student-panel-ai">
+                <div class="student-panel-header">
+                  <h2>AI Feedback</h2>
+                </div>
+                <div id="student-ai-feedback"></div>
+              </section>
+            </div>
+          </section>
+
+          <div class="sr-only" id="student-points">${Number(student.points || 0)} pts</div>
+          <div class="sr-only" id="student-content"></div>
         </div>
-        <div class="student-hero-visual">
-          ${this.renderStudentAssetImage("assets/images/vvk3qw6wli6a27hwlz2j.webp", "Student classroom illustration", "student-hero-image")}
-        </div>
-      </header>
-
-      <section class="student-summary-grid grid">
-        <div class="student-summary-card glass-card">
-          <span class="student-summary-icon" data-dashboard-icon="completion" aria-hidden="true"></span>
-          <strong id="student-progress-rate">0%</strong>
-          <span>Progress analytics</span>
-        </div>
-        <div class="student-summary-card glass-card">
-          <span class="student-summary-icon" data-dashboard-icon="attendance" aria-hidden="true"></span>
-          <strong>Active</strong>
-          <span>Attendance summary</span>
-        </div>
-        <div class="student-summary-card glass-card">
-          <span class="student-summary-icon" data-dashboard-icon="deadlines" aria-hidden="true"></span>
-          <strong id="student-deadline-count">0</strong>
-          <span>Upcoming deadlines</span>
-        </div>
-      </section>
-
-      <section class="student-dashboard-grid grid" id="student-workspace">
-        <section class="glass-panel section-surface">
-          <div class="section-header section-header-tight">
-            <div>
-              <h2>Today's Tasks</h2>
-              <p class="muted">Assigned work due today or ready to continue.</p>
-            </div>
-          </div>
-          <div class="item-list" id="student-assignments"></div>
-        </section>
-
-        <section class="glass-panel section-surface">
-          <div class="section-header section-header-tight">
-            <div>
-              <h2>Message Board</h2>
-              <p class="muted">Teacher announcements and pinned notices.</p>
-            </div>
-          </div>
-          <div id="student-message-empty">
-            <div class="student-illustrated-empty">
-              ${this.renderStudentAssetImage("assets/images/ok4ojdvf4ayliwu3awhb.webp", "No classroom messages", "student-empty-image")}
-              <strong>No announcements yet</strong>
-              <span>Classroom updates from your teacher will appear here.</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="glass-panel section-surface">
-          <div class="section-header section-header-tight">
-            <div>
-              <h2>Upcoming Events</h2>
-              <p class="muted">Live quizzes, exams, deadlines, and speaking sessions.</p>
-            </div>
-          </div>
-          ${this.emptyState("No upcoming events", "Scheduled classroom events will appear here.")}
-        </section>
-
-        <section class="glass-panel section-surface">
-          <div class="section-header section-header-tight">
-            <div>
-              <h2>Live Quiz</h2>
-              <p class="muted">Join interactive quizzes launched by your teacher.</p>
-            </div>
-          </div>
-          ${this.emptyState("No live quiz right now", "When your teacher starts a quiz, the join button will appear here.")}
-        </section>
-
-        <section class="glass-panel section-surface">
-          <div class="section-header section-header-tight">
-            <div>
-              <h2>Leaderboard</h2>
-              <p class="muted">Your points and class ranking.</p>
-            </div>
-          </div>
-          <div class="item-list" id="student-leaderboard"></div>
-        </section>
-
-        <section class="glass-panel section-surface">
-          <div class="section-header section-header-tight">
-            <div>
-              <h2>AI Learning Coach</h2>
-              <p class="muted">Personal feedback and suggested next activity.</p>
-            </div>
-          </div>
-          <div class="student-ai-coach-card" id="student-ai-coach">
-            <div>
-              <strong>Feedback is warming up</strong>
-              <span>Personal AI feedback will appear after you complete classroom work.</span>
-            </div>
-            ${this.renderStudentAssetImage("assets/images/iciuxqgkqr4nnemdeqw8.webp", "AI learning coach robot", "student-ai-robot-image")}
-          </div>
-        </section>
-
-        <section class="glass-panel section-surface">
-          <div class="section-header section-header-tight">
-            <div>
-              <h2>Recent Activity</h2>
-              <p class="muted">Your latest submissions, messages, and attendance signals.</p>
-            </div>
-          </div>
-          <div class="item-list" id="student-recent-activity"></div>
-        </section>
-
-        <section class="glass-panel section-surface student-quick-actions">
-          <div class="section-header section-header-tight">
-            <div>
-              <h2>Quick Actions</h2>
-              <p class="muted">Jump back into your learning flow.</p>
-            </div>
-          </div>
-          <div class="student-action-row">
-            <a class="btn btn-primary btn-small" href="#student-assignments">Continue Tasks</a>
-            <a class="btn btn-secondary btn-small" href="#student-content">Open Resources</a>
-          </div>
-        </section>
-
-        <section class="glass-panel section-surface">
-          <div class="section-header section-header-tight">
-            <div>
-              <h2>Classroom Content</h2>
-              <p class="muted">Assigned learning resources from your teacher.</p>
-            </div>
-          </div>
-          <div class="item-list" id="student-content"></div>
-        </section>
-      </section>
+      </div>
     `;
   }
 
-  static async renderStudentWorkspace(classroomId, student) {
+  static async renderStudentWorkspace(classroomId, student, classroom = {}) {
     document.getElementById("student-join-panel")?.classList.add("hidden");
     document.getElementById("student-workspace")?.classList.remove("hidden");
-    this.setText("student-name", student.name);
-    this.setText("student-points", `${student.points} pts`);
+    this.setText("student-name", this.getStudentDisplayName(student));
+    this.setText("student-points", `${Number(student.points || 0)} pts`);
 
-    const [assignments, bucketItems, students] = await Promise.all([
+    const [assignments, bucketItems, students, classroomMessages] = await Promise.all([
       ClassroomAPI.getAssignmentsByClassroom(classroomId),
       ClassroomAPI.getClassroomContent(classroomId),
-      ClassroomAPI.getStudentsByClassroom(classroomId).catch(() => [])
+      ClassroomAPI.getStudentsByClassroom(classroomId).catch((error) => {
+        console.warn("[Digital Classroom] Student leaderboard unavailable", error);
+        return [];
+      }),
+      ClassroomAPI.getClassroomMessages(classroomId).catch((error) => {
+        console.warn("[Digital Classroom] Student messages unavailable", error);
+        return [];
+      })
     ]);
+    const currentStudent = this.findStudentByIdentity(students, student);
+    if (currentStudent) {
+      this.setText("student-points", `${Number(currentStudent.points || 0)} pts`);
+    }
 
-    this.hydrateDashboardIcons(document.getElementById("student-workspace")?.parentElement || document);
-    this.setText("student-deadline-count", assignments.length);
+    const assignmentRecords = await Promise.all(assignments.map(async (assignment) => {
+      const submission = await ClassroomAPI.getSubmission(assignment.id, student.id).catch(() => null);
+      const isSpree = assignment.assignmentType === "learning_spree";
+      const items = isSpree ? (assignment.resourceItems || []) : [];
+      const progressRows = isSpree
+        ? await ClassroomAPI.getSpreeItemProgress(assignment.id, student.id).catch(() => [])
+        : [];
+      const progressByItem = new Map(progressRows.map((row) => [String(row.spreeItemId), row]));
+      const completedCount = items.filter((item) => progressByItem.get(String(item.id))?.status === "completed").length;
+      const progressPercent = isSpree
+        ? (items.length ? Math.round((completedCount / items.length) * 100) : 0)
+        : this.calculateAssignmentProgress(assignment, submission, student.id);
+      const displayMeta = this.getAssignmentDisplayMeta(assignment);
+      return { assignment, submission, isSpree, items, progressByItem, completedCount, progressPercent, displayMeta };
+    }));
+    const taskModels = this.buildStudentTaskModels(assignmentRecords);
+    const feedbackModel = this.getStudentFeedbackModel(assignmentRecords);
+
+    const submittedCount = assignmentRecords.filter((record) => String(record.submission?.status || "").toLowerCase() === "completed").length;
+    const progressRate = assignmentRecords.length
+      ? Math.round(assignmentRecords.reduce((sum, record) => sum + Number(record.progressPercent || 0), 0) / assignmentRecords.length)
+      : 0;
+    const activeCount = assignmentRecords.filter((record) => !record.submission && record.progressPercent < 100).length;
+    const upcomingAssignments = [...assignments]
+      .filter((assignment) => assignment.dueDate)
+      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+    const nextDue = upcomingAssignments[0];
+
+    this.setText("student-progress-rate", `${progressRate}%`);
+    this.setText("student-progress-context", `${submittedCount}/${assignments.length}`);
+    this.setText("student-active-task-count", String(activeCount));
+    this.setText("student-resource-count", String(bucketItems.length));
+    this.setText("student-next-deadline", nextDue ? this.formatDateShort(nextDue.dueDate) : "No deadline");
+    this.setText("student-deadline-count", nextDue ? (nextDue.title || "No deadline") : "No active deadlines");
+
+    const dueDistance = nextDue ? this.getDueDistanceLabel(nextDue.dueDate) : "No deadline";
+    const daysMatch = dueDistance.match(/(\d+)\s+day/);
+    const daysText = daysMatch ? `${daysMatch[1]} days` : dueDistance.includes("today") ? "Today" : dueDistance;
+    const remainingText = dueDistance.includes("remaining") ? "remaining" : dueDistance.includes("overdue") ? "overdue" : "remaining";
+    const deadlineBadge = document.getElementById("student-deadline-badge");
+    if (deadlineBadge) {
+      if (nextDue) {
+        deadlineBadge.innerHTML = `<strong>${daysText}</strong><small>${remainingText}</small>`;
+        deadlineBadge.style.display = "flex";
+      } else {
+        deadlineBadge.style.display = "none";
+      }
+    }
 
     const assignmentContainer = document.getElementById("student-assignments");
     if (assignmentContainer) {
-      const rows = await Promise.all(assignments.map(async (assignment) => {
-        const submission = await ClassroomAPI.getSubmission(assignment.id, student.id);
-        const isSpree = assignment.assignmentType === "learning_spree";
-        if (isSpree) {
-          const items = assignment.resourceItems || [];
-          const progressRows = await ClassroomAPI.getSpreeItemProgress(assignment.id, student.id).catch(() => []);
-          const progressByItem = new Map(progressRows.map((row) => [String(row.spreeItemId), row]));
-          const completedCount = items.filter((item) => progressByItem.get(String(item.id))?.status === "completed").length;
-          return `
-            <article class="list-item student-spree-task">
-              <div class="student-spree-copy">
-                <h4>${this.escape(assignment.title)} <span class="resource-visibility-badge is-public">Learning Spree</span></h4>
-                <span>Due ${this.escape(assignment.dueDate)} / Progress: ${completedCount} / ${items.length} completed</span>
-                <p>${this.escape(assignment.instructions || "Open the lessons below in order.")}</p>
-                <div class="spree-progress-bar" aria-hidden="true"><span style="width: ${items.length ? Math.round((completedCount / items.length) * 100) : 0}%"></span></div>
-                <ol class="student-spree-materials">
-                  ${items.map((item) => {
-                    const progress = progressByItem.get(String(item.id));
-                    const status = progress?.status || "not_started";
-                    const unlocked = this.isSpreeItemUnlocked(assignment, item);
-                    const unlockDate = this.getSpreeItemUnlockDate(assignment, item);
-                    const statusLabel = status === "completed" ? "Completed" : status === "opened" ? "Opened" : "Not Started";
-                    const badgeLabel = status === "completed" ? "Completed" : unlocked ? "Available" : "Locked";
-                    const buttonLabel = status === "completed" ? "Review" : !unlocked ? "Locked" : status === "opened" ? "Mark as Completed" : "Open Lesson";
-                    const buttonAttr = status === "completed"
-                      ? ""
-                      : status === "opened"
-                        ? `data-complete-spree-lesson="${this.escape(item.id)}"`
-                        : `data-open-spree-lesson="${this.escape(item.id)}"`;
-                    return `
-                      <li class="${unlocked ? "is-available" : "is-locked"} ${status === "completed" ? "is-completed" : ""}">
-                        <div>
-                          <strong>${this.escape(item.title)}</strong>
-                          <span>${this.escape(item.resourceType || "saved work")} / ${statusLabel}</span>
-                          <small>${unlocked ? "Available" : this.escape(this.getUnlockText(unlockDate))}</small>
-                        </div>
-                        <span class="spree-status-badge ${status === "completed" ? "completed" : unlocked ? "available" : "locked"}">${badgeLabel}</span>
-                        <button class="btn btn-small ${unlocked ? "btn-primary" : "btn-muted"}" type="button"
-                          data-spree-assignment="${this.escape(assignment.id)}"
-                          data-spree-resource="${this.escape(item.resourceId)}"
-                          data-spree-classroom="${this.escape(assignment.classroomId)}"
-                          ${buttonAttr}
-                          ${!unlocked || status === "completed" ? "disabled" : ""}>${buttonLabel}</button>
-                      </li>
-                    `;
-                  }).join("")}
-                </ol>
-              </div>
-            </article>
-          `;
-        }
-        return `
-          <div class="list-item">
-            <div>
-              <h4>${this.escape(assignment.title)}</h4>
-              <span>Due ${this.escape(assignment.dueDate)} / ${this.escape(assignment.instructions || "No instructions")}</span>
-            </div>
-            <button class="btn btn-small ${submission ? "btn-muted" : "btn-primary"}"
-              data-submit-assignment="${this.escape(assignment.id)}"
-              ${submission ? "disabled" : ""}>${submission ? "Submitted" : `Submit (${assignment.points} pts)`}</button>
-          </div>
-        `;
-      }));
-
-      assignmentContainer.innerHTML = rows.length
-        ? rows.join("")
-        : `
-          <div class="student-illustrated-empty">
-            ${this.renderStudentAssetImage("assets/images/nxcemfm81daer42v2bn6.webp", "No tasks assigned", "student-empty-image")}
-            <strong>No assignments yet</strong>
-            <span>Your teacher's assigned work will appear here.</span>
-          </div>
-        `;
+      assignmentContainer.innerHTML = this.renderStudentTaskPanel(taskModels);
     }
 
-    const submittedCount = await Promise.all(assignments.map((assignment) => ClassroomAPI.getSubmission(assignment.id, student.id)))
-      .then((rows) => rows.filter(Boolean).length)
-      .catch(() => 0);
-    const progressRate = assignments.length ? Math.round((submittedCount / assignments.length) * 100) : 0;
-    this.setText("student-progress-rate", `${progressRate}%`);
+    const messagesContainer = document.getElementById("student-teacher-messages");
+    if (messagesContainer) {
+      messagesContainer.innerHTML = this.renderStudentMessages(classroomMessages);
+    }
+
+    const assignmentDetail = document.getElementById("student-assignment-detail");
+    if (assignmentDetail) {
+      assignmentDetail.innerHTML = this.renderStudentAssignmentDetail(assignmentRecords);
+    }
+
+    const feedbackContainer = document.getElementById("student-ai-feedback");
+    if (feedbackContainer) {
+      feedbackContainer.innerHTML = this.renderStudentAiFeedbackPanel(feedbackModel);
+      this.bindStudentAiFeedbackToggle(feedbackContainer, feedbackModel);
+    }
+
+    const eventsContainer = document.getElementById("student-upcoming-events");
+    if (eventsContainer) {
+      eventsContainer.innerHTML = upcomingAssignments.length
+        ? upcomingAssignments.slice(0, 3).map((assignment, index) => `
+          <div class="student-event-row event-accent-${index % 3}">
+            <span class="student-event-icon">${this.getIcon("calendar")}</span>
+            <div class="student-event-info">
+              <strong>${this.escape(assignment.title)}</strong>
+            </div>
+            <time>${this.formatDateShort(assignment.dueDate)}</time>
+            <small>11:59 PM</small>
+          </div>
+        `).join("")
+        : this.emptyState("No upcoming events", "Scheduled classroom events will appear here.");
+    }
 
     const contentContainer = document.getElementById("student-content");
     if (contentContainer) {
@@ -2330,15 +3373,124 @@ class ClassroomUI {
 
     const leaderboardContainer = document.getElementById("student-leaderboard");
     if (leaderboardContainer) {
-      this.renderLeaderboard("student-leaderboard", students);
+      leaderboardContainer.innerHTML = this.renderStudentLeaderboard(students, student.id);
     }
 
     const recentActivity = document.getElementById("student-recent-activity");
     if (recentActivity) {
-      recentActivity.innerHTML = submittedCount
-        ? `<div class="list-item compact"><div><h4>${submittedCount} task${submittedCount === 1 ? "" : "s"} submitted</h4><span>Your progress is being saved for this classroom.</span></div></div>`
+      const data = ClassroomState.getData();
+      const activityItems = data.submissions
+        .filter((submission) => submission.classroomId === classroomId && submission.studentId === student.id)
+        .slice(0, 3)
+        .map((submission) => {
+          const assignment = assignments.find((item) => item.id === submission.assignmentId);
+          return {
+            title: `Submitted "${assignment?.title || "assignment"}"`,
+            meta: this.formatDate(submission.submittedAt)
+          };
+        });
+      recentActivity.innerHTML = activityItems.length
+        ? activityItems.map((item, index) => `
+          <div class="student-activity-row activity-type-${index % 3}">
+            <span class="student-activity-icon">${this.getIcon(index % 3 === 0 ? "check" : index % 3 === 1 ? "book" : "star")}</span>
+            <strong>${this.escape(item.title)}</strong>
+            <time>${this.escape(item.meta)}</time>
+          </div>
+        `).join("")
         : this.emptyState("No recent activity", "Your submissions and classroom check-ins will appear here.");
     }
+
+    this.bindActivityScoreListener(classroomId, student.id, assignmentRecords, students);
+
+    const openAssignmentRecord = (record) => {
+      if (!record) {
+        this.showToast("No lesson is available right now.", "error");
+        return false;
+      }
+
+      const launchUrl = this.getAssignmentLaunchUrl(record.assignment, {
+        courseId: "english-a1",
+        classroomId,
+        assignmentId: record.assignment.id,
+        studentId: student.id,
+        launchToken: ""
+      });
+      const opened = this.openActivityInsideApp(record.assignment, launchUrl, {
+        classroomId,
+        studentId: student.id
+      });
+
+      if (opened) {
+        this.updateVisibleAssignmentProgress(record.assignment.id, Number(record.progressPercent || 0), "In Progress");
+      }
+
+      return opened;
+    };
+
+    const openTask = (task) => {
+      if (!task || task.locked) {
+        this.showToast("No lesson is available right now.", "error");
+        return false;
+      }
+      const record = assignmentRecords.find((item) => item.assignment.id === task.assignmentId);
+      return openAssignmentRecord(record);
+    };
+
+    document.querySelector("[data-go-current-lesson]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const currentTask = this.selectCurrentStudentTask(taskModels);
+      openTask(currentTask);
+    });
+
+    document.querySelector("[data-view-class-resources]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (bucketItems.length) {
+        document.getElementById("student-content")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else {
+        this.showToast("No class resources are available right now.", "error");
+      }
+    });
+
+    this.bindLiveQuizLaunch({
+      classroomId,
+      teacherId: classroom.teacherId || classroom.teacher_id || "",
+      studentId: student.id || student.profileId || student.profile_id || "",
+      profileId: student.profileId || student.profile_id || student.id || ""
+    });
+
+    document.querySelectorAll("[data-student-quick-action]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const action = button.dataset.studentQuickAction;
+        if (action === "calendar") {
+          document.getElementById("student-events-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+        const label = action === "exams" ? "Student exams" : "Student competitions";
+        this.showToast(`${label} will appear here when your teacher shares one.`, "info");
+      });
+    });
+
+    document.querySelectorAll("[data-open-student-task]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const task = taskModels.find((item) => item.key === button.dataset.openStudentTask);
+        openTask(task);
+      });
+    });
+
+    document.querySelectorAll("[data-open-assignment-resource]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const record = assignmentRecords.find((item) => item.assignment.id === button.dataset.openAssignmentResource);
+        openAssignmentRecord(record);
+      });
+    });
 
     document.querySelectorAll("[data-submit-assignment]").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -2349,9 +3501,31 @@ class ClassroomUI {
     });
 
     document.querySelectorAll("[data-open-spree-lesson], [data-complete-spree-lesson]").forEach((button) => {
-      button.addEventListener("click", async () => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         const isComplete = Boolean(button.dataset.completeSpreeLesson);
         const spreeItemId = button.dataset.completeSpreeLesson || button.dataset.openSpreeLesson;
+        if (!isComplete) {
+          const assignment = assignments.find((item) => item.id === button.dataset.spreeAssignment);
+          const item = (assignment?.resourceItems || []).find((resourceItem) => String(resourceItem.id) === String(spreeItemId));
+          const launchUrl = this.getAssignmentLaunchUrl({
+            ...(assignment || {}),
+            resourceItems: item ? [item] : []
+          }, {
+            courseId: "english-a1",
+            classroomId,
+            assignmentId: button.dataset.spreeAssignment,
+            studentId: student.id,
+            launchToken: ""
+          });
+          this.openActivityInsideApp(assignment || { id: button.dataset.spreeAssignment, title: "Lesson" }, launchUrl, {
+            classroomId,
+            studentId: student.id
+          });
+          return;
+        }
+
         const now = new Date().toISOString();
         await ClassroomAPI.upsertSpreeItemProgress({
           assignmentId: button.dataset.spreeAssignment,
@@ -2367,6 +3541,564 @@ class ClassroomUI {
         await this.renderStudentWorkspace(classroomId, refreshed);
       });
     });
+  }
+
+  static getStudentDisplayName(student = {}) {
+    const preferred = [
+      student.full_name,
+      student.fullName,
+      student.name,
+      student.display_name,
+      student.displayName,
+      student.profile_name,
+      student.profileName
+    ].find((value) => {
+      const text = String(value || "").trim();
+      return text && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
+    });
+
+    if (preferred) return String(preferred).trim();
+
+    const fallback = [
+      student.full_name,
+      student.fullName,
+      student.name,
+      student.display_name,
+      student.displayName,
+      student.profile_name,
+      student.profileName,
+      student.email
+    ].find((value) => String(value || "").trim());
+
+    return this.cleanEmailName(fallback) || "Student";
+  }
+
+  static cleanEmailName(value = "") {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
+      return text.split("@")[0].replace(/[._-]+/g, " ").trim() || "";
+    }
+    return text;
+  }
+
+  static renderStudentAvatar(student = {}, className = "") {
+    const name = this.getStudentDisplayName(student);
+    const avatarUrl = student.avatarUrl || student.avatar_url || "";
+    if (avatarUrl) {
+      return `<img class="avatar student-avatar-img ${className}" src="${this.escape(avatarUrl)}" alt="" loading="lazy" decoding="async">`;
+    }
+    const initials = name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "S";
+    return `<div class="avatar ${className}">${this.escape(initials)}</div>`;
+  }
+
+  static getStudentTaskDedupKey(task = {}) {
+    return String(task.resourceId || task.title || task.assignmentId || "")
+      .trim()
+      .toLowerCase();
+  }
+
+  static buildStudentTaskModels(assignmentRecords = []) {
+    const tasks = [];
+    assignmentRecords.forEach((record) => {
+      const { assignment, submission, isSpree, items, progressByItem, displayMeta, progressPercent } = record;
+      if (isSpree && items.length) {
+        items.forEach((item) => {
+          const progress = progressByItem.get(String(item.id));
+          const status = progress?.status || "not_started";
+          const completed = status === "completed";
+          const unlocked = this.isSpreeItemUnlocked(assignment, item);
+          const unlockDate = this.getSpreeItemUnlockDate(assignment, item);
+          tasks.push({
+            key: `spree:${assignment.id}:${item.id}`,
+            assignmentId: assignment.id,
+            resourceId: item.resourceId || item.id,
+            fileUrl: item.fileUrl || "",
+            title: item.title || assignment.title,
+            typeLabel: item.resourceType || "Learning Spree",
+            dueDate: assignment.dueDate || "",
+            completed,
+            locked: !unlocked,
+            statusClass: completed ? "completed" : unlocked ? "active" : "locked",
+            statusLabel: completed ? "Completed" : unlocked ? "Available" : this.getUnlockText(unlockDate),
+            actionLabel: completed ? "Review" : unlocked ? "Open Lesson" : "Locked",
+            progressPercent,
+            createdAt: assignment.createdAt || ""
+          });
+        });
+        return;
+      }
+
+      const hasResource = Boolean(displayMeta.resourceUrl);
+      const completed = this.isAssignmentSubmissionComplete(assignment, submission);
+      const started = Number(progressPercent || 0) > 0;
+      tasks.push({
+        key: `assignment:${assignment.id}`,
+        assignmentId: assignment.id,
+        resourceId: displayMeta.resourceUrl || "",
+        fileUrl: displayMeta.resourceUrl || "",
+        title: assignment.title || "Assignment",
+        typeLabel: displayMeta.typeLabel || "Assignment",
+        dueDate: assignment.dueDate || "",
+        completed,
+        locked: false,
+        statusClass: completed ? "completed" : started ? "active" : "pending",
+        statusLabel: completed ? "Completed" : started ? "In Progress" : "Not Started",
+        actionLabel: completed ? "Review" : started && hasResource ? "Go to Lesson" : "Start",
+        progressPercent,
+        createdAt: assignment.createdAt || ""
+      });
+    });
+
+    const deduped = [];
+    const seen = new Set();
+    tasks.forEach((task) => {
+      const dedupKey = this.getStudentTaskDedupKey(task);
+      if (!dedupKey || seen.has(dedupKey)) return;
+      seen.add(dedupKey);
+      deduped.push(task);
+    });
+    return deduped.sort((a, b) => {
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      if (a.locked !== b.locked) return a.locked ? 1 : -1;
+      const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      return aDate - bDate || String(a.title).localeCompare(String(b.title));
+    });
+  }
+
+  static selectCurrentStudentTask(tasks = []) {
+    return tasks.find((task) => !task.completed && !task.locked)
+      || tasks.find((task) => !task.completed)
+      || tasks.find((task) => task.completed)
+      || null;
+  }
+
+  static renderStudentTaskCard(task, featured = false) {
+    if (!task) {
+      return `
+        <div class="student-dashboard-empty">
+          <strong>${featured ? "No task for today." : "No pending tasks."}</strong>
+          <span>${featured ? "Your teacher's assigned work will appear here." : "You're all caught up for now."}</span>
+        </div>
+      `;
+    }
+    const dueText = task.dueDate ? `Due ${this.formatDateShort(task.dueDate)}` : "No deadline";
+    return `
+      <article class="student-task-row ${featured ? "is-featured" : ""}">
+        <div class="student-task-main">
+          <span class="student-task-icon">${this.getIcon(task.completed ? "check" : "clipboard")}</span>
+          <div class="student-task-copy">
+            <strong>${this.escape(task.title)}</strong>
+            <small>${this.escape(task.typeLabel)} &bull; ${this.escape(dueText)}</small>
+          </div>
+        </div>
+        <span class="student-status-pill ${this.escape(task.statusClass)}" data-assignment-status="${this.escape(task.assignmentId || "")}">${this.escape(task.statusLabel)}</span>
+        <button class="student-row-action" type="button" data-open-student-task="${this.escape(task.key)}" data-assignment-action="${this.escape(task.assignmentId || "")}" ${task.locked ? "disabled" : ""}>
+          ${this.escape(task.actionLabel)}
+        </button>
+      </article>
+    `;
+  }
+
+  static renderStudentTaskPanel(tasks = []) {
+    const currentTask = this.selectCurrentStudentTask(tasks);
+    const pending = tasks
+      .filter((task) => task !== currentTask && !task.completed && !task.locked)
+      .slice(0, 3);
+    const fallbackCompleted = !pending.length
+      ? tasks.filter((task) => task !== currentTask && task.completed).slice(0, 3)
+      : [];
+    const pendingRows = pending.length ? pending : fallbackCompleted;
+    return `
+      <div class="student-task-section">
+        <div class="student-task-section-heading">
+          <h3>Today's Task</h3>
+        </div>
+        ${this.renderStudentTaskCard(currentTask, true)}
+      </div>
+      <div class="student-task-section">
+        <div class="student-task-section-heading">
+          <h3>Pending Tasks</h3>
+        </div>
+        <div class="student-pending-task-list">
+          ${pendingRows.length
+            ? pendingRows.map((task) => this.renderStudentTaskCard(task)).join("")
+            : this.renderStudentTaskCard(null)}
+        </div>
+      </div>
+    `;
+  }
+
+  static renderStudentMessages(messages = []) {
+    if (!messages.length) {
+      return `
+        <div class="student-dashboard-empty student-message-empty">
+          <span class="student-message-empty-icon">${this.getIcon("message")}</span>
+          <strong>No new messages from your teacher.</strong>
+        </div>
+      `;
+    }
+
+    return messages.map((message) => {
+      const text = String(message.message || message.text || "").trim();
+      const createdAt = message.createdAt || "";
+      return `
+        <article class="student-message-row">
+          <span class="student-message-dot ${message.isPinned ? "is-unread" : ""}" aria-hidden="true"></span>
+          <div class="student-message-copy">
+            <strong>Teacher${message.isPinned ? " / pinned" : ""}</strong>
+            <p>${this.escape(text)}</p>
+            ${message.editedAt ? `<small>Edited</small>` : ""}
+          </div>
+          <time>${this.escape(createdAt ? this.formatDateShort(createdAt) : "Now")}</time>
+        </article>
+      `;
+    }).join("");
+  }
+
+  static openResourceWork(resource = {}) {
+    const fileUrl = String(resource.fileUrl || "").trim();
+    const resourceId = String(resource.resourceId || resource.id || "").trim();
+    if (/^https?:\/\//i.test(fileUrl)) {
+      window.open(fileUrl, "_blank", "noopener,noreferrer");
+      return true;
+    }
+    if (/^https?:\/\//i.test(resourceId)) {
+      window.open(resourceId, "_blank", "noopener,noreferrer");
+      return true;
+    }
+    if (resource.fallbackHash) {
+      window.location.hash = resource.fallbackHash;
+      return true;
+    }
+    if (resourceId && !/^ass_/i.test(resourceId)) {
+      window.location.hash = `#detail/${encodeURIComponent(resourceId)}`;
+      return true;
+    }
+    this.showToast("No lesson is available right now.", "error");
+    return false;
+  }
+
+  static renderStudentTaskRows(assignmentRecords = []) {
+    const rows = [];
+    assignmentRecords.forEach((record) => {
+      const { assignment, submission, isSpree, items, progressByItem, displayMeta } = record;
+      if (isSpree) {
+        items.slice(0, 5 - rows.length).forEach((item) => {
+          const progress = progressByItem.get(String(item.id));
+          const status = progress?.status || "not_started";
+          const unlocked = this.isSpreeItemUnlocked(assignment, item);
+          const unlockDate = this.getSpreeItemUnlockDate(assignment, item);
+
+          let pillClass = "active";
+          let pillLabel = "In Progress";
+          if (status === "completed") {
+            pillClass = "completed";
+            pillLabel = "Completed";
+          } else if (status === "not_started" || !unlocked) {
+            if (!unlocked) {
+              pillClass = "locked";
+              pillLabel = "Locked";
+            } else {
+              pillClass = "pending";
+              pillLabel = "Not Started";
+            }
+          } else {
+            const title = String(item.title || "").toLowerCase();
+            const resType = String(item.resourceType || "").toLowerCase();
+            if (title.includes("read") || resType.includes("read")) {
+              pillClass = "active-green";
+              pillLabel = "In Progress";
+            } else {
+              pillClass = "active";
+              pillLabel = "In Progress";
+            }
+          }
+
+          const buttonLabel = status === "completed" ? "Review" : !unlocked ? "Locked" : "Open Lesson";
+          rows.push(`
+            <article class="student-task-row">
+              <div style="display: flex; align-items: center; gap: 14px; min-width: 0; flex-grow: 1;">
+                <span class="student-task-icon">${this.getIcon(status === "completed" ? "check" : "book")}</span>
+                <div class="student-task-copy">
+                  <strong>${this.escape(item.title || assignment.title)}</strong>
+                  <small>${this.escape(item.resourceType || "Learning Spree")} &bull; Due ${this.formatDateShort(assignment.dueDate)}</small>
+                </div>
+              </div>
+              <span class="student-status-pill ${pillClass}">${pillLabel}</span>
+              <button class="student-row-action ${unlocked ? "" : "disabled"}" type="button"
+                data-spree-assignment="${this.escape(assignment.id)}"
+                data-spree-resource="${this.escape(item.resourceId)}"
+                data-spree-classroom="${this.escape(assignment.classroomId)}"
+                data-open-spree-lesson="${this.escape(item.id)}"
+                data-spree-file-url="${this.escape(item.fileUrl || "")}"
+                ${!unlocked ? "disabled" : ""}>${this.escape(unlocked ? buttonLabel : this.getUnlockText(unlockDate))}</button>
+            </article>
+          `);
+        });
+        return;
+      }
+
+      const hasResource = Boolean(displayMeta.resourceUrl);
+      const completed = this.isAssignmentSubmissionComplete(assignment, submission);
+      const pillClass = completed ? "completed" : "active";
+      const pillLabel = completed ? "Completed" : "In Progress";
+      rows.push(`
+        <article class="student-task-row">
+          <div style="display: flex; align-items: center; gap: 14px; min-width: 0; flex-grow: 1;">
+            <span class="student-task-icon">${this.getIcon(completed ? "check" : "clipboard")}</span>
+            <div class="student-task-copy">
+              <strong>${this.escape(assignment.title)}</strong>
+              <small>${this.escape(displayMeta.typeLabel)} &bull; Due ${this.formatDateShort(assignment.dueDate)}</small>
+            </div>
+          </div>
+          <span class="student-status-pill ${pillClass}">${pillLabel}</span>
+          ${hasResource ? `
+            <button class="student-row-action" type="button" data-open-assignment-resource="${this.escape(assignment.id)}" data-assignment-action="${this.escape(assignment.id)}">${completed ? "Review" : "Open Lesson"}</button>
+          ` : `
+            <button class="student-row-action ${completed ? "disabled" : ""}" type="button"
+              data-submit-assignment="${this.escape(assignment.id)}"
+              ${completed ? "disabled" : ""}>${completed ? "Submitted" : `Submit (${Number(assignment.points || 0)} pts)`}</button>
+          `}
+        </article>
+      `);
+    });
+
+    if (!rows.length) {
+      return `
+        <div class="student-dashboard-empty">
+          <strong>No assignments yet</strong>
+          <span>Your teacher's assigned work will appear here.</span>
+        </div>
+      `;
+    }
+
+    return rows.slice(0, 5).join("");
+  }
+
+  static renderStudentAssignmentDetail(assignmentRecords = []) {
+    const record = assignmentRecords.find((item) => !item.submission) || assignmentRecords[0];
+    if (!record) {
+      return `
+        <div class="student-panel-header">
+          <h2>Your Assignment Details</h2>
+        </div>
+        <div class="student-dashboard-empty">
+          <strong>No assignment details</strong>
+          <span>Current assignment details will appear here.</span>
+        </div>
+      `;
+    }
+
+    const { assignment, submission, displayMeta, progressPercent } = record;
+    const completed = this.isAssignmentSubmissionComplete(assignment, submission);
+    const statusLabel = completed ? "Completed" : progressPercent > 0 ? "In Progress" : "Not Started";
+    const statusClass = completed ? "completed" : progressPercent > 0 ? "active" : "pending";
+
+    const displayPercent = progressPercent;
+
+    return `
+      <div class="student-panel-header">
+        <h2>Your Assignment Details</h2>
+        <a href="#student-tasks-panel">View all</a>
+      </div>
+      <article class="student-assignment-detail-card">
+        <div class="student-assignment-detail-card-main">
+          <span class="student-assignment-detail-icon">${this.getIcon("clipboard")}</span>
+          <div class="student-assignment-detail-copy">
+            <h3>${this.escape(assignment.title)}</h3>
+            <p>${this.escape(displayMeta.summary || assignment.instructions || "Use evidence and reasoning to support your opinion.")}</p>
+            <div class="student-assignment-meta">
+              <span class="student-assignment-due-row">
+                ${this.getIcon("calendar")} Due ${this.formatDate(assignment.dueDate)} &bull; 11:59 PM
+              </span>
+              <span class="student-status-pill ${statusClass}" data-assignment-status="${this.escape(assignment.id || "")}">${statusLabel}</span>
+            </div>
+          </div>
+        </div>
+        <div class="student-assignment-progress">
+          <div class="student-assignment-progress-label">
+            <strong data-assignment-progress="${this.escape(assignment.id || "")}">${displayPercent}%</strong>
+            <span>Complete</span>
+          </div>
+          <div class="student-progress-bar" aria-hidden="true">
+            <span data-assignment-progress-bar="${this.escape(assignment.id || "")}" style="width: ${displayPercent}%"></span>
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
+  static getStudentFeedbackModel(assignmentRecords = []) {
+    const records = [...assignmentRecords].sort((a, b) => {
+      const aTime = new Date(a.submission?.updatedAt || a.submission?.submittedAt || 0).getTime();
+      const bTime = new Date(b.submission?.updatedAt || b.submission?.submittedAt || 0).getTime();
+      return bTime - aTime;
+    });
+    const submittedRecord = records.find((record) => record.submission || Number(record.progressPercent || 0) > 0);
+    const readyRecord = records.find((record) => {
+      const submission = record.submission || {};
+      return Boolean(this.getSubmissionFeedbackText(submission) || this.getSubmissionNoteFeedback(submission));
+    });
+
+    if (readyRecord) {
+      const submission = readyRecord.submission || {};
+      return {
+        state: "ready",
+        title: readyRecord.assignment?.title || "Recent activity",
+        body: "Your AI feedback is ready.",
+        buttonText: "View AI Feedback",
+        disabled: false,
+        feedbackText: this.getSubmissionFeedbackText(submission) || this.getSubmissionNoteFeedback(submission),
+        open: false
+      };
+    }
+
+    if (submittedRecord) {
+      return {
+        state: "generating",
+        title: submittedRecord.assignment?.title || "Recent activity",
+        body: "Your activity has been submitted. AI feedback is being prepared.",
+        buttonText: "Preparing feedback...",
+        disabled: true,
+        feedbackText: "",
+        open: false
+      };
+    }
+
+    return {
+      state: "empty",
+      title: "",
+      body: "Complete an activity to receive personalised feedback.",
+      buttonText: "Feedback not ready",
+      disabled: true,
+      feedbackText: "",
+      open: false
+    };
+  }
+
+  static getSubmissionFeedbackText(submission = {}) {
+    return [
+      submission.feedback,
+      submission.feedbackSummary,
+      submission.aiFeedback,
+      submission.teacherFeedback
+    ].map((value) => String(value || "").trim()).find(Boolean) || "";
+  }
+
+  static getSubmissionNoteFeedback(submission = {}) {
+    const note = String(submission.note || "").trim();
+    if (!note || /^placeholder submission$/i.test(note)) return "";
+    return note;
+  }
+
+  static renderStudentAiFeedbackPanel(model = {}) {
+    const isReady = model.state === "ready";
+    const isOpen = isReady && model.open;
+    const cardClass = `student-ai-feedback-card is-${this.escape(model.state || "empty")}${isReady ? " is-ready" : ""}${isOpen ? " is-open" : ""}`;
+    const body = isOpen ? "Review your assignment feedback below." : (model.body || "Feedback will appear here after your teacher or AI review is ready.");
+    const feedbackHtml = isOpen ? `<div class="student-ai-feedback-content">${this.formatFeedbackText(model.feedbackText)}</div>` : "";
+    const contextHtml = model.title ? `<span class="student-ai-feedback-context">${this.escape(model.title)}</span>` : "";
+
+    return `
+      <div class="${cardClass}">
+        <div class="student-ai-feedback-icon" aria-hidden="true">${this.getIcon("sparkles")}</div>
+        <div class="student-ai-feedback-copy">
+          ${contextHtml}
+          <p>${this.escape(body)}</p>
+          ${feedbackHtml}
+          <button
+            type="button"
+            class="student-ai-feedback-button"
+            data-ai-feedback-toggle
+            ${model.disabled ? "disabled" : ""}
+          >${this.escape(isOpen ? "Hide Feedback" : model.buttonText || "Feedback not ready")}</button>
+          ${!isReady ? `<small>Feedback will appear here after your teacher or AI review is ready.</small>` : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  static formatFeedbackText(text = "") {
+    const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) return "";
+    return lines.map((line) => `<p>${this.escape(line)}</p>`).join("");
+  }
+
+  static bindStudentAiFeedbackToggle(container, model) {
+    container.querySelector("[data-ai-feedback-toggle]")?.addEventListener("click", () => {
+      model.open = !model.open;
+      container.innerHTML = this.renderStudentAiFeedbackPanel(model);
+      this.bindStudentAiFeedbackToggle(container, model);
+    });
+  }
+
+  static renderStudentLeaderboard(students = [], currentStudentId = "") {
+    const sortedStudents = [...students].sort((a, b) => Number(b.points || 0) - Number(a.points || 0)).slice(0, 10);
+    if (!sortedStudents.length) {
+      return `
+        <div class="student-dashboard-empty">
+          <strong>No leaderboard data yet.</strong>
+          <span>Student points will appear after classroom activity.</span>
+        </div>
+      `;
+    }
+
+    const rowsHtml = sortedStudents.map((student, index) => {
+      const isCurrent = this.getStudentIdentityValues(student).includes(String(currentStudentId));
+      const rank = index + 1;
+      const displayName = this.getStudentDisplayName(student);
+      let rankContent = `<span class="student-rank-num">${rank}</span>`;
+      if (rank === 1) rankContent = `<span class="student-medal">🥇</span>`;
+      else if (rank === 2) rankContent = `<span class="student-medal">🥈</span>`;
+      else if (rank === 3) rankContent = `<span class="student-medal">🥉</span>`;
+
+      const badgeLabel = index === 0 ? "Top Performer" : index === 1 ? "Consistent Learner" : index === 2 ? "Great Effort" : "";
+      const badgeClass = index === 0 ? "badge-purple" : index === 1 ? "badge-blue" : index === 2 ? "badge-green" : "";
+      const badgeHtml = "";
+      rankContent = rank <= 3
+        ? `<span class="student-medal rank-${rank}">${rank}</span>`
+        : `<span class="student-rank-num">${rank}</span>`;
+
+      return `
+        <div class="student-leaderboard-row ${isCurrent ? "is-current" : ""}">
+          <div class="student-leaderboard-row-left">
+            ${rankContent}
+            <span class="student-avatar">${this.escape(displayName.charAt(0).toUpperCase())}</span>
+            <div class="student-leaderboard-name-sec">
+              <strong>${this.escape(displayName)}${isCurrent ? " (You)" : ""}</strong>
+              <small>${rank === 1 ? "Leading the class" : isCurrent ? "Your position" : "Class member"}</small>
+            </div>
+          </div>
+          <span class="student-leaderboard-pts">${Number(student.points || 0).toLocaleString()} pts</span>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      ${rowsHtml}
+      <div class="student-leaderboard-footer">
+        <a href="#student-workspace" class="view-full-leaderboard-link">View full leaderboard ${this.getDashboardIcon("chevron")}</a>
+      </div>
+    `;
+  }
+
+  static getDueDistanceLabel(value) {
+    if (!value) return "No deadline";
+    const today = new Date(`${this.getTodayInTimezone()}T00:00:00`);
+    const due = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(due.getTime())) return "Due date set";
+    const days = Math.round((due - today) / 86400000);
+    if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
+    if (days === 0) return "Due today";
+    if (days === 1) return "1 day remaining";
+    return `${days} days remaining`;
   }
 
   static getInviteLink(inviteCodeOrId) {

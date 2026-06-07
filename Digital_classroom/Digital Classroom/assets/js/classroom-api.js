@@ -78,8 +78,25 @@ const ClassroomLocalStore = {
 
   getAssignmentsByClassroom(classroomId) {
     return ClassroomState.getData()
-      .assignments.filter((assignment) => assignment.classroomId === classroomId)
+      .assignments.filter((assignment) => (
+        assignment.classroomId === classroomId &&
+        !assignment.isDeleted &&
+        !assignment.deletedAt &&
+        !["deleted", "archived"].includes(String(assignment.status || "").toLowerCase())
+      ))
       .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+  },
+
+  deleteAssignment(classroomId, assignmentId) {
+    return ClassroomState.update((data) => {
+      const assignment = data.assignments.find((item) => item.classroomId === classroomId && item.id === assignmentId);
+      if (!assignment) return { success: false };
+      assignment.status = "deleted";
+      assignment.isDeleted = true;
+      assignment.deletedAt = new Date().toISOString();
+      assignment.updatedAt = assignment.deletedAt;
+      return { success: true, mode: "soft-delete", row: assignment };
+    });
   },
 
   createAssignment(assignmentData) {
@@ -351,6 +368,64 @@ const ClassroomLocalStore = {
         submissionCount: totalSubmissions
       }
     };
+  },
+
+  getMessagesByClassroom(classroomId) {
+    const now = new Date();
+    return ClassroomState.getData().classroomMessages
+      .filter((message) => (
+        message.classroomId === classroomId &&
+        message.isDeleted !== true &&
+        (!message.expiresAt || new Date(message.expiresAt) > now)
+      ))
+      .sort((a, b) => Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) || new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  createMessage(classroomId, messageText, teacherId = "local-teacher") {
+    return ClassroomState.update((data) => {
+      const now = new Date();
+      const expiresAt = new Date(now);
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+      const message = {
+        id: ClassroomState.createId("msg"),
+        classroomId,
+        teacherId,
+        message: messageText.trim(),
+        isPinned: false,
+        isDeleted: false,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        editedAt: "",
+        deletedAt: "",
+        expiresAt: expiresAt.toISOString()
+      };
+      data.classroomMessages.unshift(message);
+      return message;
+    });
+  },
+
+  updateMessage(messageId, messageText) {
+    return ClassroomState.update((data) => {
+      const message = data.classroomMessages.find((item) => item.id === messageId);
+      if (!message || message.isDeleted) return null;
+      const now = new Date().toISOString();
+      message.message = messageText.trim();
+      message.updatedAt = now;
+      message.editedAt = now;
+      return message;
+    });
+  },
+
+  deleteMessage(messageId) {
+    return ClassroomState.update((data) => {
+      const message = data.classroomMessages.find((item) => item.id === messageId);
+      if (!message || message.isDeleted) return null;
+      const now = new Date().toISOString();
+      message.isDeleted = true;
+      message.deletedAt = now;
+      message.updatedAt = now;
+      return message;
+    });
   }
 };
 
@@ -367,8 +442,10 @@ const ClassroomSupabaseStore = {
     bookmarks: "bookmarks",
     contentBuckets: "content_buckets",
     bucketItems: "bucket_items",
+    activitySubmissions: "activity_submissions",
     classroomPoints: "classroom_points",
-    aiFeedbackLogs: "ai_feedback_logs"
+    aiFeedbackLogs: "ai_feedback_logs",
+    classroomMessages: "classroom_messages"
   },
 
   featureCache: {},
@@ -505,6 +582,23 @@ const ClassroomSupabaseStore = {
     return error.message || error.details || error.hint || String(error);
   },
 
+  getMissingColumn(error) {
+    const message = this.getErrorMessage(error);
+    const patterns = [
+      /Could not find the '([^']+)' column/i,
+      /column submissions\.([a-zA-Z0-9_]+) does not exist/i,
+      /column [a-zA-Z0-9_]+\.([a-zA-Z0-9_]+) does not exist/i,
+      /column "([^"]+)" of relation "submissions" does not exist/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match?.[1]) return match[1];
+    }
+
+    return "";
+  },
+
   createUnavailableFeatureError(feature, error = null) {
     const table = this.TABLES[feature] || feature;
     const message = error
@@ -627,6 +721,29 @@ const ClassroomSupabaseStore = {
     return this.schemaCache.classroomTitleColumn;
   },
 
+  async detectInviteCodeColumn(client) {
+    if (this.schemaCache.inviteCodeColumn !== undefined) {
+      return this.schemaCache.inviteCodeColumn;
+    }
+
+    const candidates = ["invite_code", "invite_token"];
+    for (const column of candidates) {
+      const { error } = await client
+        .from(this.TABLES.classrooms)
+        .select(`id, ${column}`)
+        .limit(1);
+      if (!error) {
+        this.schemaCache.inviteCodeColumn = column;
+        this.debug("Detected invite code column on classrooms table", column);
+        return column;
+      }
+    }
+
+    this.schemaCache.inviteCodeColumn = null;
+    this.debug("No invite code column found on classrooms table");
+    return null;
+  },
+
   async insertClassroomRow(client, payload) {
     const titleColumn = await this.detectClassroomTitleColumn(client);
     const insertPayload = {
@@ -700,6 +817,45 @@ const ClassroomSupabaseStore = {
     };
   },
 
+  cleanEmailName(value = "") {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) {
+      return text.split("@")[0].replace(/[._-]+/g, " ").trim() || "";
+    }
+    return text;
+  },
+
+  getStudentDisplayName(student = {}) {
+    const preferred = [
+      student.full_name,
+      student.fullName,
+      student.name,
+      student.display_name,
+      student.displayName,
+      student.profile_name,
+      student.profileName
+    ].find((value) => {
+      const text = String(value || "").trim();
+      return text && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
+    });
+
+    if (preferred) return String(preferred).trim();
+
+    const fallback = [
+      student.full_name,
+      student.fullName,
+      student.name,
+      student.display_name,
+      student.displayName,
+      student.profile_name,
+      student.profileName,
+      student.email
+    ].find((value) => String(value || "").trim());
+
+    return this.cleanEmailName(fallback) || "Student";
+  },
+
   normalizeAssignment(row) {
     const metadata = this.parseAssignmentMetadata(row.instructions || "");
     const rawResourceItems = Array.isArray(row.resource_items)
@@ -707,6 +863,7 @@ const ClassroomSupabaseStore = {
       : Array.isArray(row.resourceItems)
         ? row.resourceItems
         : metadata.resourceItems || [];
+    const assignmentMetadata = this.parseJsonObject(row.metadata);
     return {
       id: row.id,
       classroomId: row.classroom_id || row.classroomId,
@@ -723,16 +880,76 @@ const ClassroomSupabaseStore = {
           resourceType: item.resource_type || item.resourceType || item.type || "saved work",
           savedAt: item.saved_at || item.savedAt || "",
           authorName: item.author_name || item.authorName || "",
-          fileUrl: item.file_url || item.fileUrl || "",
+          fileUrl: item.file_url || item.fileUrl || item.resource_url || item.resourceUrl || "",
+          resourceUrl: item.resource_url || item.resourceUrl || item.file_url || item.fileUrl || "",
+          projectUrl: item.project_url || item.projectUrl || "",
+          previewUrl: item.preview_url || item.previewUrl || item.metadata?.previewUrl || item.metadata?.indexUrl || "",
+          metadata: this.parseJsonObject(item.metadata),
           position: Number(item.position || index + 1)
         }))
         .sort((a, b) => a.position - b.position),
+      resourceId: row.resource_id || row.resourceId || metadata.resourceId || assignmentMetadata.resourceId || "",
+      resourceTitle: row.resource_title || row.resourceTitle || metadata.resourceTitle || assignmentMetadata.resourceTitle || "",
+      resourceUrl: row.resource_url || row.resourceUrl || metadata.resourceUrl || assignmentMetadata.resourceUrl || "",
+      projectUrl: row.project_url || row.projectUrl || metadata.projectUrl || assignmentMetadata.projectUrl || "",
+      previewUrl: row.preview_url || row.previewUrl || metadata.previewUrl || assignmentMetadata.previewUrl || "",
+      fileUrl: row.file_url || row.fileUrl || metadata.fileUrl || assignmentMetadata.fileUrl || "",
+      metadata: assignmentMetadata,
       unlockMode: row.unlock_mode || row.unlockMode || metadata.unlockMode || "open_access",
       startDate: row.start_date || row.startDate || metadata.startDate || "",
       timezone: row.timezone || metadata.timezone || "Asia/Colombo",
       status: row.status || row.assignmentStatus || "published",
-      createdAt: row.created_at || row.createdAt || new Date().toISOString()
+      isDeleted: row.is_deleted === true || row.isDeleted === true,
+      deletedAt: row.deleted_at || row.deletedAt || "",
+      sourceType: row.source_type || row.sourceType || "assignment",
+      sourceTable: row.source_table || row.sourceTable || this.TABLES.assignments,
+      createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+      updatedAt: row.updated_at || row.updatedAt || row.created_at || row.createdAt || new Date().toISOString()
     };
+  },
+
+  normalizeClassroomMessage(row) {
+    return {
+      id: row.id,
+      classroomId: row.classroom_id || row.classroomId,
+      teacherId: row.teacher_id || row.teacherId,
+      message: row.message || row.text || "",
+      isPinned: row.is_pinned === true || row.isPinned === true,
+      isDeleted: row.is_deleted === true || row.isDeleted === true,
+      createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+      updatedAt: row.updated_at || row.updatedAt || row.created_at || row.createdAt || new Date().toISOString(),
+      editedAt: row.edited_at || row.editedAt || "",
+      deletedAt: row.deleted_at || row.deletedAt || "",
+      expiresAt: row.expires_at || row.expiresAt || ""
+    };
+  },
+
+  normalizeAssignmentSubmission(row = {}) {
+    return {
+      id: row.id,
+      assignmentId: row.assignment_id || row.assignmentId,
+      classroomId: row.classroom_id || row.classroomId,
+      studentId: row.student_id || row.studentId,
+      status: row.status || "submitted",
+      pointsAwarded: Number(row.points_awarded || row.pointsAwarded || 0),
+      progressPercent: Number(row.progress_percent || row.progressPercent || 0),
+      score: Number(row.score || row.points_awarded || row.pointsAwarded || 0),
+      completedDays: Array.isArray(row.completed_days) ? row.completed_days : [],
+      submittedAt: row.submitted_at || row.submittedAt || "",
+      updatedAt: row.updated_at || row.updatedAt || "",
+      note: row.note || "",
+      feedback: row.feedback || row.ai_feedback || row.teacher_feedback || row.feedback_text || "",
+      feedbackSummary: row.feedback_summary || row.ai_feedback_summary || "",
+      feedbackStatus: row.feedback_status || row.ai_feedback_status || ""
+    };
+  },
+
+  isAssignmentVisible(assignment = {}) {
+    return (
+      assignment.isDeleted !== true &&
+      !assignment.deletedAt &&
+      !["deleted", "archived"].includes(String(assignment.status || "").toLowerCase())
+    );
   },
 
   parseAssignmentMetadata(instructions = "") {
@@ -753,6 +970,12 @@ const ClassroomSupabaseStore = {
         instructions: before,
         assignmentType: parsed.assignmentType || parsed.assignment_type,
         resourceItems: Array.isArray(parsed.resourceItems) ? parsed.resourceItems : [],
+        resourceId: parsed.resourceId || parsed.resource_id || "",
+        resourceTitle: parsed.resourceTitle || parsed.resource_title || "",
+        resourceUrl: parsed.resourceUrl || parsed.resource_url || "",
+        projectUrl: parsed.projectUrl || parsed.project_url || "",
+        previewUrl: parsed.previewUrl || parsed.preview_url || "",
+        fileUrl: parsed.fileUrl || parsed.file_url || "",
         unlockMode: parsed.unlockMode || parsed.unlock_mode,
         startDate: parsed.startDate || parsed.start_date,
         timezone: parsed.timezone
@@ -765,11 +988,18 @@ const ClassroomSupabaseStore = {
 
   serializeAssignmentInstructions(assignmentData) {
     const instructions = String(assignmentData.instructions || "").trim();
-    if (assignmentData.assignmentType !== "learning_spree") return instructions;
+    const hasStructuredMetadata = assignmentData.assignmentType === "learning_spree" || Array.isArray(assignmentData.resourceItems) && assignmentData.resourceItems.length;
+    if (!hasStructuredMetadata) return instructions;
 
     const metadata = {
-      assignmentType: "learning_spree",
+      assignmentType: assignmentData.assignmentType || "assignment",
       resourceItems: Array.isArray(assignmentData.resourceItems) ? assignmentData.resourceItems : [],
+      resourceId: assignmentData.resourceId || "",
+      resourceTitle: assignmentData.resourceTitle || "",
+      resourceUrl: assignmentData.resourceUrl || "",
+      projectUrl: assignmentData.projectUrl || "",
+      previewUrl: assignmentData.previewUrl || "",
+      fileUrl: assignmentData.fileUrl || "",
       unlockMode: assignmentData.unlockMode || "open_access",
       startDate: assignmentData.startDate || "",
       timezone: assignmentData.timezone || "Asia/Colombo"
@@ -779,6 +1009,10 @@ const ClassroomSupabaseStore = {
 
   normalizeTeachingResource(row) {
     const resourceType = row.resource_type || row.category || row.content_type || "resource";
+    const metadata = this.parseJsonObject(row.metadata);
+    const downloadUrl = row.file_url || row.image_url || row.thumbnail_url || "";
+    const previewUrl = this.resolveTeachingResourcePreviewUrl(row, metadata);
+    const isWebProject = this.isWebProjectResource(row);
     return {
       id: row.id,
       ownerId: row.owner_id || row.author_id || null,
@@ -786,13 +1020,101 @@ const ClassroomSupabaseStore = {
       description: row.description || "",
       resourceType,
       category: row.category || resourceType,
-      fileUrl: row.file_url || row.image_url || row.thumbnail_url || "",
+      fileUrl: downloadUrl,
+      downloadUrl,
+      previewUrl,
+      projectUrl: row.project_url || previewUrl || "",
       thumbnailUrl: row.thumbnail_url || row.image_url || "",
+      isWebProject,
       visibility: row.visibility === "public" ? "public" : "private",
       status: row.status || "",
+      isDeleted: row.is_deleted === true || row.isDeleted === true,
+      deletedAt: row.deleted_at || row.deletedAt || "",
+      sharedToPremium: row.shared_to_premium === true || row.sharedToPremium === true,
+      premiumSharedAt: row.premium_shared_at || row.premiumSharedAt || "",
+      premiumStatus: row.premium_status || row.premiumStatus || "",
+      premiumLibraryCategory: row.premium_library_category || row.premiumLibraryCategory || "",
       createdAt: row.created_at || new Date().toISOString(),
       updatedAt: row.updated_at || row.created_at || new Date().toISOString()
     };
+  },
+
+  parseJsonObject(value) {
+    if (!value) return {};
+    if (typeof value === "object" && !Array.isArray(value)) return value;
+    if (typeof value !== "string") return {};
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  },
+
+  isWebProjectResource(row = {}) {
+    const labels = [
+      row.resource_type,
+      row.resourceType,
+      row.content_type,
+      row.contentType,
+      row.category
+    ].map((value) => String(value || "").trim().toLowerCase());
+    const fileType = String(row.file_type || row.mime_type || "").trim().toLowerCase();
+    const fileRef = String(row.file_path || row.file_url || "").trim().toLowerCase();
+
+    return (
+      labels.some((label) => ["web_zip", "html", "website_project", "interactive_content", "project"].includes(label)) ||
+      fileType.includes("zip") ||
+      fileRef.endsWith(".zip") ||
+      fileRef.includes("/uploads/web-zips/")
+    );
+  },
+
+  deriveR2PublicBaseUrl(row = {}) {
+    const fileUrl = String(row.file_url || "").trim();
+    const filePath = String(row.file_path || "").trim().replace(/^\/+/, "");
+    if (!/^https?:\/\//i.test(fileUrl) || !filePath) return "";
+
+    try {
+      const parsedUrl = new URL(fileUrl);
+      const normalizedPath = `/${filePath.split("/").map(encodeURIComponent).join("/")}`;
+      if (parsedUrl.pathname.endsWith(normalizedPath)) {
+        parsedUrl.pathname = parsedUrl.pathname.slice(0, -normalizedPath.length).replace(/\/+$/, "");
+        parsedUrl.search = "";
+        parsedUrl.hash = "";
+        return parsedUrl.toString().replace(/\/+$/, "");
+      }
+    } catch (_) {
+      return "";
+    }
+
+    return "";
+  },
+
+  resolveTeachingResourcePreviewUrl(row = {}, metadata = {}) {
+    const explicitCandidates = [
+      row.project_url,
+      row.preview_url,
+      metadata.previewUrl,
+      metadata.indexUrl,
+      metadata.preview_url,
+      metadata.index_url
+    ].map((value) => String(value || "").trim()).filter(Boolean);
+
+    for (const candidate of explicitCandidates) {
+      if (/^https?:\/\//i.test(candidate)) return candidate;
+    }
+
+    if (!this.isWebProjectResource(row)) {
+      return "";
+    }
+
+    const publicBaseUrl = this.deriveR2PublicBaseUrl(row);
+    const authorId = String(row.author_id || "").trim();
+    const submissionId = String(row.id || "").trim();
+    if (!publicBaseUrl || !authorId || !submissionId) return "";
+
+    return `${publicBaseUrl}/web-projects/${encodeURIComponent(authorId)}/${encodeURIComponent(submissionId)}/index.html`;
   },
 
   normalizeSavedCollection(row, bookmark = {}) {
@@ -846,10 +1168,19 @@ const ClassroomSupabaseStore = {
       return new Map();
     }
 
-    const { data, error } = await client
+    let { data, error } = await client
       .from("profiles")
-      .select("id, display_name, avatar_url")
+      .select("id, full_name, name, display_name, profile_name, username, email, avatar_url")
       .in("id", ids);
+
+    if (error && /column|schema|could not find/i.test(this.getErrorMessage(error))) {
+      const fallback = await client
+        .from("profiles")
+        .select("id, display_name, avatar_url")
+        .in("id", ids);
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) throw error;
     return new Map((data || []).map((row) => [row.id, row]));
@@ -862,14 +1193,18 @@ const ClassroomSupabaseStore = {
 
     const { data, error } = await client
       .from(this.TABLES.classroomPoints)
-      .select("profile_id, points")
+      .select("student_id, profile_id, points")
       .eq("classroom_id", classroomId);
 
     if (error) throw error;
 
     const pointMap = new Map();
     (data || []).forEach((row) => {
-      pointMap.set(row.profile_id, (pointMap.get(row.profile_id) || 0) + Number(row.points || 0));
+      const points = Number(row.points || 0);
+      const studentKeys = [...new Set([row.profile_id, row.student_id].filter(Boolean).map(String))];
+      studentKeys.forEach((studentKey) => {
+        pointMap.set(studentKey, (pointMap.get(studentKey) || 0) + points);
+      });
     });
     return pointMap;
   },
@@ -881,15 +1216,20 @@ const ClassroomSupabaseStore = {
 
     const { data, error } = await client
       .from(this.TABLES.classroomPoints)
-      .select("classroom_id, profile_id, points")
+      .select("classroom_id, student_id, profile_id, points")
       .in("classroom_id", classroomIds);
 
     if (error) throw error;
 
     const pointMap = new Map();
     (data || []).forEach((row) => {
-      const key = `${row.classroom_id}:${row.profile_id}`;
-      pointMap.set(key, (pointMap.get(key) || 0) + Number(row.points || 0));
+      if (!row.classroom_id) return;
+      const points = Number(row.points || 0);
+      const studentKeys = [...new Set([row.profile_id, row.student_id].filter(Boolean).map(String))];
+      studentKeys.forEach((studentKey) => {
+        const key = `${row.classroom_id}:${studentKey}`;
+        pointMap.set(key, (pointMap.get(key) || 0) + points);
+      });
     });
     return pointMap;
   },
@@ -905,7 +1245,7 @@ const ClassroomSupabaseStore = {
 
     const { data, error } = await client
       .from(this.TABLES.assignmentSubmissions)
-      .select("id, assignment_id, student_id, classroom_id, status, points_awarded, submitted_at, note")
+      .select("*")
       .eq("classroom_id", classroomId);
 
     if (error) throw error;
@@ -915,7 +1255,9 @@ const ClassroomSupabaseStore = {
 
     (data || []).forEach((row) => {
       submissionByAssignmentAndStudent.set(`${row.assignment_id}:${row.student_id}`, row);
-      completedByStudent.set(row.student_id, (completedByStudent.get(row.student_id) || 0) + 1);
+      if (String(row.status || "").toLowerCase() === "completed") {
+        completedByStudent.set(row.student_id, (completedByStudent.get(row.student_id) || 0) + 1);
+      }
     });
 
     return {
@@ -1100,10 +1442,11 @@ const ClassroomAPI = {
         .from(ClassroomSupabaseStore.TABLES.assignments)
         .select("*")
         .in("classroom_id", classroomIds)
+        .or("is_deleted.is.false,is_deleted.is.null")
         .order("due_date", { ascending: true }),
       client
         .from(ClassroomSupabaseStore.TABLES.assignmentSubmissions)
-        .select("id, assignment_id, classroom_id, student_id, status, points_awarded, submitted_at, note")
+        .select("*")
         .in("classroom_id", classroomIds),
       ClassroomSupabaseStore.loadPointSummaryForClassrooms(client, classroomIds)
     ]);
@@ -1121,13 +1464,18 @@ const ClassroomAPI = {
     const completedByClassroomAndStudent = new Map();
     submissionRowsRaw.forEach((row) => {
       const key = `${row.classroom_id}:${row.student_id}`;
-      completedByClassroomAndStudent.set(key, (completedByClassroomAndStudent.get(key) || 0) + 1);
+      if (String(row.status || "").toLowerCase() === "completed") {
+        completedByClassroomAndStudent.set(key, (completedByClassroomAndStudent.get(key) || 0) + 1);
+      }
     });
 
     const studentsByClassroom = new Map();
     memberRows.forEach((row) => {
       const profile = profileMap.get(row.profile_id) || {};
-      const name = row.display_name || profile.display_name || "Student";
+      const name = ClassroomSupabaseStore.getStudentDisplayName({
+        ...profile,
+        display_name: row.display_name || profile.display_name
+      });
       const pointsKey = `${row.classroom_id}:${row.profile_id}`;
       const completedKey = `${row.classroom_id}:${row.profile_id}`;
       const student = {
@@ -1136,7 +1484,10 @@ const ClassroomAPI = {
         memberId: row.id,
         profileId: row.profile_id,
         name,
+        displayName: name,
+        email: profile.email || "",
         avatar: (name || "S").charAt(0).toUpperCase(),
+        avatarUrl: profile.avatar_url || "",
         points: pointMap.get(pointsKey) || 0,
         completedAssignments: completedByClassroomAndStudent.get(completedKey) || 0,
         joinedAt: row.joined_at || new Date().toISOString()
@@ -1148,7 +1499,9 @@ const ClassroomAPI = {
       studentsByClassroom.get(row.classroom_id).push(student);
     });
 
-    const assignments = assignmentRowsRaw.map((row) => ClassroomSupabaseStore.normalizeAssignment(row));
+    const assignments = assignmentRowsRaw
+      .map((row) => ClassroomSupabaseStore.normalizeAssignment(row))
+      .filter((assignment) => ClassroomSupabaseStore.isAssignmentVisible(assignment));
     const assignmentsByClassroom = new Map();
     assignments.forEach((assignment) => {
       if (!assignmentsByClassroom.has(assignment.classroomId)) {
@@ -1157,16 +1510,7 @@ const ClassroomAPI = {
       assignmentsByClassroom.get(assignment.classroomId).push(assignment);
     });
 
-    const submissions = submissionRowsRaw.map((row) => ({
-      id: row.id,
-      assignmentId: row.assignment_id,
-      classroomId: row.classroom_id,
-      studentId: row.student_id,
-      status: row.status,
-      pointsAwarded: Number(row.points_awarded || 0),
-      submittedAt: row.submitted_at,
-      note: row.note || ""
-    }));
+    const submissions = submissionRowsRaw.map((row) => ClassroomSupabaseStore.normalizeAssignmentSubmission(row));
     const submissionsByClassroom = new Map();
     submissions.forEach((submission) => {
       if (!submissionsByClassroom.has(submission.classroomId)) {
@@ -1274,7 +1618,10 @@ const ClassroomAPI = {
     return {
       id: context.user.id,
       email: context.user.email || "",
-      displayName: context.profile?.display_name || context.user.email || "Student",
+      displayName: ClassroomSupabaseStore.getStudentDisplayName({
+        ...context.profile,
+        email: context.user.email
+      }),
       role: context.profile?.role || context.user.user_metadata?.role || "student"
     };
   },
@@ -1317,24 +1664,89 @@ const ClassroomAPI = {
     }
 
     const { client, user, profile } = context;
-    const { data, error } = await client.rpc("get_classroom_invite", {
-      invite_code_param: inviteCodeOrId
-    });
+    const code = String(inviteCodeOrId || "").trim();
+    if (!code) return null;
 
-    if (error) throw error;
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row) return null;
+    let classroomRow = null;
+    let inviteExpired = false;
+    let inviteInactive = false;
 
-    const classroom = ClassroomSupabaseStore.normalizeClassroom(row);
+    // --- Step 1: If it looks like a full UUID, query classrooms.id ---
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(code);
+    if (isUUID) {
+      const { data, error } = await client
+        .from(ClassroomSupabaseStore.TABLES.classrooms)
+        .select("*")
+        .eq("id", code)
+        .maybeSingle();
+      if (!error && data) classroomRow = data;
+    }
+
+    // --- Step 2: Detect invite column on classrooms table, then query it ---
+    //     Uses cached column detection to avoid 400 errors from missing columns.
+    //     Covers both invite_code and invite_token on the classrooms table.
+    if (!classroomRow) {
+      const inviteColumn = await ClassroomSupabaseStore.detectInviteCodeColumn(client);
+      if (inviteColumn) {
+        const { data, error } = await client
+          .from(ClassroomSupabaseStore.TABLES.classrooms)
+          .select("*")
+          .eq(inviteColumn, code)
+          .limit(1)
+          .maybeSingle();
+        if (!error && data) classroomRow = data;
+      }
+    }
+
+    // --- Step 3: Try classroom_invites table if it exists ---
+    if (!classroomRow) {
+      const invitesReady = await ClassroomSupabaseStore.isFeatureReady(client, "classroomInvites");
+      if (invitesReady) {
+        const { data: inviteRow, error: inviteError } = await client
+          .from(ClassroomSupabaseStore.TABLES.classroomInvites)
+          .select("id, classroom_id, invite_token, is_active, expires_at, created_at")
+          .eq("invite_token", code)
+          .maybeSingle();
+
+        if (!inviteError && inviteRow) {
+          if (inviteRow.is_active === false) inviteInactive = true;
+          if (inviteRow.expires_at && new Date(inviteRow.expires_at) < new Date()) inviteExpired = true;
+
+          const { data: classData, error: classError } = await client
+            .from(ClassroomSupabaseStore.TABLES.classrooms)
+            .select("*")
+            .eq("id", inviteRow.classroom_id)
+            .maybeSingle();
+          if (!classError && classData) classroomRow = classData;
+        }
+      }
+    }
+
+    if (!classroomRow) return null;
+
+    const classroom = ClassroomSupabaseStore.normalizeClassroom(classroomRow);
+
+    // Load teacher name
+    const teacherMap = await ClassroomSupabaseStore.loadTeacherNameMap(client, [classroom.teacherId]).catch(() => new Map());
+    classroom.teacherName = teacherMap.get(classroom.teacherId) || classroom.teacherName || "Teacher";
+
+    const isTeacher = Boolean(user && classroom.teacherId === user.id);
     const membership = await this.getStudentMembership(classroom.id).catch(() => null);
+
     return {
       classroom,
       alreadyJoined: Boolean(membership),
       membership,
+      isTeacher,
+      inviteExpired,
+      inviteInactive,
       studentProfile: {
         id: user.id,
         email: user.email || "",
-        displayName: profile?.display_name || user.email || "Student",
+        displayName: ClassroomSupabaseStore.getStudentDisplayName({
+          ...profile,
+          email: user.email
+        }),
         role: profile?.role || user.user_metadata?.role || "student"
       }
     };
@@ -1477,21 +1889,80 @@ const ClassroomAPI = {
         );
         const pointMap = await ClassroomSupabaseStore.loadPointSummary(client, classroomId);
         const submissionSummary = await ClassroomSupabaseStore.loadSubmissionSummary(client, classroomId);
+        const skillBreakdownByStudent = new Map();
+        const skillBreakdownsByStudent = new Map();
+
+        try {
+          if (await ClassroomSupabaseStore.isFeatureReady(client, "activitySubmissions")) {
+            const { data: activityRows, error: activityError } = await client
+              .from(ClassroomSupabaseStore.TABLES.activitySubmissions)
+              .select("assignment_id, student_id, reading_score, listening_score, vocabulary_score")
+              .eq("classroom_id", classroomId);
+
+            if (activityError) throw activityError;
+
+            (activityRows || []).forEach((row) => {
+              if (!row.student_id) return;
+              const totals = skillBreakdownByStudent.get(row.student_id) || {
+                reading_score: 0,
+                listening_score: 0,
+                vocabulary_score: 0
+              };
+              totals.reading_score += Number(row.reading_score || 0);
+              totals.listening_score += Number(row.listening_score || 0);
+              totals.vocabulary_score += Number(row.vocabulary_score || 0);
+              skillBreakdownByStudent.set(row.student_id, totals);
+
+              if (row.assignment_id) {
+                const byAssignment = skillBreakdownsByStudent.get(row.student_id) || {};
+                const assignmentTotals = byAssignment[row.assignment_id] || {
+                  reading_score: 0,
+                  listening_score: 0,
+                  vocabulary_score: 0
+                };
+                assignmentTotals.reading_score += Number(row.reading_score || 0);
+                assignmentTotals.listening_score += Number(row.listening_score || 0);
+                assignmentTotals.vocabulary_score += Number(row.vocabulary_score || 0);
+                byAssignment[row.assignment_id] = assignmentTotals;
+                skillBreakdownsByStudent.set(row.student_id, byAssignment);
+              }
+            });
+          }
+        } catch (skillError) {
+          if (ClassroomSupabaseStore.shouldFallback(skillError) || ClassroomSupabaseStore.getMissingColumn(skillError)) {
+            console.warn(
+              "[Digital Classroom] Activity skill breakdown is not available yet.",
+              ClassroomSupabaseStore.getErrorMessage(skillError)
+            );
+          } else {
+            throw skillError;
+          }
+        }
 
         return studentRows
           .map((row) => {
             const profile = profileMap.get(row.profile_id) || {};
-            const name = row.display_name || profile.display_name || "Student";
+            const name = ClassroomSupabaseStore.getStudentDisplayName({
+              ...profile,
+              display_name: row.display_name || profile.display_name
+            });
+            const classroomSkillBreakdown = skillBreakdownByStudent.get(row.profile_id) || null;
+            const assignmentSkillBreakdowns = skillBreakdownsByStudent.get(row.profile_id) || null;
             return {
               id: row.profile_id || row.id,
               classroomId: row.classroom_id,
               memberId: row.id,
               profileId: row.profile_id,
               name,
+              displayName: name,
+              email: profile.email || "",
               avatar: (name || "S").charAt(0).toUpperCase(),
+              avatarUrl: profile.avatar_url || "",
               points: pointMap.get(row.profile_id) || 0,
               completedAssignments: submissionSummary.completedByStudent.get(row.profile_id) || 0,
-              joinedAt: row.joined_at || new Date().toISOString()
+              joinedAt: row.joined_at || new Date().toISOString(),
+              ...(classroomSkillBreakdown ? { classroomSkillBreakdown } : {}),
+              ...(assignmentSkillBreakdowns ? { assignmentSkillBreakdowns } : {})
             };
           })
           .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
@@ -1676,7 +2147,8 @@ const ClassroomAPI = {
           const { data: assignments } = await client
             .from(ClassroomSupabaseStore.TABLES.assignments)
             .select("id, classroom_id, due_date")
-            .in("classroom_id", classroomIds);
+            .in("classroom_id", classroomIds)
+            .or("is_deleted.is.false,is_deleted.is.null");
           (assignments || []).forEach((row) => {
             assignmentsByClassroom.set(row.classroom_id, (assignmentsByClassroom.get(row.classroom_id) || 0) + 1);
           });
@@ -1708,10 +2180,13 @@ const ClassroomAPI = {
           .from(ClassroomSupabaseStore.TABLES.assignments)
           .select("*")
           .eq("classroom_id", classroomId)
-          .order("due_date", { ascending: true });
+          .or("is_deleted.is.false,is_deleted.is.null")
+          .order("created_at", { ascending: false });
 
         if (error) throw error;
-        return (data || []).map((row) => ClassroomSupabaseStore.normalizeAssignment(row));
+        return (data || [])
+          .map((row) => ClassroomSupabaseStore.normalizeAssignment(row))
+          .filter((assignment) => ClassroomSupabaseStore.isAssignmentVisible(assignment));
       },
       () => ClassroomLocalStore.getAssignmentsByClassroom(classroomId),
       { requireAuth: true }
@@ -1730,18 +2205,16 @@ const ClassroomAPI = {
           due_date: assignmentData.dueDate,
           points: Number(assignmentData.points)
         };
-        const isLearningSpree = assignmentData.assignmentType === "learning_spree";
-        const extendedPayload = isLearningSpree
-          ? {
+        const structuredResourceItems = Array.isArray(assignmentData.resourceItems) ? assignmentData.resourceItems : [];
+        const extendedPayload = {
             ...basePayload,
-            assignment_type: "learning_spree",
-            resource_items: assignmentData.resourceItems || [],
+            assignment_type: assignmentData.assignmentType || "assignment",
+            resource_items: structuredResourceItems,
             unlock_mode: assignmentData.unlockMode || "open_access",
             start_date: assignmentData.startDate || null,
             timezone: assignmentData.timezone || "Asia/Colombo",
             status: assignmentData.status || "published"
-          }
-          : basePayload;
+          };
 
         let result = await client
           .from(ClassroomSupabaseStore.TABLES.assignments)
@@ -1753,7 +2226,7 @@ const ClassroomAPI = {
           ["42703", "PGRST204"].includes(result.error.code) ||
           /assignment_type|resource_items|unlock_mode|start_date|timezone|status/i.test(`${result.error.message || ""} ${result.error.details || ""} ${result.error.hint || ""}`)
         );
-        if (missingExtendedColumns && isLearningSpree) {
+        if (missingExtendedColumns) {
           result = await client
             .from(ClassroomSupabaseStore.TABLES.assignments)
             .insert({
@@ -1772,27 +2245,200 @@ const ClassroomAPI = {
     );
   },
 
+  async deleteAssignment(classroomId, assignmentId) {
+    if (!assignmentId) {
+      throw new Error("Invalid assignment. Please refresh and try again.");
+    }
+
+    return ClassroomSupabaseStore.withFallback(
+      "assignments",
+      async ({ client }) => {
+        const now = new Date().toISOString();
+        const { data, error } = await client
+          .from(ClassroomSupabaseStore.TABLES.assignments)
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            updated_at: now
+          })
+          .eq("id", assignmentId)
+          .eq("classroom_id", classroomId)
+          .select("id, title, classroom_id, is_deleted, deleted_at, updated_at")
+          .single();
+
+        if (error) {
+          if (ClassroomSupabaseStore.isRlsError(error)) {
+            throw new Error("You do not have permission to delete this assignment.");
+          }
+          throw error;
+        }
+
+        if (!data || data.is_deleted !== true) {
+          throw new Error("Assignment could not be deleted. Please check permissions or RLS policy.");
+        }
+
+        return {
+          success: true,
+          mode: "soft-delete",
+          sourceType: "assignment",
+          sourceTable: ClassroomSupabaseStore.TABLES.assignments,
+          row: ClassroomSupabaseStore.normalizeAssignment(data)
+        };
+      },
+      () => ClassroomLocalStore.deleteAssignment(classroomId, assignmentId),
+      { requireAuth: true }
+    );
+  },
+
+  async getClassroomMessages(classroomId) {
+    return ClassroomSupabaseStore.withFallback(
+      "classroomMessages",
+      async ({ client }) => {
+        const now = new Date().toISOString();
+        const { data, error } = await client
+          .from(ClassroomSupabaseStore.TABLES.classroomMessages)
+          .select("id, classroom_id, teacher_id, message, is_pinned, is_deleted, created_at, updated_at, edited_at, deleted_at, expires_at")
+          .eq("classroom_id", classroomId)
+          .eq("is_deleted", false)
+          .gt("expires_at", now)
+          .order("is_pinned", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (error) throw error;
+        return (data || []).map((row) => ClassroomSupabaseStore.normalizeClassroomMessage(row));
+      },
+      () => ClassroomLocalStore.getMessagesByClassroom(classroomId),
+      { requireAuth: true }
+    );
+  },
+
+  async createClassroomMessage(classroomId, messageText) {
+    return ClassroomSupabaseStore.withFallback(
+      "classroomMessages",
+      async ({ client, user }) => {
+        const text = String(messageText || "").trim();
+        if (!text) throw new Error("Message cannot be empty.");
+
+        const now = new Date();
+        const expiresAt = new Date(now);
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+
+        const { data, error } = await client
+          .from(ClassroomSupabaseStore.TABLES.classroomMessages)
+          .insert({
+            classroom_id: classroomId,
+            teacher_id: user.id,
+            message: text,
+            expires_at: expiresAt.toISOString()
+          })
+          .select("id, classroom_id, teacher_id, message, is_pinned, is_deleted, created_at, updated_at, edited_at, deleted_at, expires_at")
+          .single();
+
+        if (error) throw error;
+        if (!data) throw new Error("Message was not saved. Supabase returned no row.");
+        return ClassroomSupabaseStore.normalizeClassroomMessage(data);
+      },
+      async ({ user } = {}) => ClassroomLocalStore.createMessage(classroomId, messageText, user?.id || "local-teacher"),
+      { requireAuth: true }
+    );
+  },
+
+  async updateClassroomMessage(messageId, newMessage) {
+    return ClassroomSupabaseStore.withFallback(
+      "classroomMessages",
+      async ({ client }) => {
+        const text = String(newMessage || "").trim();
+        if (!text) throw new Error("Message cannot be empty.");
+
+        const now = new Date().toISOString();
+        const { data, error } = await client
+          .from(ClassroomSupabaseStore.TABLES.classroomMessages)
+          .update({
+            message: text,
+            updated_at: now,
+            edited_at: now
+          })
+          .eq("id", messageId)
+          .eq("is_deleted", false)
+          .select("id, classroom_id, teacher_id, message, is_pinned, is_deleted, created_at, updated_at, edited_at, deleted_at, expires_at");
+
+        if (error) throw error;
+        const row = Array.isArray(data) ? data[0] : null;
+        if (!row) {
+          throw new Error("Message update was not confirmed. It may be expired, deleted, or blocked by RLS.");
+        }
+        return ClassroomSupabaseStore.normalizeClassroomMessage(row);
+      },
+      () => ClassroomLocalStore.updateMessage(messageId, newMessage),
+      { requireAuth: true }
+    );
+  },
+
+  async deleteClassroomMessage(messageId) {
+    return ClassroomSupabaseStore.withFallback(
+      "classroomMessages",
+      async ({ client }) => {
+        const now = new Date().toISOString();
+        const { data, error } = await client
+          .from(ClassroomSupabaseStore.TABLES.classroomMessages)
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            updated_at: now
+          })
+          .eq("id", messageId)
+          .eq("is_deleted", false)
+          .select("id, classroom_id, teacher_id, message, is_pinned, is_deleted, created_at, updated_at, edited_at, deleted_at, expires_at");
+
+        if (error) throw error;
+        const row = Array.isArray(data) ? data[0] : null;
+        if (!row) {
+          throw new Error("Message delete was not confirmed. It may already be deleted or blocked by RLS.");
+        }
+        return ClassroomSupabaseStore.normalizeClassroomMessage(row);
+      },
+      () => ClassroomLocalStore.deleteMessage(messageId),
+      { requireAuth: true }
+    );
+  },
+
+  async cleanupExpiredClassroomMessages() {
+    return ClassroomSupabaseStore.withFallback(
+      "classroomMessages",
+      async ({ client }) => {
+        const now = new Date().toISOString();
+        const { data, error } = await client
+          .from(ClassroomSupabaseStore.TABLES.classroomMessages)
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            updated_at: now
+          })
+          .eq("is_deleted", false)
+          .lte("expires_at", now)
+          .select("id");
+
+        if (error) throw error;
+        return { success: true, count: Array.isArray(data) ? data.length : 0 };
+      },
+      () => ({ success: true, count: 0 }),
+      { requireAuth: true }
+    );
+  },
+
   async getSubmissionsByClassroom(classroomId) {
     return ClassroomSupabaseStore.withFallback(
       "assignmentSubmissions",
       async ({ client }) => {
         const { data, error } = await client
           .from(ClassroomSupabaseStore.TABLES.assignmentSubmissions)
-          .select("id, assignment_id, classroom_id, student_id, status, points_awarded, submitted_at, note")
+          .select("*")
           .eq("classroom_id", classroomId);
 
         if (error) throw error;
 
-        return (data || []).map((row) => ({
-          id: row.id,
-          assignmentId: row.assignment_id,
-          classroomId: row.classroom_id,
-          studentId: row.student_id,
-          status: row.status,
-          pointsAwarded: Number(row.points_awarded || 0),
-          submittedAt: row.submitted_at,
-          note: row.note || ""
-        }));
+        return (data || []).map((row) => ClassroomSupabaseStore.normalizeAssignmentSubmission(row));
       },
       () => ClassroomLocalStore.getSubmissionsByClassroom(classroomId),
       { requireAuth: true }
@@ -1805,7 +2451,7 @@ const ClassroomAPI = {
       async ({ client }) => {
         const { data, error } = await client
           .from(ClassroomSupabaseStore.TABLES.assignmentSubmissions)
-          .select("id, assignment_id, classroom_id, student_id, status, points_awarded, submitted_at, note")
+          .select("*")
           .eq("assignment_id", assignmentId)
           .eq("student_id", studentId)
           .maybeSingle();
@@ -1813,20 +2459,28 @@ const ClassroomAPI = {
         if (error) throw error;
         if (!data) return null;
 
-        return {
-          id: data.id,
-          assignmentId: data.assignment_id,
-          classroomId: data.classroom_id,
-          studentId: data.student_id,
-          status: data.status,
-          pointsAwarded: Number(data.points_awarded || 0),
-          submittedAt: data.submitted_at,
-          note: data.note || ""
-        };
+        return ClassroomSupabaseStore.normalizeAssignmentSubmission(data);
       },
       () => ClassroomLocalStore.getSubmission(assignmentId, studentId),
       { requireAuth: true }
     );
+  },
+
+  async syncActivityScore(payload = {}) {
+    const session = await window.DigitalClassroomSupabase?.getSession?.().catch(() => null);
+    const response = await fetch("/api/classroom-activity-score", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session?.access_token || ""}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || "Activity score sync failed.");
+    }
+    return result;
   },
 
   normalizeSpreeProgress(row) {
@@ -1992,44 +2646,76 @@ const ClassroomAPI = {
       async ({ client, user }) => {
         if (!user?.id) return [];
 
-        let query = client
-          .from(ClassroomSupabaseStore.TABLES.submissions)
-          .select(`
-            id,
-            author_id,
-            owner_id,
-            owner_role,
-            teacher_id,
-            upload_context,
-            source,
-            classroom_id,
-            resource_purpose,
-            title,
-            description,
-            category,
-            content_type,
-            resource_type,
-            file_url,
-            thumbnail_url,
-            image_url,
-            visibility,
-            status,
-            created_at,
-            updated_at
-          `)
-          .eq("owner_id", user.id)
-          .eq("author_id", user.id)
-          .eq("teacher_id", user.id)
-          .eq("owner_role", "teacher")
-          .eq("resource_purpose", "teaching_resource")
-          .eq("upload_context", "classroom")
-          .eq("source", "digital_classroom");
+        const baseColumns = [
+          "id",
+          "author_id",
+          "owner_role",
+          "teacher_id",
+          "upload_context",
+          "source",
+          "classroom_id",
+          "resource_purpose",
+          "title",
+          "description",
+          "category",
+          "content_type",
+          "resource_type",
+          "file_url",
+          "file_path",
+          "file_type",
+          "mime_type",
+          "thumbnail_url",
+          "image_url",
+          "visibility",
+          "status",
+          "created_at",
+          "updated_at"
+        ];
+        const optionalColumns = [
+          "project_url",
+          "preview_url",
+          "metadata",
+          "is_deleted",
+          "deleted_at",
+          "shared_to_premium",
+          "premium_shared_at",
+          "premium_status",
+          "premium_library_category"
+        ];
+        let data = null;
+        let error = null;
 
-        if (classroomId) {
-          query = query.eq("classroom_id", classroomId);
+        for (let attempt = 0; attempt <= baseColumns.length + optionalColumns.length; attempt += 1) {
+          const selectColumns = [...baseColumns, ...optionalColumns].join(", ");
+          let query = client
+            .from(ClassroomSupabaseStore.TABLES.submissions)
+            .select(selectColumns)
+            .eq("author_id", user.id)
+            .eq("teacher_id", user.id)
+            .eq("owner_role", "teacher")
+            .eq("resource_purpose", "teaching_resource")
+            .eq("upload_context", "classroom")
+            .eq("source", "digital_classroom");
+
+          if (classroomId) {
+            query = query.eq("classroom_id", classroomId);
+          }
+          if (optionalColumns.includes("is_deleted")) {
+            query = query.or("is_deleted.is.false,is_deleted.is.null");
+          }
+
+          const result = await query.order("created_at", { ascending: false });
+          data = result.data;
+          error = result.error;
+
+          if (!error) break;
+
+          const missingColumn = ClassroomSupabaseStore.getMissingColumn(error);
+          const optionalIndex = optionalColumns.indexOf(missingColumn);
+          if (optionalIndex === -1) break;
+
+          optionalColumns.splice(optionalIndex, 1);
         }
-
-        const { data, error } = await query.order("created_at", { ascending: false });
 
         if (error) {
           if (ClassroomSupabaseStore.shouldFallback(error) || String(error?.message || "").toLowerCase().includes("column")) {
@@ -2046,16 +2732,221 @@ const ClassroomAPI = {
           .filter((row) => (
             row.author_id === user.id &&
             row.teacher_id === user.id &&
-            row.owner_id === user.id &&
             row.owner_role === "teacher" &&
             row.resource_purpose === "teaching_resource" &&
             row.upload_context === "classroom" &&
             row.source === "digital_classroom" &&
+            row.is_deleted !== true &&
+            !row.deleted_at &&
+            !["deleted", "archived"].includes(String(row.status || "").toLowerCase()) &&
             (!classroomId || row.classroom_id === classroomId)
           ))
           .map((row) => ClassroomSupabaseStore.normalizeTeachingResource(row));
       },
       () => [],
+      { requireAuth: true }
+    );
+  },
+
+  async shareResourceToPremiumLibrary(resourceId) {
+    if (!resourceId) {
+      throw new Error("Invalid resource. Please refresh and try again.");
+    }
+
+    return ClassroomSupabaseStore.withFallback(
+      "submissions",
+      async ({ client, user }) => {
+        const now = new Date().toISOString();
+        const payload = {
+          shared_to_premium: true,
+          premium_shared_at: now,
+          premium_status: "published",
+          updated_at: now
+        };
+
+        const { data, error } = await client
+          .from(ClassroomSupabaseStore.TABLES.submissions)
+          .update(payload)
+          .eq("id", resourceId)
+          .eq("author_id", user.id)
+          .eq("teacher_id", user.id)
+          .eq("owner_role", "teacher")
+          .eq("resource_purpose", "teaching_resource")
+          .eq("upload_context", "classroom")
+          .eq("source", "digital_classroom")
+          .select("id, author_id, teacher_id, owner_role, resource_purpose, upload_context, source, visibility, shared_to_premium, premium_shared_at, premium_status, updated_at")
+          .maybeSingle();
+
+        if (error && ClassroomSupabaseStore.getMissingColumn(error)) {
+          throw new Error("Premium sharing requires the submissions premium-sharing columns. Apply the teacher-resource-premium-sharing migration and try again.");
+        }
+
+        if (error) {
+          if (ClassroomSupabaseStore.isRlsError(error)) {
+            throw new Error("You do not have permission to share this resource.");
+          }
+          throw error;
+        }
+
+        if (!data) {
+          throw new Error("Resource share was not confirmed. It may not exist or you may not own it.");
+        }
+
+        return {
+          success: true,
+          mode: "metadata-update",
+          fields: payload,
+          row: data
+        };
+      },
+      () => {
+        throw new Error("Premium library sharing requires Supabase.");
+      },
+      { requireAuth: true }
+    );
+  },
+
+  async shiftResourceToPremium(resourceId) {
+    return this.shareResourceToPremiumLibrary(resourceId);
+  },
+
+  async getPremiumLibraryResources() {
+    return ClassroomSupabaseStore.withFallback(
+      "submissions",
+      async ({ client }) => {
+        const baseColumns = [
+          "id",
+          "author_id",
+          "owner_role",
+          "teacher_id",
+          "upload_context",
+          "source",
+          "classroom_id",
+          "resource_purpose",
+          "title",
+          "description",
+          "category",
+          "content_type",
+          "resource_type",
+          "file_url",
+          "file_path",
+          "file_type",
+          "mime_type",
+          "thumbnail_url",
+          "image_url",
+          "visibility",
+          "status",
+          "created_at",
+          "updated_at"
+        ];
+        const optionalColumns = [
+          "project_url",
+          "preview_url",
+          "metadata",
+          "is_deleted",
+          "deleted_at",
+          "shared_to_premium",
+          "premium_shared_at",
+          "premium_status",
+          "premium_library_category"
+        ];
+        let data = null;
+        let error = null;
+        const requiredPremiumColumns = new Set(["shared_to_premium", "premium_status", "premium_shared_at"]);
+
+        for (let attempt = 0; attempt <= optionalColumns.length; attempt += 1) {
+          const selectColumns = [...baseColumns, ...optionalColumns].join(", ");
+          const result = await client
+            .from(ClassroomSupabaseStore.TABLES.submissions)
+            .select(selectColumns)
+            .eq("shared_to_premium", true)
+            .eq("premium_status", "published")
+            .or("is_deleted.is.false,is_deleted.is.null")
+            .order("premium_shared_at", { ascending: false });
+
+          data = result.data;
+          error = result.error;
+          if (!error) break;
+
+          const missingColumn = ClassroomSupabaseStore.getMissingColumn(error);
+          if (requiredPremiumColumns.has(missingColumn)) {
+            console.warn(
+              "[Digital Classroom] Premium Learning Library requires premium-sharing metadata columns.",
+              ClassroomSupabaseStore.getErrorMessage(error)
+            );
+            return [];
+          }
+
+          const optionalIndex = optionalColumns.indexOf(missingColumn);
+          if (optionalIndex === -1) break;
+          optionalColumns.splice(optionalIndex, 1);
+        }
+
+        if (error) throw error;
+
+        return (data || [])
+          .filter((row) => (
+            row.shared_to_premium === true &&
+            row.is_deleted !== true &&
+            !row.deleted_at
+          ))
+          .map((row) => ClassroomSupabaseStore.normalizeTeachingResource(row));
+      },
+      () => [],
+      { requireAuth: true }
+    );
+  },
+
+  async deleteTeacherResource(resourceId) {
+    if (!resourceId) {
+      throw new Error("Invalid resource. Please refresh and try again.");
+    }
+
+    return ClassroomSupabaseStore.withFallback(
+      "submissions",
+      async ({ client, user }) => {
+        const now = new Date().toISOString();
+        const result = await client
+          .from(ClassroomSupabaseStore.TABLES.submissions)
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            updated_at: now
+          })
+          .eq("id", resourceId)
+          .eq("author_id", user.id)
+          .eq("teacher_id", user.id)
+          .eq("owner_role", "teacher")
+          .eq("resource_purpose", "teaching_resource")
+          .eq("upload_context", "classroom")
+          .eq("source", "digital_classroom")
+          .select("id, is_deleted, deleted_at, updated_at")
+          .maybeSingle();
+
+        if (result.error && ClassroomSupabaseStore.getMissingColumn(result.error)) {
+          throw new Error("Resource deletion requires the submissions soft-delete columns. Apply the teacher-resource-soft-delete migration and try again.");
+        }
+
+        if (result.error) {
+          if (ClassroomSupabaseStore.isRlsError(result.error)) {
+            throw new Error("You do not have permission to delete this resource.");
+          }
+          throw result.error;
+        }
+
+        if (!result.data) {
+          throw new Error("Resource delete was not confirmed. It may already be deleted or you may not own it.");
+        }
+
+        return {
+          success: true,
+          mode: "soft-delete",
+          row: result.data
+        };
+      },
+      () => {
+        throw new Error("Resource deletion requires Supabase.");
+      },
       { requireAuth: true }
     );
   },

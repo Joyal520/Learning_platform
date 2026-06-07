@@ -18,8 +18,8 @@ const PAGE_FILES = {
 let assetsPromise;
 
 function ensureStylesheet() {
-    const href = `${DIGITAL_CLASSROOM_BASE}/assets/css/classroom.css`;
-    if (document.querySelector(`link[data-digital-classroom-css][href="${href}"]`)) return;
+    const href = `${DIGITAL_CLASSROOM_BASE}/assets/css/classroom.css?v=align-fix-v3`;
+    if (document.querySelector(`link[data-digital-classroom-css]`)) return;
 
     const link = document.createElement("link");
     link.rel = "stylesheet";

@@ -19,6 +19,7 @@ const {
     putObject,
     readJsonBody,
     sanitizeSegment,
+    updateSupabaseSubmission,
     validateR2Config,
     verifySupabaseUser
 } = require('./_lib/r2');
@@ -65,6 +66,56 @@ function getExtension(filename = '') {
 
 function getHostedContentType(relativePath = '') {
     return CONTENT_TYPE_BY_EXTENSION[getExtension(relativePath)] || 'application/octet-stream';
+}
+
+function getMissingSubmissionColumn(error) {
+    const message = String(error?.message || '').trim();
+    const patterns = [
+        /Could not find the '([^']+)' column/i,
+        /column submissions\.([a-zA-Z0-9_]+) does not exist/i,
+        /column "([^"]+)" of relation "submissions" does not exist/i
+    ];
+
+    for (const pattern of patterns) {
+        const match = message.match(pattern);
+        if (match?.[1]) return match[1];
+    }
+
+    return '';
+}
+
+async function updateWebsitePreviewMetadata(accessToken, submissionId, website) {
+    const patch = {
+        project_url: website.previewUrl,
+        preview_url: website.previewUrl,
+        metadata: {
+            previewUrl: website.previewUrl,
+            indexUrl: website.previewUrl,
+            entryFilePath: website.entryFilePath,
+            extractedRootPath: website.extractedRootPath,
+            zipStoragePath: website.zipStoragePath,
+            fileCount: website.fileCount
+        }
+    };
+    const optionalColumns = new Set(Object.keys(patch));
+    const skippedColumns = [];
+
+    while (Object.keys(patch).length > 0) {
+        try {
+            const row = await updateSupabaseSubmission(accessToken, submissionId, patch);
+            return { saved: true, row, skippedColumns };
+        } catch (error) {
+            const missingColumn = getMissingSubmissionColumn(error);
+            if (!missingColumn || !optionalColumns.has(missingColumn)) {
+                throw error;
+            }
+            delete patch[missingColumn];
+            optionalColumns.delete(missingColumn);
+            skippedColumns.push(missingColumn);
+        }
+    }
+
+    return { saved: false, skippedColumns };
 }
 
 function decodeZipEntryName(fileName) {
@@ -306,17 +357,23 @@ module.exports = async function handler(req, res) {
 
         const entryFilePath = `${extractedRootPrefix}/${plan.entryFilePath}`;
         const previewUrl = buildPublicUrl(entryFilePath);
+        const website = {
+            zipStoragePath: originalZipKey,
+            extractedRootPath: extractedRootPrefix,
+            entryFilePath,
+            previewUrl,
+            fileCount: plan.fileCount
+        };
+        const metadataUpdate = await updateWebsitePreviewMetadata(accessToken, submissionId, website).catch((metadataError) => {
+            console.warn('[process-website-project] Could not save website preview metadata:', metadataError.message || metadataError);
+            return { saved: false, error: metadataError.message || String(metadataError) };
+        });
 
         return json(res, 200, {
             ok: true,
             submissionId,
-            website: {
-                zipStoragePath: originalZipKey,
-                extractedRootPath: extractedRootPrefix,
-                entryFilePath,
-                previewUrl,
-                fileCount: plan.fileCount
-            }
+            website,
+            metadataUpdate
         });
     } catch (error) {
         if (uploadedHostedKeys.length > 0) {

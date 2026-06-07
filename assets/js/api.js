@@ -203,7 +203,10 @@ function normalizeUrlSubmissionPayload(payload = {}, options = {}) {
 
 function sanitizeSubmissionPayload(payload = {}, options = {}) {
     const { existingSubmission = null } = options;
-    const sanitized = normalizeUrlSubmissionPayload(payload, { existingSubmission });
+    const sanitized = applyDigitalClassroomMetadataGuard(
+        normalizeUrlSubmissionPayload(payload, { existingSubmission }),
+        { existingSubmission }
+    );
     const isPresentation = isPresentationLikeSubmission(sanitized, existingSubmission);
 
     if (!isPresentation) {
@@ -213,12 +216,44 @@ function sanitizeSubmissionPayload(payload = {}, options = {}) {
     return sanitized;
 }
 
+function normalizeMetadataValue(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function applyDigitalClassroomMetadataGuard(payload = {}, options = {}) {
+    const { existingSubmission = null } = options;
+    const nextPayload = { ...payload };
+    const source = normalizeMetadataValue(nextPayload.source || existingSubmission?.source);
+    const uploadContext = normalizeMetadataValue(nextPayload.upload_context || existingSubmission?.upload_context);
+    const isDigitalClassroomUpload = source === 'digital_classroom' || uploadContext === 'classroom';
+
+    if (!isDigitalClassroomUpload) return nextPayload;
+
+    nextPayload.source = 'digital_classroom';
+    nextPayload.upload_context = 'classroom';
+    nextPayload.resource_purpose = 'teaching_resource';
+
+    const payloadVisibility = normalizeMetadataValue(nextPayload.visibility);
+    const existingVisibility = normalizeMetadataValue(existingSubmission?.visibility);
+    const visibility = payloadVisibility || existingVisibility || 'private';
+    nextPayload.visibility = visibility === 'public' ? 'public' : 'private';
+
+    if (nextPayload.visibility === 'private') {
+        nextPayload.explore_visible = false;
+    } else if (!existingSubmission && nextPayload.explore_visible !== true) {
+        nextPayload.explore_visible = false;
+    }
+
+    return nextPayload;
+}
+
 const OPTIONAL_SUBMISSION_METADATA_COLUMNS = new Set([
     'owner_id',
     'owner_role',
     'resource_purpose',
     'resource_type',
     'visibility',
+    'explore_visible',
     'upload_context',
     'source',
     'classroom_id',
@@ -273,6 +308,15 @@ async function insertSubmissionWithMetadataRetry(payload, selectColumns = 'id') 
         data: null,
         error: new Error('Could not insert submission after checking optional metadata columns.')
     };
+}
+
+function isPublicExploreSubmission(row = {}) {
+    const status = String(row.status || '').trim().toLowerCase();
+    const visibility = String(row.visibility || '').trim().toLowerCase();
+    return status === 'approved'
+        && visibility === 'public'
+        && row.explore_visible === true
+        && row.is_deleted !== true;
 }
 
 async function validateUploadedProject({ objectKey, filename, contentType }) {
@@ -565,11 +609,17 @@ export const API = {
                 file_path,
                 content_type,
                 status,
+                visibility,
+                explore_visible,
+                is_deleted,
                 created_at,
                 updated_at,
                 profiles!author_id (display_name, avatar_url)
             `)
-            .eq('status', 'approved');
+            .eq('status', 'approved')
+            .eq('visibility', 'public')
+            .eq('explore_visible', true)
+            .or('is_deleted.is.null,is_deleted.eq.false');
 
         if (category) {
             query = query.eq('category', category);
@@ -579,7 +629,12 @@ export const API = {
             .order(sort, { ascending: false })
             .range(offset, offset + limit - 1);
 
-        return { data, error };
+        if (error) return { data, error };
+
+        return {
+            data: (data || []).filter((row) => isPublicExploreSubmission(row)),
+            error: null
+        };
     },
 
     async getSubmissionById(id) {
@@ -669,23 +724,32 @@ export const API = {
                 author_id,
                 category,
                 content_type,
+                status,
+                visibility,
+                explore_visible,
+                is_deleted,
                 profiles!author_id(display_name, avatar_url)
             `)
             .eq('status', 'approved')
+            .eq('visibility', 'public')
+            .eq('explore_visible', true)
+            .or('is_deleted.is.null,is_deleted.eq.false')
             .limit(500);
 
         if (error) {
             return { data: [], error };
         }
 
-        if (!submissions || submissions.length === 0) {
+        const publicSubmissions = (submissions || []).filter((row) => isPublicExploreSubmission(row));
+
+        if (publicSubmissions.length === 0) {
             return { data: [], error: null };
         }
 
-        const statsMap = await this.getStatsForSubmissions(submissions.map((submission) => submission.id));
+        const statsMap = await this.getStatsForSubmissions(publicSubmissions.map((submission) => submission.id));
         const creatorMap = new Map();
 
-        submissions.forEach((submission) => {
+        publicSubmissions.forEach((submission) => {
             const authorId = submission.author_id;
             if (!authorId) return;
 
@@ -914,7 +978,7 @@ export const API = {
 
             const { data: existingSubmission, error: existingSubmissionError } = await supabase
                 .from('submissions')
-                .select('id, category, content_type, file_type, mime_type, file_url, image_url, thumbnail_path, thumbnail_url')
+                .select('id, category, content_type, file_type, mime_type, file_url, image_url, thumbnail_path, thumbnail_url, visibility, explore_visible, upload_context, source, resource_purpose, classroom_id')
                 .eq('id', id)
                 .maybeSingle();
 

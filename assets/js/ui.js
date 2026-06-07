@@ -4,6 +4,7 @@ import { supabase } from './supabase.js';
 import { AvatarLibrary } from './avatars.js';
 import { API } from './api.js';
 import { BadgeEngine } from './badges.js';
+import { EdTechraBrandAssets } from './brand-assets.js';
 import { buildAppPath, buildAppUrl } from './path-utils.js';
 
 export const UI = {
@@ -5917,7 +5918,7 @@ let videoId = '';
             <div class="mobile-home-page" aria-label="EdTechra mobile home">
                 <header class="mobile-home-header">
                     <a href="#home" class="mobile-home-brand" data-link="home" aria-label="EdTechra Home">
-                        <img src="assets/images/logo.webp" alt="EDTECHRA" loading="eager" decoding="async">
+                        <img src="${EdTechraBrandAssets.logos.icon}" alt="${EdTechraBrandAssets.alt}" loading="eager" decoding="async">
                         <span>EDTECHRA</span>
                     </a>
                     <div class="mobile-home-header-actions">
@@ -6602,7 +6603,7 @@ let videoId = '';
         login: () => `
             <div class="auth-card animate-fade-in">
                 <div class="auth-brand">
-                    <img class="auth-brand-logo" src="assets/images/logo.webp" alt="EDTECHRA">
+                    <img class="auth-brand-logo" src="${EdTechraBrandAssets.logos.darkBackground}" alt="${EdTechraBrandAssets.alt}">
                 </div>
                 <h2>Welcome Back</h2>
                 <p class="text-muted">Sign in to continue your creative journey.</p>
@@ -6640,7 +6641,7 @@ let videoId = '';
         signup: () => `
             <div class="auth-card animate-fade-in">
                 <div class="auth-brand">
-                    <img class="auth-brand-logo" src="assets/images/logo.webp" alt="EDTECHRA">
+                    <img class="auth-brand-logo" src="${EdTechraBrandAssets.logos.darkBackground}" alt="${EdTechraBrandAssets.alt}">
                 </div>
                 <h2>Create Account</h2>
                 <p class="text-muted">Join the EDTECHRA community today.</p>

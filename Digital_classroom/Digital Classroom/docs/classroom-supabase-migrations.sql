@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS public.assignments (
     start_date DATE,
     timezone TEXT NOT NULL DEFAULT 'Asia/Colombo',
     status TEXT NOT NULL DEFAULT 'published',
+    is_deleted BOOLEAN NOT NULL DEFAULT false,
+    deleted_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -123,7 +125,12 @@ ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS unlock_mode TEXT NOT NUL
 ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS start_date DATE;
 ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'Asia/Colombo';
 ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'published';
+ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 ALTER TABLE public.assignments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+CREATE INDEX IF NOT EXISTS idx_assignments_active_classroom
+    ON public.assignments (classroom_id, is_deleted, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.learning_spree_item_progress (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -180,6 +187,26 @@ CREATE TABLE IF NOT EXISTS public.ai_feedback_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.classroom_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,
+    teacher_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    is_pinned BOOLEAN NOT NULL DEFAULT false,
+    is_deleted BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    edited_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '1 month')
+);
+
+CREATE INDEX IF NOT EXISTS idx_classroom_messages_classroom_id
+    ON public.classroom_messages (classroom_id);
+
+CREATE INDEX IF NOT EXISTS idx_classroom_messages_visible
+    ON public.classroom_messages (classroom_id, is_deleted, expires_at, created_at DESC);
+
 ALTER TABLE public.classrooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classroom_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classroom_invites ENABLE ROW LEVEL SECURITY;
@@ -190,6 +217,7 @@ ALTER TABLE public.content_buckets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bucket_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.classroom_points ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_feedback_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.classroom_messages ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
@@ -411,6 +439,127 @@ BEGIN
             );
     END IF;
 END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'classroom_messages'
+          AND policyname = 'Teachers create messages for owned classrooms'
+    ) THEN
+        CREATE POLICY "Teachers create messages for owned classrooms"
+            ON public.classroom_messages
+            FOR INSERT
+            TO authenticated
+            WITH CHECK (
+                teacher_id = auth.uid()
+                AND EXISTS (
+                    SELECT 1
+                    FROM public.classrooms
+                    WHERE classrooms.id = classroom_messages.classroom_id
+                      AND classrooms.teacher_id = auth.uid()
+                )
+            );
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'classroom_messages'
+          AND policyname = 'Teachers update messages for owned classrooms'
+    ) THEN
+        CREATE POLICY "Teachers update messages for owned classrooms"
+            ON public.classroom_messages
+            FOR UPDATE
+            TO authenticated
+            USING (
+                teacher_id = auth.uid()
+                AND EXISTS (
+                    SELECT 1
+                    FROM public.classrooms
+                    WHERE classrooms.id = classroom_messages.classroom_id
+                      AND classrooms.teacher_id = auth.uid()
+                )
+            )
+            WITH CHECK (
+                teacher_id = auth.uid()
+                AND EXISTS (
+                    SELECT 1
+                    FROM public.classrooms
+                    WHERE classrooms.id = classroom_messages.classroom_id
+                      AND classrooms.teacher_id = auth.uid()
+                )
+            );
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'classroom_messages'
+          AND policyname = 'Teachers read messages for owned classrooms'
+    ) THEN
+        CREATE POLICY "Teachers read messages for owned classrooms"
+            ON public.classroom_messages
+            FOR SELECT
+            TO authenticated
+            USING (
+                teacher_id = auth.uid()
+                AND EXISTS (
+                    SELECT 1
+                    FROM public.classrooms
+                    WHERE classrooms.id = classroom_messages.classroom_id
+                      AND classrooms.teacher_id = auth.uid()
+                )
+            );
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename = 'classroom_messages'
+          AND policyname = 'Members read active classroom messages'
+    ) THEN
+        CREATE POLICY "Members read active classroom messages"
+            ON public.classroom_messages
+            FOR SELECT
+            TO authenticated
+            USING (
+                is_deleted = false
+                AND expires_at > now()
+                AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM public.classrooms
+                        WHERE classrooms.id = classroom_messages.classroom_id
+                          AND classrooms.teacher_id = auth.uid()
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM public.classroom_members
+                        WHERE classroom_members.classroom_id = classroom_messages.classroom_id
+                          AND classroom_members.profile_id = auth.uid()
+                    )
+                )
+            );
+    END IF;
+END $$;
+
+-- Optional cleanup command. Schedule it with pg_cron only if your Supabase project
+-- already has scheduled jobs enabled. The app hides expired rows through expires_at
+-- filtering even without this cleanup.
+-- UPDATE public.classroom_messages
+-- SET is_deleted = true, deleted_at = now(), updated_at = now()
+-- WHERE is_deleted = false AND expires_at <= now();
 
 DO $$
 BEGIN

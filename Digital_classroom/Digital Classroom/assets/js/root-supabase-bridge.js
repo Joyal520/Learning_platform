@@ -27,6 +27,7 @@ function loadSupabaseBrowserLibrary() {
 
 try {
   await loadSupabaseBrowserLibrary();
+  await import("../../../../assets/js/brand-assets.js");
   const rootClientModule = await import("../../../../assets/js/supabase.js");
   rootSupabase = rootClientModule.supabase;
 } catch (error) {

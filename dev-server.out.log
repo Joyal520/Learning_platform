@@ -1,0 +1,6 @@
+[DEV SERVER]
+Running on http://localhost:3000
+API routes enabled: /api/*
+Mounted routes: /api/classroom-activity-score, /api/fcm-send, /api/fetch-url-metadata, /api/process-website-project, /api/r2-delete, /api/r2-diagnostics, /api/r2-metrics, /api/r2-sign-upload, /api/r2-validate-project, /api/r2-verify-object
+Missing env variables: none
+[DEV SERVER] Ready

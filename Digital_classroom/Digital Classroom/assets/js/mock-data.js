@@ -58,6 +58,7 @@ const MOCK_DATA = {
     }
   ],
   spreeItemProgress: [],
+  classroomMessages: [],
   submissions: [
     {
       id: "sub_1",

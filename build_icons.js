@@ -2,7 +2,8 @@ const fs = require('fs');
 const sharp = require('sharp');
 const path = require('path');
 
-const srcIcon = 'assets/images/Icon.png';
+const srcIcon = 'assets/logos/edtechra-icon-light.png';
+const srcIconDark = 'assets/logos/edtechra-icon-dark.png';
 const publicIconsDir = 'public/icons';
 const publicDir = 'public';
 
@@ -27,9 +28,10 @@ async function generate() {
     .toFile(path.join(publicIconsDir, 'icon-512.png'));
 
   // Generate Maskable 512
-  await sharp(srcIcon)
+  await sharp(srcIconDark)
     // padding for safe zone
-    .resize(400, 400, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+    .resize(400, 400, { fit: 'contain', background: { r: 79, g: 70, b: 229, alpha: 0 } })
+    .flatten({ background: '#4f46e5' })
     .extend({
         top: 56, bottom: 56, left: 56, right: 56,
         background: '#4f46e5'
@@ -39,8 +41,12 @@ async function generate() {
     
   // Generate apple-touch-icon (180x180 png with solid background usually, but transparent works, let's use solid to be safe or padding)
   await sharp(srcIcon)
-    .resize(180, 180, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 255 } })
-    .flatten({ background: { r: 255, g: 255, b: 255 } }) // Ensure solid background for iOS
+    .resize(140, 140, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+    .flatten({ background: '#f8fafc' })
+    .extend({
+        top: 20, bottom: 20, left: 20, right: 20,
+        background: '#f8fafc'
+    })
     .png()
     .toFile(path.join(publicIconsDir, 'apple-touch-icon.png'));
 

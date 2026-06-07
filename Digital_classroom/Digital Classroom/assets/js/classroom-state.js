@@ -8,6 +8,7 @@ class ClassroomState {
     "submissions",
     "spreeItemProgress",
     "contentItems",
+    "classroomMessages",
     "aiFeedbackLogs"
   ];
 

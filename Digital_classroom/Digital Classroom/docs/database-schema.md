@@ -47,9 +47,9 @@ RLS/security: Teachers can insert/delete for owned classrooms; students can read
 ## assignments
 
 Purpose: Teacher-created tasks for classroom members.
-Key fields: `id`, `classroom_id`, `title`, `instructions`, `due_at`, `points`, `created_by`, `created_at`, `published_at`.
+Key fields: `id`, `classroom_id`, `title`, `instructions`, `due_at`, `points`, `created_by`, `is_deleted`, `deleted_at`, `updated_at`, `created_at`, `published_at`.
 Relationships: Belongs to `classrooms`; parent for assignment submissions.
-RLS/security: Teachers manage assignments in owned classrooms; students read published assignments for joined classrooms.
+RLS/security: Teachers manage assignments in owned classrooms; students read active, non-deleted assignments for joined classrooms.
 
 ## assignment_submissions
 
@@ -113,3 +113,10 @@ Purpose: Audit log for AI-generated classroom insights and feedback.
 Key fields: `id`, `classroom_id`, `requested_by`, `input_summary_json`, `model`, `prompt_version`, `output_text`, `created_at`.
 Relationships: Belongs to `classrooms`; requester references `profiles`.
 RLS/security: Teachers can create/read logs for owned classrooms; students should not see teacher-only analytics unless explicitly shared.
+
+## classroom_messages
+
+Purpose: Teacher announcements/messages shown in classroom teacher and student dashboards.
+Key fields: `id`, `classroom_id`, `teacher_id`, `message`, `is_pinned`, `is_deleted`, `created_at`, `updated_at`, `edited_at`, `deleted_at`, `expires_at`.
+Relationships: Belongs to `classrooms`; `teacher_id` references `profiles.id`; students read through `classroom_members`.
+RLS/security: Teachers can insert/update/soft-delete messages for classrooms they own; joined students can read active, non-deleted, non-expired messages only.
