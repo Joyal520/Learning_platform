@@ -6,7 +6,7 @@ import { DetailPage } from '../../pages/detail.js';
 import { DashboardPage } from '../../pages/dashboard.js';
 import { StudentDashboardPage } from '../../pages/student-dashboard.js';
 import { PresentationRemotePage } from '../../pages/presentation-remote.js';
-import { DigitalClassroomPage } from '../../pages/digital-classroom.js';
+import { DigitalClassroomPage } from '../../pages/digital-classroom.js?v=classroom-detail-schema-fix-v2';
 import { buildAppPath, logAppRuntime } from './path-utils.js';
 import { Notifications } from './notifications.js';
 
@@ -150,7 +150,7 @@ const App = {
 
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                const serviceWorkerPath = buildAppPath('sw.js?v=9');
+                const serviceWorkerPath = buildAppPath('sw.js?v=11');
                 debugLog('[PWA] service worker path resolved:', serviceWorkerPath);
                 navigator.serviceWorker.register(serviceWorkerPath)
                     .then(() => debugLog('[PWA] service worker registered'))

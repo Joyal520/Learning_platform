@@ -1,4 +1,4 @@
-const CACHE_NAME = 'edtechra-v7';
+const CACHE_NAME = 'edtechra-v9-classroom-fetch-fix';
 try {
   importScripts('./firebase-messaging-sw.js');
 } catch (error) {
@@ -58,11 +58,31 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (url.origin === self.location.origin && url.pathname.startsWith(withBase('Digital_classroom/'))) {
+    return;
+  }
+
+  if (url.origin === self.location.origin && url.pathname.startsWith(withBase('digital-classroom-static/'))) {
+    return;
+  }
+
   // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
   // Exclude Supabase requests from caching and SPA fallbacks entirely.
   if (url.hostname.includes('supabase.co')) return;
+
+  const requestExtension = url.pathname.split('/').pop()?.includes('.')
+    ? url.pathname.slice(url.pathname.lastIndexOf('.')).toLowerCase()
+    : '';
+  const isScriptRequest = event.request.destination === 'script'
+    || requestExtension === '.js'
+    || requestExtension === '.mjs';
+
+  if (isScriptRequest) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
 
   const isVersionedImageRequest = event.request.destination === 'image'
     && (url.searchParams.has('v') || url.searchParams.has('cacheBust'));
@@ -83,7 +103,7 @@ self.addEventListener('fetch', (event) => {
         // Cache the updated version
         cache.put(event.request, networkResponse.clone());
         return networkResponse;
-      });
+      }).catch(() => networkResponse);
     }).catch(() => {
       // If network fails (offline), try to serve from cache
       return caches.match(event.request).then((cachedResponse) => {
@@ -94,6 +114,10 @@ self.addEventListener('fetch', (event) => {
         if (event.request.mode === 'navigate') {
           return caches.match(withBase('index.html'));
         }
+        return new Response('', {
+          status: 504,
+          statusText: 'Gateway Timeout'
+        });
       });
     })
   );

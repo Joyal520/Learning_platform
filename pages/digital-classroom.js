@@ -1,12 +1,14 @@
 import { Auth } from "../assets/js/auth.js";
 import { supabase } from "../assets/js/supabase.js";
 
-const DIGITAL_CLASSROOM_BASE = "Digital_classroom/Digital%20Classroom";
+const DIGITAL_CLASSROOM_BASE = "/digital-classroom-static";
 const SCRIPT_BASE = `${DIGITAL_CLASSROOM_BASE}/assets/js`;
+const DIGITAL_CLASSROOM_ASSET_VERSION = "classroom-detail-schema-fix-v2";
 const PAGE_FILES = {
     dashboard: "teacher-dashboard.html",
     create: "create-classroom.html",
     detail: "classroom-detail.html",
+    "ocr-grading": "ocr-grading.html",
     "activity-hub": "activity-hub.html",
     resources: "teacher-resources.html",
     "saved-collections": "saved-collections.html",
@@ -18,7 +20,7 @@ const PAGE_FILES = {
 let assetsPromise;
 
 function ensureStylesheet() {
-    const href = `${DIGITAL_CLASSROOM_BASE}/assets/css/classroom.css?v=align-fix-v3`;
+    const href = `${DIGITAL_CLASSROOM_BASE}/assets/css/classroom.css?v=${DIGITAL_CLASSROOM_ASSET_VERSION}`;
     if (document.querySelector(`link[data-digital-classroom-css]`)) return;
 
     const link = document.createElement("link");
@@ -83,10 +85,10 @@ async function ensureAssets() {
     if (!assetsPromise) {
         assetsPromise = (async () => {
             for (const src of [
-                `${SCRIPT_BASE}/mock-data.js`,
-                `${SCRIPT_BASE}/classroom-state.js`,
-                `${SCRIPT_BASE}/classroom-api.js`,
-                `${SCRIPT_BASE}/classroom-ui.js`
+                `${SCRIPT_BASE}/mock-data.js?v=${DIGITAL_CLASSROOM_ASSET_VERSION}`,
+                `${SCRIPT_BASE}/classroom-state.js?v=${DIGITAL_CLASSROOM_ASSET_VERSION}`,
+                `${SCRIPT_BASE}/classroom-api.js?v=${DIGITAL_CLASSROOM_ASSET_VERSION}`,
+                `${SCRIPT_BASE}/classroom-ui.js?v=${DIGITAL_CLASSROOM_ASSET_VERSION}`
             ]) {
                 await loadScript(src);
             }
@@ -106,6 +108,7 @@ function routeToStandaloneHref(href) {
     if (file === "teacher-dashboard.html") return "#classroom";
     if (file === "create-classroom.html") return "#classroom/create";
     if (file === "classroom-detail.html" && classroomId) return `#classroom/detail/${encodeURIComponent(classroomId)}`;
+    if (file === "ocr-grading.html" && classroomId) return `#classroom/ocr-grading/${encodeURIComponent(classroomId)}`;
     if (file === "activity-hub.html" && classroomId) return `#classroom/activity-hub/${encodeURIComponent(classroomId)}`;
     if (file === "teacher-resources.html") return "#classroom/resources";
     if (file === "saved-collections.html") {
@@ -126,7 +129,7 @@ function normalizeClassroomLinks(container) {
 
 async function loadPageMarkup(pageKey) {
     const file = PAGE_FILES[pageKey] || PAGE_FILES.dashboard;
-    const response = await fetch(`${DIGITAL_CLASSROOM_BASE}/${file}`);
+    const response = await fetch(`${DIGITAL_CLASSROOM_BASE}/${file}?v=${DIGITAL_CLASSROOM_ASSET_VERSION}`);
     if (!response.ok) throw new Error(`Failed to load Digital Classroom template: ${file}`);
 
     const html = await response.text();
@@ -207,6 +210,10 @@ export const DigitalClassroomPage = {
 
         if (pageKey === "detail") {
             await window.ClassroomUI.renderClassroomDetail(classroomId);
+        }
+
+        if (pageKey === "ocr-grading") {
+            await window.ClassroomUI.renderOcrGrading(classroomId);
         }
 
         if (pageKey === "activity-hub") {

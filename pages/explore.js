@@ -224,13 +224,11 @@ export const ExplorePage = {
     },
 
     _isTrendingEligible(submission = {}) {
-        const rating = this.getItemRating(submission);
-        if (rating <= 3) return false;
-
         return this.getItemViews(submission) > 0
             || this.getItemLikes(submission) > 0
             || this.getItemShares(submission) > 0
-            || this.getItemBookmarks(submission) > 0;
+            || this.getItemBookmarks(submission) > 0
+            || this.getItemRating(submission) > 0;
     },
 
     _sortTrendingCandidates(items) {
@@ -293,9 +291,10 @@ export const ExplorePage = {
         const useNewestOrderedAllWorks = this._currentCategory === 'all'
             && !this._currentGroup
             && !this._currentTheme;
-        const trendingCandidates = useNewestOrderedAllWorks
+        const trendingFiltered = useNewestOrderedAllWorks
             ? newCandidates
             : this._sortTrendingCandidates(baseItems).filter((item) => this._isTrendingEligible(item));
+        const trendingCandidates = trendingFiltered.length > 0 ? trendingFiltered : newCandidates;
         const topRatedCandidates = useNewestOrderedAllWorks
             ? newCandidates
             : this._sortTopRatedCandidates(baseItems).filter((item) => this._getAverageRating(item) > 0);

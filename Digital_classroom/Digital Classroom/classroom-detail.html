@@ -45,8 +45,17 @@
         <section class="teacher-section">
           <div class="teacher-section-header">
             <h2>Assign Your Students</h2>
+            <div class="teacher-action-scroll-controls" aria-label="Scroll classroom actions">
+              <button class="teacher-action-scroll-btn" type="button" aria-label="Scroll actions left" data-action-scroll="left">
+                <i data-icon="arrow"></i>
+              </button>
+              <button class="teacher-action-scroll-btn" type="button" aria-label="Scroll actions right" data-action-scroll="right">
+                <i data-icon="arrow"></i>
+              </button>
+            </div>
           </div>
-          <div class="teacher-action-grid">
+          <div class="teacher-action-scroll-shell">
+          <div class="teacher-action-grid" data-action-card-row>
             <a class="teacher-action-card action-task" href="#assignment-form" data-activity-hub-link>
               <span class="action-illustration" aria-hidden="true">📋</span>
               <span><strong>Task</strong><small>Create and assign tasks for students</small></span>
@@ -67,6 +76,12 @@
               <span><strong>Competition</strong><small>Organize contests and challenges</small></span>
               <i class="action-arrow" data-icon="arrow"></i>
             </a>
+            <a class="teacher-action-card action-ocr-grading" href="#classroom/ocr-grading" data-ocr-grading-link>
+              <span class="action-illustration" aria-hidden="true"><i data-icon="sparkles"></i></span>
+              <span><strong>OCR Grading</strong><small>Open the AI assessment engine</small></span>
+              <i class="action-arrow" data-icon="arrow"></i>
+            </a>
+          </div>
           </div>
         </section>
 

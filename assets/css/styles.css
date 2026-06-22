@@ -18195,6 +18195,11 @@ body.dark-theme .sd-lb-compact-row:hover {
     border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
+body.teacher-ocr-grading-page #mobile-bottom-nav,
+body.teacher-ocr-grading-page .mobile-bottom-nav {
+    display: none !important;
+}
+
 /* Explore Feed: Video Card (Learning Stream Layout) */
 .video-feed-card {
     width: 100%;

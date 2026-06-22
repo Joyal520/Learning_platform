@@ -1163,24 +1163,20 @@ const ClassroomSupabaseStore = {
   },
 
   async loadProfileMap(client, profileIds) {
-    const ids = [...new Set((profileIds || []).filter(Boolean))];
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const ids = [...new Set(
+      (profileIds || [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => id && uuidPattern.test(id))
+    )];
     if (!ids.length) {
       return new Map();
     }
 
-    let { data, error } = await client
+    const { data, error } = await client
       .from("profiles")
-      .select("id, full_name, name, display_name, profile_name, username, email, avatar_url")
+      .select("id, display_name, avatar_url")
       .in("id", ids);
-
-    if (error && /column|schema|could not find/i.test(this.getErrorMessage(error))) {
-      const fallback = await client
-        .from("profiles")
-        .select("id, display_name, avatar_url")
-        .in("id", ids);
-      data = fallback.data;
-      error = fallback.error;
-    }
 
     if (error) throw error;
     return new Map((data || []).map((row) => [row.id, row]));
@@ -1385,13 +1381,7 @@ const ClassroomAPI = {
       return ClassroomLocalStore.getTeacherDashboardData();
     }
 
-    const requiredFeatures = [
-      "classrooms",
-      "classroomMembers",
-      "assignments",
-      "assignmentSubmissions"
-    ];
-    await ClassroomSupabaseStore.assertFeaturesReady(context.client, requiredFeatures);
+    await ClassroomSupabaseStore.assertFeaturesReady(context.client, ["classrooms"]);
 
     const { client, user, profile } = context;
     if (profile?.role && profile.role !== "teacher") {
@@ -1433,33 +1423,44 @@ const ClassroomAPI = {
       };
     }
 
-    const [memberResult, assignmentResult, submissionResult, pointMap] = await Promise.all([
-      client
+    const safeDashboardRows = async (label, loader) => {
+      try {
+        const result = await loader();
+        if (result?.error) throw result.error;
+        return result?.data || [];
+      } catch (error) {
+        console.warn(`[Digital Classroom] Teacher dashboard ${label} unavailable:`, error);
+        return [];
+      }
+    };
+
+    const [memberRowsRaw, assignmentRowsRaw, submissionRowsRaw, pointMap] = await Promise.all([
+      safeDashboardRows("members", () => client
         .from(ClassroomSupabaseStore.TABLES.classroomMembers)
         .select("id, classroom_id, profile_id, role, display_name, joined_at")
-        .in("classroom_id", classroomIds),
-      client
+        .in("classroom_id", classroomIds)),
+      safeDashboardRows("assignments", () => client
         .from(ClassroomSupabaseStore.TABLES.assignments)
         .select("*")
         .in("classroom_id", classroomIds)
         .or("is_deleted.is.false,is_deleted.is.null")
-        .order("due_date", { ascending: true }),
-      client
+        .order("due_date", { ascending: true })),
+      safeDashboardRows("submissions", () => client
         .from(ClassroomSupabaseStore.TABLES.assignmentSubmissions)
         .select("*")
-        .in("classroom_id", classroomIds),
-      ClassroomSupabaseStore.loadPointSummaryForClassrooms(client, classroomIds)
+        .in("classroom_id", classroomIds)),
+      ClassroomSupabaseStore.loadPointSummaryForClassrooms(client, classroomIds).catch((error) => {
+        console.warn("[Digital Classroom] Teacher dashboard points unavailable:", error);
+        return new Map();
+      })
     ]);
 
-    if (memberResult.error) throw memberResult.error;
-    if (assignmentResult.error) throw assignmentResult.error;
-    if (submissionResult.error) throw submissionResult.error;
-
-    const memberRows = (memberResult.data || []).filter((row) => row.role !== "teacher");
-    const assignmentRowsRaw = assignmentResult.data || [];
-    const submissionRowsRaw = submissionResult.data || [];
+    const memberRows = (memberRowsRaw || []).filter((row) => row.role !== "teacher");
     const uniqueStudentIds = new Set(memberRows.map((row) => row.profile_id).filter(Boolean));
-    const profileMap = await ClassroomSupabaseStore.loadProfileMap(client, [...uniqueStudentIds]);
+    const profileMap = await ClassroomSupabaseStore.loadProfileMap(client, [...uniqueStudentIds]).catch((error) => {
+      console.warn("[Digital Classroom] Teacher dashboard profiles unavailable:", error);
+      return new Map();
+    });
 
     const completedByClassroomAndStudent = new Map();
     submissionRowsRaw.forEach((row) => {
@@ -2612,7 +2613,7 @@ const ClassroomAPI = {
               profile_id: studentId,
               assignment_submission_id: data.id,
               points: Number(assignmentRow.points || 0),
-              reason: "Assignment submission"
+              metadata: { reason: "Assignment submission" }
             });
 
           if (pointsError && !ClassroomSupabaseStore.shouldFallback(pointsError)) {

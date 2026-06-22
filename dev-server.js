@@ -146,7 +146,23 @@ function resolveSafePath(urlPathname) {
 }
 
 function serveStatic(req, res, pathname) {
-    const filePath = resolveSafePath(pathname);
+    const pageModuleAliases = new Set([
+        '/my-uploads.js',
+        '/explore.js',
+        '/detail.js',
+        '/dashboard.js',
+        '/student-dashboard.js',
+        '/digital-classroom.js',
+        '/presentation-remote.js',
+        '/upload.js'
+    ]);
+    const classroomStaticPrefix = '/digital-classroom-static/';
+    const resolvedPathname = pathname.startsWith(classroomStaticPrefix)
+        ? `/Digital_classroom/Digital Classroom/${pathname.slice(classroomStaticPrefix.length)}`
+        : pageModuleAliases.has(pathname)
+        ? `/pages${pathname}`
+        : pathname;
+    const filePath = resolveSafePath(resolvedPathname);
 
     if (!filePath.startsWith(ROOT_DIR)) {
         sendJson(res, 403, { error: 'Forbidden.' });
@@ -159,6 +175,15 @@ function serveStatic(req, res, pathname) {
     }
 
     if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+        const requestedExtension = path.extname(resolvedPathname).toLowerCase();
+        if (requestedExtension) {
+            const contentType = MIME_TYPES[requestedExtension] || 'text/plain; charset=utf-8';
+            res.statusCode = 404;
+            res.setHeader('Content-Type', contentType);
+            res.end(`Not found: ${resolvedPathname}`);
+            return;
+        }
+
         targetPath = path.join(ROOT_DIR, 'index.html');
     }
 

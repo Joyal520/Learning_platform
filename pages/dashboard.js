@@ -268,11 +268,28 @@ export const DashboardPage = {
                         await API.promotePendingImageSubmission(id);
                     }
 
-                    const { error: approveError } = await supabase.from('submissions').update({
+                    const approvalPayload = {
                         status: 'approved',
-                        approved_by: App.user.id
+                        approved_by: App.user.id,
+                        visibility: 'public',
+                        explore_visible: true
+                    };
+
+                    // Try with approved_at first; drop it if the column does not exist yet
+                    let approveResult = await supabase.from('submissions').update({
+                        ...approvalPayload,
+                        approved_at: new Date().toISOString()
                     }).eq('id', id);
-                    error = approveError;
+
+                    if (approveResult.error) {
+                        const msg = String(approveResult.error.message || '');
+                        if (msg.includes('approved_at') && (msg.includes('does not exist') || msg.includes('Could not find'))) {
+                            console.warn('[Dashboard] approved_at column not found, retrying without it.');
+                            approveResult = await supabase.from('submissions').update(approvalPayload).eq('id', id);
+                        }
+                    }
+
+                    error = approveResult.error;
                 } catch (approveErr) {
                     error = approveErr;
                 }

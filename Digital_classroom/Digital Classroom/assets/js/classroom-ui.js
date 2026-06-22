@@ -8,6 +8,7 @@ class ClassroomUI {
       if (target === "create") return "create-classroom.html";
       if (target === "detail") return `classroom-detail.html?classroomId=${encodeURIComponent(classroomId || "")}`;
       if (target === "activityHub") return `activity-hub.html?classroomId=${encodeURIComponent(classroomId || "")}`;
+      if (target === "ocrGrading") return `ocr-grading.html?classroomId=${encodeURIComponent(classroomId || "")}`;
       if (target === "resources") return `teacher-resources.html?classroomId=${encodeURIComponent(classroomId || "")}`;
       if (target === "savedCollections") return `saved-collections.html?classroomId=${encodeURIComponent(classroomId || "")}`;
       if (target === "student") return `student-dashboard.html?classroomId=${encodeURIComponent(classroomId || "")}`;
@@ -18,6 +19,7 @@ class ClassroomUI {
     if (target === "create") return "#classroom/create";
     if (target === "detail") return `#classroom/detail/${encodeURIComponent(classroomId || "")}`;
     if (target === "activityHub") return classroomId ? `#classroom/activity-hub/${encodeURIComponent(classroomId)}` : "#classroom/activity-hub";
+    if (target === "ocrGrading") return classroomId ? `#classroom/ocr-grading/${encodeURIComponent(classroomId)}` : "#classroom/ocr-grading";
     if (target === "resources") return "#classroom/resources";
     if (target === "savedCollections") {
       const classroomParam = classroomId ? `?classroomId=${encodeURIComponent(classroomId)}` : "";
@@ -113,6 +115,8 @@ class ClassroomUI {
   }
 
   static renderSidebar(activePage = "dashboard") {
+    if (activePage === "detail" || activePage === "ocr-grading") return "";
+
     const links = activePage === "detail"
       ? [
         ["detail", "#", "Classroom", this.getIcon("classroom")],
@@ -333,8 +337,14 @@ class ClassroomUI {
     const shell = document.getElementById("app-shell");
     if (!shell) return;
 
-    shell.insertAdjacentHTML("afterbegin", this.renderSidebar(activePage));
-    shell.insertAdjacentHTML("beforeend", this.renderMobileNav(activePage));
+    if (activePage !== "detail") document.body.classList.remove("teacher-classroom-detail");
+    if (activePage !== "ocr-grading") this.unmountOcrGrading();
+
+    const sidebarMarkup = this.renderSidebar(activePage);
+    if (sidebarMarkup) shell.insertAdjacentHTML("afterbegin", sidebarMarkup);
+    if (activePage !== "ocr-grading") {
+      shell.insertAdjacentHTML("beforeend", this.renderMobileNav(activePage));
+    }
 
     document.querySelectorAll(".mobile-topbar").forEach((topbar) => {
       if (topbar.querySelector(".mobile-topbar-logo")) return;
@@ -610,6 +620,9 @@ class ClassroomUI {
   }
 
   static async renderClassroomDetail(classroomId) {
+    document.body.classList.add("teacher-classroom-detail");
+    document.body.classList.remove("teacher-ocr-grading-page");
+
     const detectedClassroomId = this.getCurrentClassroomId(classroomId);
     console.log("[Digital Classroom] detected classId", detectedClassroomId);
 
@@ -667,13 +680,83 @@ class ClassroomUI {
       activityHubCard.href = this.getRouteHref("activityHub", { classroomId: detectedClassroomId });
     }
 
+    const ocrGradingCard = document.querySelector("[data-ocr-grading-link]");
+    if (ocrGradingCard) {
+      ocrGradingCard.href = this.getRouteHref("ocrGrading", { classroomId: detectedClassroomId });
+    }
+
     this.hydrateDashboardIcons(document);
+    this.bindTeacherActionScroller();
     this.bindAssignmentForm(detectedClassroomId);
     this.enhanceDateInputs();
     this.bindMessagePanel(detectedClassroomId);
     this.bindDangerZone(detectedClassroomId, classroom.name);
     await this.refreshClassroomSections(detectedClassroomId);
     this.startClassroomDetailRefresh(detectedClassroomId);
+  }
+
+  static bindTeacherActionScroller() {
+    const row = document.querySelector("[data-action-card-row]");
+    if (!row) return;
+
+    document.querySelectorAll("[data-action-scroll]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const direction = button.dataset.actionScroll === "left" ? -1 : 1;
+        row.scrollBy({ left: direction * 300, behavior: "smooth" });
+      });
+    });
+  }
+
+  static async renderOcrGrading(classroomId) {
+    const detectedClassroomId = this.getCurrentClassroomId(classroomId);
+    document.body.classList.add("teacher-ocr-grading-page");
+    document.body.classList.remove("teacher-classroom-detail");
+    window.__EDTECHRA_OCR_EMBEDDED = true;
+    window.__EDTECHRA_OCR_CONTEXT = {
+      classroomId: detectedClassroomId || ""
+    };
+
+    const backHref = detectedClassroomId
+      ? this.getRouteHref("detail", { classroomId: detectedClassroomId })
+      : this.getRouteHref("dashboard");
+
+    document.querySelector("[data-ocr-back]")?.setAttribute("href", backHref);
+    this.hydrateDashboardIcons(document);
+
+    if (!document.querySelector('link[data-ai-evaluation-css="true"]')) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "/ocr-grading/assets/index-BDBAMEUp.css";
+      link.dataset.aiEvaluationCss = "true";
+      document.head.appendChild(link);
+    }
+
+    if (window.EdtechraOcrMount) {
+      window.EdtechraOcrMount();
+      return;
+    }
+
+    if (!document.querySelector('script[data-ai-evaluation-script="true"]')) {
+      const script = document.createElement("script");
+      script.type = "module";
+      script.src = `/ocr-grading/assets/index-BwuAg06m.js?embedded=${Date.now()}`;
+      script.dataset.aiEvaluationScript = "true";
+      document.body.appendChild(script);
+    }
+  }
+
+  static unmountOcrGrading() {
+    document.body.classList.remove("teacher-ocr-grading-page");
+    window.__EDTECHRA_OCR_EMBEDDED = false;
+    window.__EDTECHRA_OCR_CONTEXT = null;
+    document.querySelector('link[data-ai-evaluation-css="true"]')?.remove();
+    document.querySelector('script[data-ai-evaluation-script="true"]')?.remove();
+    try {
+      window.EdtechraOcrRoot?.unmount?.();
+      window.EdtechraOcrRoot = null;
+    } catch (error) {
+      console.warn("[Digital Classroom] OCR unmount skipped:", error);
+    }
   }
 
   static async renderActivityHub(classroomId) {
