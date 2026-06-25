@@ -4,6 +4,10 @@
   "installCommand": "echo \"No install required\"",
   "outputDirectory": ".",
   "routes": [
+    {
+      "src": "/digital-classroom-static/(.*)",
+      "dest": "/Digital_classroom/Digital Classroom/$1"
+    },
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/index.html" }
   ]
