@@ -634,7 +634,10 @@ class ClassroomUI {
     }
     this.bindLiveQuizLaunch({
       classroomId: detectedClassroomId,
-      teacherId: classroom.teacherId || classroom.teacher_id || ""
+      teacherId: classroom.teacherId || classroom.teacher_id || "",
+      profileId: classroom.teacherId || classroom.teacher_id || "",
+      userId: classroom.teacherId || classroom.teacher_id || "",
+      role: "teacher"
     });
 
     const assets = this.getTeacherAssets();
@@ -1600,7 +1603,7 @@ class ClassroomUI {
       window.EDTECHRA_LIVE_QUIZ_URL ||
       window.__DIGITAL_CLASSROOM_ENV__?.LIVE_QUIZ_URL ||
       window.EDTECHRA_DC_ENV?.LIVE_QUIZ_URL ||
-      "https://joyal520.github.io/live_quiz/"
+      "https://joyal520.github.io/live_quiz/index.html"
     ).trim();
   }
 
@@ -1623,13 +1626,18 @@ class ClassroomUI {
       return { classroomId: this.getCurrentClassroomId(classOrContext) };
     }
     const classroomId = classOrContext.classroomId || classOrContext.classId || classOrContext.id || "";
+    const teacherId = classOrContext.teacherId || classOrContext.teacher_id || "";
+    const role = classOrContext.role || classOrContext.userRole || (classOrContext.studentId || classOrContext.student_id ? "student" : "teacher");
     const profileId = classOrContext.profileId || classOrContext.profile_id || "";
-    const studentId = classOrContext.studentId || classOrContext.student_id || profileId || "";
+    const studentId = classOrContext.studentId || classOrContext.student_id || (role === "student" ? profileId : "");
+    const userId = classOrContext.userId || classOrContext.user_id || profileId || studentId || teacherId || "";
     return {
       classroomId: this.getCurrentClassroomId(classroomId),
-      teacherId: classOrContext.teacherId || classOrContext.teacher_id || "",
+      teacherId,
       studentId,
       profileId,
+      userId,
+      role,
       quizId: classOrContext.quizId || classOrContext.quiz_id || "",
       returnUrl: classOrContext.returnUrl || window.location.href,
       syncEndpoint: classOrContext.syncEndpoint || this.getLiveQuizSyncEndpoint()
@@ -1643,6 +1651,8 @@ class ClassroomUI {
     url.searchParams.set("legacySource", "edectra");
     url.searchParams.set("classId", context.classroomId || "");
     url.searchParams.set("classroom_id", context.classroomId || "");
+    url.searchParams.set("role", context.role || "");
+    if (context.userId) url.searchParams.set("userId", context.userId);
     if (context.teacherId) url.searchParams.set("teacher_id", context.teacherId);
     if (context.studentId) url.searchParams.set("student_id", context.studentId);
     if (context.profileId) url.searchParams.set("profile_id", context.profileId);
@@ -1698,7 +1708,7 @@ class ClassroomUI {
               data-live-quiz-frame
               referrerpolicy="no-referrer"
               allow="fullscreen; clipboard-read; clipboard-write"
-              sandbox="allow-scripts allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
             ></iframe>
           </div>
           <footer class="live-quiz-modal-footer">
@@ -1733,6 +1743,11 @@ class ClassroomUI {
     });
     modal?.querySelector("[data-live-quiz-instant]")?.addEventListener("click", () => {
       if (!frame || !frameShell || !launcher) return;
+      if (frame.sandbox && !frame.sandbox.contains("allow-same-origin")) {
+        console.warn("[Digital Classroom] Live Quiz iframe sandbox blocks storage; opening in a new tab instead.");
+        window.open(externalUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
       frame.src = externalUrl;
       launcher.hidden = true;
       frameShell.hidden = false;
@@ -3540,7 +3555,9 @@ class ClassroomUI {
       classroomId,
       teacherId: classroom.teacherId || classroom.teacher_id || "",
       studentId: student.id || student.profileId || student.profile_id || "",
-      profileId: student.profileId || student.profile_id || student.id || ""
+      profileId: student.profileId || student.profile_id || student.id || "",
+      userId: student.profileId || student.profile_id || student.id || "",
+      role: "student"
     });
 
     document.querySelectorAll("[data-student-quick-action]").forEach((button) => {
