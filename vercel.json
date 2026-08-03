@@ -1,8 +1,6 @@
 {
-  "rewrites": [
-    { "source": "/home", "destination": "/app.html" },
-    { "source": "/digital-classroom-static/:path*", "destination": "/Digital_classroom/Digital Classroom/:path*" }
-  ],
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
   "headers": [
     {
       "source": "/sw.js",
