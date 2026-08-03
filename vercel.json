@@ -1,14 +1,15 @@
 {
-  "framework": null,
-  "buildCommand": "echo \"No build required\"",
-  "installCommand": "echo \"No install required\"",
-  "outputDirectory": ".",
-  "routes": [
+  "rewrites": [
+    { "source": "/home", "destination": "/app.html" },
+    { "source": "/digital-classroom-static/:path*", "destination": "/Digital_classroom/Digital Classroom/:path*" }
+  ],
+  "headers": [
     {
-      "src": "/digital-classroom-static/(.*)",
-      "dest": "/Digital_classroom/Digital Classroom/$1"
-    },
-    { "handle": "filesystem" },
-    { "src": "/.*", "dest": "/index.html" }
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Service-Worker-Allowed", "value": "/" },
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    }
   ]
 }

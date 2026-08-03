@@ -47,3 +47,16 @@ Task.docx
 Task.zip
 Skill.md.docx
 Skill.md.zip
+
+# Local development server (not needed — Vercel uses Next.js)
+dev-server.js
+dev-server*.log
+
+# Test artifacts
+test-audio.mp3
+test_audio.mp3
+playwright-*
+
+# Build helpers
+build_icons.js
+generate_icons.js

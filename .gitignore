@@ -1,6 +1,17 @@
 # Dependencies
 node_modules/
 
+# Next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Serwist generated service worker
+public/sw.js
+public/sw.js.map
+public/swe-worker-*.js
+
 # OS files
 .DS_Store
 Thumbs.db

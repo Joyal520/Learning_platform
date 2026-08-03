@@ -1,14 +1,40 @@
 {
+  "name": "edtechra",
+  "version": "1.0.0",
+  "private": true,
   "scripts": {
-    "dev": "node dev-server.js",
-    "start": "node dev-server.js"
-  },
-  "devDependencies": {
-    "sharp": "^0.34.5"
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource-variable/manrope": "latest",
+    "@remotion/player": "latest",
+    "@serwist/next": "latest",
     "firebase": "^12.13.0",
+    "framer-motion": "latest",
+    "lucide-react": "latest",
+    "next": "latest",
     "openai": "^4.104.0",
-    "playwright": "^1.58.2"
+    "pdfkit": "^0.19.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-icons": "latest",
+    "remotion": "latest",
+    "serwist": "latest"
+  },
+  "devDependencies": {
+    "@remotion/cli": "latest",
+    "@tailwindcss/postcss": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "sharp": "^0.34.5",
+    "tailwindcss": "latest",
+    "typescript": "latest"
   }
 }

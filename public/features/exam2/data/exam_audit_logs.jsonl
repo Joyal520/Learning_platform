@@ -1,0 +1,14 @@
+{"at":"2026-07-03T10:06:35.742Z","action":"exam_published","details":{"examId":"c97e42d0-0660-47f2-a68a-55858a208c3c"}}
+{"at":"2026-07-06T08:42:05.154Z","action":"exam_published","details":{"examId":"f38453dd-79be-4a3a-891f-1189877cfa6c"}}
+{"at":"2026-07-06T08:44:07.277Z","action":"exam_published","details":{"examId":"3e5022c3-b052-4f71-8b5d-06740ccdb4aa"}}
+{"at":"2026-07-06T08:46:52.916Z","action":"exam_published","details":{"examId":"7f4e9ec8-e933-4190-986b-b3ca841b0eae"}}
+{"at":"2026-07-06T08:53:44.318Z","action":"ai_generation","details":{"examType":"Unit Test","difficulty":"Mixed","totalMarks":100,"sectionCount":1}}
+{"at":"2026-07-06T08:54:35.106Z","action":"attempt_graded","details":{"examId":"1","score":16}}
+{"at":"2026-07-06T08:57:06.913Z","action":"exam_published","details":{"examId":"f29834e6-2d53-49bc-a4ec-c27b9e92ef40"}}
+{"at":"2026-07-06T08:57:19.460Z","action":"exam_published","details":{"examId":"59802985-3a5f-49db-bf3b-5e2477e0c810"}}
+{"at":"2026-07-06T09:42:32.860Z","action":"ai_generation","details":{"examType":"Unit Test","difficulty":"Mixed","totalMarks":100,"sectionCount":1}}
+{"at":"2026-07-06T09:54:22.987Z","action":"ai_generation","details":{"examType":"Unit Test","difficulty":"Mixed","totalMarks":100,"sectionCount":1}}
+{"at":"2026-07-06T09:55:23.356Z","action":"exam_published","details":{"examId":"c95ea94c-8d67-4890-80fc-30997e2b8ca3"}}
+{"at":"2026-07-06T09:56:51.063Z","action":"exam_saved","details":{"examId":"d5d10aea-e660-42e4-aec5-7640ad3981a6","approved":false}}
+{"at":"2026-07-13T06:37:56.641Z","action":"ai_generation","details":{"examType":"Unit Test","difficulty":"Mixed","totalMarks":100,"sectionCount":1}}
+{"at":"2026-07-13T06:52:53.293Z","action":"exam_published","details":{"examId":"3cac8eca-91e6-4547-a2b5-2e5e4e4ab8d7"}}
