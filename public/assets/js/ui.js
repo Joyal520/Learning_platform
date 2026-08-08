@@ -5957,6 +5957,10 @@ let videoId = '';
                         <div class="mobile-home-hero-copy">
                             <h1>Create.<br>Learn.<br>Inspire.<br><span>Together.</span></h1>
                             <a href="#explore" class="mobile-home-primary-btn" data-link="explore">Explore Trending <span aria-hidden="true">&rarr;</span></a>
+                            <button id="mobileInstallBtn" type="button" class="mobile-home-install-btn" style="display:none;">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Install App
+                            </button>
                         </div>
                         <div class="mobile-home-hero-art" aria-hidden="true">
                             <img src="assets/images/mobile-home-hero-books.webp" alt="" loading="eager" decoding="async">

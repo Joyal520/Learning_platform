@@ -80,10 +80,12 @@ const App = {
                 btn.style.display = 'block';
                 debugLog('[PWA] install button displayed');
             }
+            const mobileBtn = document.getElementById('mobileInstallBtn');
+            if (mobileBtn) mobileBtn.style.display = '';
         });
 
         document.addEventListener('click', async (e) => {
-            const btn = e.target.closest('#installBtn');
+            const btn = e.target.closest('#installBtn') || e.target.closest('#mobileInstallBtn');
             if (!btn || !deferredPrompt) return;
 
             debugLog('[PWA] install button clicked');
@@ -141,11 +143,15 @@ const App = {
             debugLog('[PWA] App installed');
             const btn = document.getElementById('installBtn');
             if (btn) btn.style.display = 'none';
+            const mobileBtn = document.getElementById('mobileInstallBtn');
+            if (mobileBtn) mobileBtn.style.display = 'none';
         });
 
         if (window.matchMedia('(display-mode: standalone)').matches) {
             const btn = document.getElementById('installBtn');
             if (btn) btn.style.display = 'none';
+            const mobileBtn = document.getElementById('mobileInstallBtn');
+            if (mobileBtn) mobileBtn.style.display = 'none';
         }
 
         if ('serviceWorker' in navigator) {

@@ -9013,6 +9013,35 @@ body.explore-view .main-nav {
         margin-top: 28px;
     }
 
+    .mobile-home-install-btn {
+        display: inline-flex;
+        min-height: 48px;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 12px;
+        padding: 0 22px;
+        border: 1.5px solid rgba(36, 107, 253, 0.25);
+        border-radius: 16px;
+        background: rgba(36, 107, 253, 0.08);
+        color: #246bfd;
+        font-size: 0.88rem;
+        font-weight: 800;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+    }
+
+    .mobile-home-install-btn svg {
+        flex-shrink: 0;
+    }
+
+    .mobile-home-install-btn:active {
+        background: rgba(36, 107, 253, 0.15);
+        border-color: rgba(36, 107, 253, 0.4);
+        box-shadow: 0 6px 18px rgba(36, 107, 253, 0.18);
+    }
+
     .mobile-home-proof {
         display: flex;
         align-items: center;
