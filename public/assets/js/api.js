@@ -22,6 +22,29 @@ function withTimeout(promise, ms, label) {
     ]);
 }
 
+async function withRetry(fn, { maxAttempts = 3, baseDelayMs = 500, label = 'API call' } = {}) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await fn();
+        } catch (err) {
+            lastError = err;
+            const isTransient = err?.message?.includes('TIMEOUT') ||
+                err?.message?.includes('Failed to fetch') ||
+                err?.message?.includes('NetworkError') ||
+                err?.message?.includes('Load failed') ||
+                err?.code === 'PGRST301' ||
+                (err?.status >= 500 && err?.status < 600) ||
+                err?.status === 429;
+            if (!isTransient || attempt >= maxAttempts) throw err;
+            const delay = baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 200;
+            console.warn(`[API] ${label} attempt ${attempt}/${maxAttempts} failed, retrying in ${Math.round(delay)}ms:`, err?.message || err);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    throw lastError;
+}
+
 function extensionFromContentType(contentType = '') {
     if (contentType.includes('png')) return 'png';
     if (contentType.includes('jpeg') || contentType.includes('jpg')) return 'jpg';
@@ -591,51 +614,77 @@ export const API = {
     },
 
     async getSubmissions(category = null, sort = 'created_at', limit = 20, offset = 0) {
-        let query = supabase
-            .from('submissions')
-            .select(`
-                id,
-                title,
-                description,
-                category,
-                themes,
-                author_id,
-                thumbnail_path,
-                thumbnail_url,
-                image_url,
-                file_type,
-                mime_type,
-                file_url,
-                file_path,
-                content_type,
-                status,
-                visibility,
-                explore_visible,
-                is_deleted,
-                created_at,
-                updated_at,
-                profiles!author_id (display_name, avatar_url)
-            `)
-            .eq('status', 'approved')
-            .eq('visibility', 'public')
-            .eq('explore_visible', true)
-            .or('is_deleted.is.null,is_deleted.eq.false');
+        const logPrefix = `[Explore:getSubmissions]`;
+        console.log(`${logPrefix} Request started`, { category, sort, limit, offset });
 
-        if (category) {
-            query = query.eq('category', category);
+        return withRetry(async () => {
+            let query = supabase
+                .from('submissions')
+                .select(`
+                    id,
+                    title,
+                    description,
+                    category,
+                    themes,
+                    author_id,
+                    thumbnail_path,
+                    thumbnail_url,
+                    image_url,
+                    file_type,
+                    mime_type,
+                    file_url,
+                    file_path,
+                    content_type,
+                    status,
+                    visibility,
+                    explore_visible,
+                    is_deleted,
+                    created_at,
+                    updated_at,
+                    profiles!author_id (display_name, avatar_url)
+                `)
+                .eq('status', 'approved')
+                .eq('visibility', 'public')
+                .eq('explore_visible', true)
+                .or('is_deleted.is.null,is_deleted.eq.false');
+
+            if (category) {
+                query = query.eq('category', category);
+            }
+
+            const { data, error } = await query
+                .order(sort, { ascending: false })
+                .range(offset, offset + limit - 1);
+
+            if (error) {
+                console.error(`${logPrefix} Supabase query error:`, { code: error.code, message: error.message, details: error.details, hint: error.hint });
+                return { data, error };
+            }
+
+            const filtered = (data || []).filter((row) => isPublicExploreSubmission(row));
+            console.log(`${logPrefix} Success — ${filtered.length} records returned (${(data || []).length} raw)`, { category, offset });
+            return {
+                data: filtered,
+                error: null
+            };
+        }, { label: `getSubmissions(cat=${category}, offset=${offset})` });
+    },
+
+    async getSubmissionById(id) {
+        if (!id) {
+            return { data: null, error: new Error('Submission id is required.') };
         }
 
-        const { data, error } = await query
-            .order(sort, { ascending: false })
-            .range(offset, offset + limit - 1);
+        try {
+            const { data, error } = await supabase
+                .from('submissions')
+                .select(`
+                    *,
+                    profiles!author_id (display_name, avatar_url)
+                `)
+                .eq('id', id)
+                .maybeSingle();
 
-        if (error) return { data, error };
-
-        return {
-            data: (data || []).filter((row) => isPublicExploreSubmission(row)),
-            error: null
-        };
-    },
 
     async getSubmissionById(id) {
         if (!id) {
@@ -661,10 +710,14 @@ export const API = {
     async getStatsForSubmissions(ids) {
         if (!ids || ids.length === 0) return {};
         try {
-            const { data: statsData } = await supabase
+            const { data: statsData, error } = await supabase
                 .from('submission_stats')
                 .select('id, avg_rating, like_count, view_count')
                 .in('id', ids);
+
+            if (error) {
+                console.error('[API] getStatsForSubmissions query error:', { code: error.code, message: error.message, details: error.details });
+            }
 
             const statsMap = {};
             if (statsData) {
@@ -672,7 +725,7 @@ export const API = {
             }
             return statsMap;
         } catch (e) {
-            console.warn('[API] Could not fetch stats:', e.message);
+            console.error('[API] getStatsForSubmissions exception:', e.message || e);
             return {};
         }
     },
@@ -687,6 +740,10 @@ export const API = {
                 supabase.from('bookmarks').select('submission_id').eq('user_id', userId).in('submission_id', uniqueIds),
                 supabase.from('ratings').select('submission_id, rating').eq('user_id', userId).in('submission_id', uniqueIds)
             ]);
+
+            if (likesResult.error) console.warn('[API] getUserSubmissionInteractions likes query error:', likesResult.error.message);
+            if (bookmarksResult.error) console.warn('[API] getUserSubmissionInteractions bookmarks query error:', bookmarksResult.error.message);
+            if (ratingsResult.error) console.warn('[API] getUserSubmissionInteractions ratings query error:', ratingsResult.error.message);
 
             const interactionMap = {};
             uniqueIds.forEach((id) => {
@@ -710,7 +767,7 @@ export const API = {
 
             return interactionMap;
         } catch (error) {
-            console.warn('[API] Could not fetch user interactions:', error);
+            console.error('[API] getUserSubmissionInteractions exception:', error.message || error);
             return {};
         }
     },

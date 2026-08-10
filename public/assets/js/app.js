@@ -22,6 +22,7 @@ const App = {
     _profileUserId: null,
     _bootstrappedUserId: null,
     _lastUserId: null,
+    _routeGeneration: 0,
     _activeYouTubePlayer: null,
     CLASSROOM_RETURN_KEY: 'edtechra_pending_classroom_route',
 
@@ -206,6 +207,24 @@ const App = {
                 return;
             }
 
+            // When INITIAL_SESSION delivers a user that differs from bootstrapped
+            // (e.g. session restored from localStorage after getSession() already
+            // resolved with null), update the user but skip re-routing if the
+            // Explore page is already active — Explore queries are public and do
+            // not depend on the auth session.
+            if (event === 'INITIAL_SESSION' && this.currentPage === 'explore') {
+                const newUserId = session?.user?.id || null;
+                this.user = session?.user || null;
+                this._lastUserId = newUserId;
+                if (this.user) {
+                    this.ensureProfileLoaded({ allowBackgroundSync: true })
+                        .catch((err) => console.warn('[App] Background profile load failed:', err));
+                }
+                this.renderNav();
+                debugLog('[App] INITIAL_SESSION on Explore — updated user without re-routing');
+                return;
+            }
+
             const newUserId = session?.user?.id || null;
             if (this._lastUserId === newUserId && event !== 'USER_UPDATED') {
                 return;
@@ -380,6 +399,7 @@ const App = {
     },
 
     async route() {
+        const currentGeneration = ++this._routeGeneration;
         const rawHash = window.location.hash.substring(1) || 'home';
 
         if (rawHash.includes('error_description') || rawHash.includes('access_token')) {
@@ -389,6 +409,10 @@ const App = {
         const cleanHash = rawHash.startsWith('/') ? rawHash.substring(1) : rawHash;
         const hashWithoutQuery = cleanHash.split('?')[0];
         const [page, subpage, id] = hashWithoutQuery.split('/');
+
+        // If another route() call was made while we were setting up,
+        // abandon this one to prevent stale overwrites.
+        if (currentGeneration !== this._routeGeneration) return;
 
         if (this.currentPage === 'explore' && page !== 'explore') {
             ExplorePage.cleanup?.();
@@ -464,7 +488,7 @@ const App = {
                     break;
                 case 'explore':
                     main.innerHTML = UI.pages.explore();
-                    ExplorePage.init();
+                    await ExplorePage.init();
                     break;
                 case 'upload': {
                     if (!this.user) return this.navigate('login');

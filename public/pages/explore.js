@@ -14,6 +14,7 @@ export const ExplorePage = {
     _statsCache: new Map(),
     _interactionCacheByUser: new Map(),
     _loadRequestId: 0,
+    _initGeneration: 0,   // prevents concurrent init() calls from wiping loaded data
     _displayCount: 12,    // total cards rendered across sections
     _loadMoreStep: 12,    // cards appended per Load More click
     _batchSectionSize: 4,
@@ -611,10 +612,15 @@ export const ExplorePage = {
         cacheEntry.loading = true;
         try {
             const fetchPageSize = this._getFetchPageSize();
+            console.log('[Explore] _fetchNextSubmissionsPage started', { category, offset: cacheEntry.nextOffset, fetchPageSize, authUser: App.user?.id || 'anonymous' });
             const { data, error } = await API.getSubmissions(category, 'created_at', fetchPageSize, cacheEntry.nextOffset);
-            if (error) throw error;
+            if (error) {
+                console.error('[Explore] _fetchNextSubmissionsPage Supabase error:', { code: error.code, message: error.message, details: error.details });
+                throw error;
+            }
 
             const pageItems = Array.isArray(data) ? data : [];
+            console.log(`[Explore] _fetchNextSubmissionsPage received ${pageItems.length} items (offset=${cacheEntry.nextOffset})`);
             const loadedIds = new Set(this.uniqueByWorkId(cacheEntry.items).map((item) => this.getWorkId(item)).filter(Boolean));
             const freshItems = pageItems.filter((item) => {
                 const id = this.getWorkId(item);
@@ -759,6 +765,8 @@ export const ExplorePage = {
     },
 
     async init() {
+        const thisInitGeneration = ++this._initGeneration;
+        console.log('[Explore] init() started', { generation: thisInitGeneration, authUser: App.user?.id || 'anonymous' });
         this._cleanupMobileInfiniteScroll();
         this._currentCategory = 'all';
         this._currentGroup = null;
@@ -1124,13 +1132,23 @@ export const ExplorePage = {
         window.addEventListener('resize', this._mobileLayoutHandler);
 
         loadAllSections = async (isLoadMore = false) => {
-            if (this._isLoading) return;
+            if (this._isLoading) {
+                console.log('[Explore] loadAllSections skipped — already loading');
+                return;
+            }
+            // Guard: if init() was called again while we were setting up,
+            // abandon this loadAllSections closure (it belongs to a stale init).
+            if (thisInitGeneration !== this._initGeneration) {
+                console.warn('[Explore] loadAllSections abandoned — init generation mismatch', { expected: thisInitGeneration, current: this._initGeneration });
+                return;
+            }
             if (!isLoadMore) {
                 this._mobileInfiniteFallback = false;
                 this._cleanupMobileInfiniteScroll({ preserveHandler: true });
             }
             const requestId = ++this._loadRequestId;
             this._isLoading = true;
+            console.log('[Explore] loadAllSections started', { requestId, isLoadMore, category: this._currentCategory, initGeneration: thisInitGeneration });
 
             const gridTrending = document.querySelector('#grid-trending');
             const gridNew = document.querySelector('#grid-new');
@@ -1168,7 +1186,8 @@ export const ExplorePage = {
                     isImages,
                     isMobileAllWorkFeed
                 });
-                if (requestId !== this._loadRequestId) return;
+                if (requestId !== this._loadRequestId) { console.log('[Explore] loadAllSections abandoned after fetch — requestId mismatch'); return; }
+                if (thisInitGeneration !== this._initGeneration) { console.warn('[Explore] loadAllSections abandoned after fetch — init generation mismatch'); return; }
 
                 const filteredData = this._filterLoadedSubmissions(cacheEntry.items, search);
                 const baseData = this._getDefaultExploreBaseItems(filteredData, cacheEntry.items, search);
@@ -1207,6 +1226,13 @@ export const ExplorePage = {
                     this._updateLoadMoreButton(feedState, cacheEntry);
                 }
 
+                console.log('[Explore] loadAllSections render complete', {
+                    requestId,
+                    totalBaseData: baseData.length,
+                    cacheItems: cacheEntry.items.length,
+                    hasMore: cacheEntry.hasMore
+                });
+
                 this._mobileInfiniteLoadHandler = async () => {
                     if (this._isLoading) return;
                     this._displayCount += this._loadMoreStep;
@@ -1218,6 +1244,7 @@ export const ExplorePage = {
 
             } catch (err) {
                 if (requestId !== this._loadRequestId) return;
+                if (thisInitGeneration !== this._initGeneration) return;
                 if (this._isMobileExplorePagination() && isLoadMore) {
                     this._mobileInfiniteFallback = true;
                     this._updateLoadMoreButton(null, cacheEntry);
