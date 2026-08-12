@@ -1,6 +1,5 @@
 # Dependencies and local package state
 node_modules
-package-lock.json
 
 # Local environment and editor files
 .env
