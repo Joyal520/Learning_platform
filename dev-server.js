@@ -4,11 +4,11 @@ const path = require('path');
 
 const ROOT_DIR = __dirname;
 const API_DIR = path.join(ROOT_DIR, 'api');
+const STATIC_DIR = path.join(ROOT_DIR, 'public');
 const DEFAULT_PORT = Number(process.env.PORT || 3000);
 const LOCAL_ORIGIN_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
 const R2_PUBLIC_PREVIEW_PATTERN = /^https:\/\/pub-[a-z0-9-]+\.r2\.dev$/i;
 const REQUIRED_R2_ENV_NAMES = ['R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_PUBLIC_URL'];
-
 const MIME_TYPES = {
     '.css': 'text/css; charset=utf-8',
     '.gif': 'image/gif',
@@ -140,9 +140,9 @@ function applyCors(req, res, pathname) {
 
 function resolveSafePath(urlPathname) {
     const decoded = decodeURIComponent(urlPathname);
-    const trimmed = decoded === '/' ? '/index.html' : decoded;
+    const trimmed = decoded === '/' ? '/app.html' : decoded;
     const normalized = path.normalize(trimmed).replace(/^(\.\.[/\\])+/, '');
-    return path.join(ROOT_DIR, normalized.replace(/^[/\\]+/, ''));
+    return path.join(STATIC_DIR, normalized.replace(/^[/\\]+/, ''));
 }
 
 function serveStatic(req, res, pathname) {
@@ -184,7 +184,7 @@ function serveStatic(req, res, pathname) {
             return;
         }
 
-        targetPath = path.join(ROOT_DIR, 'index.html');
+        targetPath = path.join(STATIC_DIR, 'app.html');
     }
 
     const extension = path.extname(targetPath).toLowerCase();
