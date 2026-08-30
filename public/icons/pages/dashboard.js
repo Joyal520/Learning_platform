@@ -159,7 +159,7 @@ export const DashboardPage = {
         } catch (err) {
             const isLocalMissingRoute = this.isLocalDevelopment() && err?.status === 404;
             if (isLocalMissingRoute) {
-                console.info('[Dashboard] R2 metrics API is not available in local development:', err.url || '/api/r2-metrics');
+                console.info('[Dashboard] R2 metrics API is not available in local development:', err.url || '/api/r2?action=metrics');
                 storageMessage = 'Cloudflare R2 metrics are not available in local development.';
                 isLocalDevFallback = true;
             } else {

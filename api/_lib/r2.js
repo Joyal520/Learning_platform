@@ -900,6 +900,62 @@ function summarizeObjects(objects) {
     };
 }
 
+const TEACHER_STORAGE_QUOTA_BYTES = 500 * 1024 * 1024; // 500 MB
+
+async function getTeacherStorageUsage(accessToken, userId) {
+    let totalBytes = 0;
+    let fileCount = 0;
+    const materials = [];
+
+    try {
+        const params = new URLSearchParams({
+            select: 'id,title,description,category,content_type,resource_type,file_url,file_path,file_type,file_size,mime_type,created_at,is_deleted,deleted_at,status,author_id,teacher_id,metadata',
+            or: `author_id.eq.${userId},teacher_id.eq.${userId}`,
+            order: 'created_at.desc'
+        });
+
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/submissions?${params.toString()}`, {
+            headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${accessToken}`
+            }
+        });
+
+        if (response.ok) {
+            const rows = await response.json();
+            for (const row of (rows || [])) {
+                if (row.is_deleted === true || row.deleted_at || ['deleted', 'archived'].includes(String(row.status || '').toLowerCase())) {
+                    continue;
+                }
+                const size = Number(row.file_size || 0);
+                totalBytes += size;
+                fileCount += 1;
+                materials.push(row);
+            }
+        }
+    } catch (err) {
+        console.warn('[R2] Could not fetch teacher submissions for quota calculation:', err);
+    }
+
+    const remainingBytes = Math.max(0, TEACHER_STORAGE_QUOTA_BYTES - totalBytes);
+    const usedMb = Number((totalBytes / (1024 * 1024)).toFixed(1));
+    const maxMb = 500;
+    const remainingMb = Number((remainingBytes / (1024 * 1024)).toFixed(1));
+    const percentage = Math.min(100, Math.round((totalBytes / TEACHER_STORAGE_QUOTA_BYTES) * 100));
+
+    return {
+        usedBytes: totalBytes,
+        maxBytes: TEACHER_STORAGE_QUOTA_BYTES,
+        usedMb,
+        maxMb,
+        remainingBytes,
+        remainingMb,
+        percentage,
+        fileCount,
+        materials
+    };
+}
+
 validateR2Config({ log: true });
 
 module.exports = {
@@ -918,6 +974,7 @@ module.exports = {
     getR2ConfigErrorPayload,
     getMissingR2EnvVars,
     getR2Identity,
+    getTeacherStorageUsage,
     groupObjectsByFolder,
     json,
     listAllObjects,
@@ -930,6 +987,7 @@ module.exports = {
     requireAdmin,
     sanitizeSegment,
     summarizeObjects,
+    TEACHER_STORAGE_QUOTA_BYTES,
     updateSupabaseSubmission,
     validateR2Config,
     validateAsset,

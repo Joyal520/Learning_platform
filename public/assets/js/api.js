@@ -343,7 +343,7 @@ function isPublicExploreSubmission(row = {}) {
 }
 
 async function validateUploadedProject({ objectKey, filename, contentType }) {
-    return callServerApi('/api/r2-validate-project', {
+    return callServerApi('/api/r2?action=validate-project', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -391,7 +391,7 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
         contentType: resolvedContentType
     });
 
-    const signedUpload = await callServerApi('/api/r2-sign-upload', {
+    const signedUpload = await callServerApi('/api/r2?action=sign-upload', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -431,7 +431,7 @@ async function uploadAssetToR2({ submissionId, assetType, file, filename = file?
         throw new Error(`Upload failed for ${assetType}: ${uploadResponse.status} ${uploadResponse.statusText}`);
     }
 
-    const verification = await callServerApi('/api/r2-verify-object', {
+    const verification = await callServerApi('/api/r2?action=verify-object', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -511,7 +511,7 @@ async function preflightR2Upload({ assetType, file, filename = file?.name, conte
     if (!file) return null;
     const resolvedContentType = resolveUploadContentType(filename, contentType);
 
-    await callServerApi('/api/r2-sign-upload', {
+    await callServerApi('/api/r2?action=sign-upload', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -535,7 +535,7 @@ async function deleteR2Assets(keysOrUrls, submissionId) {
     const prefixes = entries.filter((value) => String(value).endsWith('/'));
     if (keys.length === 0 && prefixes.length === 0) return;
 
-    await callServerApi('/api/r2-delete', {
+    await callServerApi('/api/r2?action=delete', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -1421,12 +1421,20 @@ export const API = {
     },
 
     async getR2Metrics() {
-        return callServerApi('/api/r2-metrics', { method: 'GET' });
+        return callServerApi('/api/r2?action=metrics', { method: 'GET' });
     },
 
     async getR2Diagnostics(refresh = true) {
-        const query = refresh ? '?refresh=true' : '';
-        return callServerApi(`/api/r2-diagnostics${query}`, { method: 'GET' });
+        const query = refresh ? '&refresh=true' : '';
+        return callServerApi(`/api/r2?action=diagnostics${query}`, { method: 'GET' });
+    },
+
+    async getTeacherStorage() {
+        return callServerApi('/api/r2?action=teacher-storage', { method: 'GET' });
+    },
+
+    async getTeacherMaterials() {
+        return callServerApi('/api/r2?action=teacher-materials', { method: 'GET' });
     },
 
     async sendWorkApprovedNotifications(submissionId) {
